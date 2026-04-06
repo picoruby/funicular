@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
 
   spec.summary = "Rails plugin for client-side Ruby development with mruby"
   spec.description = "Funicular enables you to write client-side UI components in Ruby, powered by PicoRuby.wasm"
-  spec.homepage = "https://github.com/hasumikin/funicular"
+  spec.homepage = "https://github.com/picoruby/funicular"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.2.0"
 
