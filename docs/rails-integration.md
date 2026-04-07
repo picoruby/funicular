@@ -14,36 +14,130 @@ This document describes CRubyGem funicular as a Rails plugin.
 
 ## Prerequisites
 
-Funicular requires the `picorbc` mruby compiler to compile Ruby code to .mrb format.
-
-Add it as a project dependency using npm (the required version will be specified in error messages if not installed):
-
-```bash
-npm install --save-dev @picoruby/picorbc
-```
-
-If you don't have a `package.json` yet:
+Funicular bundles a WebAssembly build of the `picorbc` mruby compiler and
+runs it through Node.js. Make sure Node.js is installed on any machine that
+performs Funicular compilation (your development workstation, CI, and any
+host that runs `assets:precompile`).
 
 ```bash
-npm init -y
-npm install --save-dev @picoruby/picorbc
+node --version
 ```
 
-For more information: https://www.npmjs.com/package/@picoruby/picorbc
+You do **not** need to install `@picoruby/picorbc` from npm; the gem ships
+with the compiler already vendored.
 
 ## Installation
 
-Add this line to your application's Gemfile:
+### 1. Add the gem
 
 ```ruby
+# Gemfile
 gem "funicular"
 ```
-
-Then execute:
 
 ```bash
 bundle install
 ```
+
+### 2. Run the install task
+
+```bash
+bundle exec rake funicular:install
+```
+
+This runs two sub-tasks:
+
+#### `funicular:install:wasm`
+
+Copies the PicoRuby.wasm runtime (dist and debug builds) into your Rails app:
+
+```
+public/
+  picoruby/
+    dist/          # production build (smaller, no debug symbols)
+      init.iife.js
+      picoruby.js
+      picoruby.wasm
+    debug/         # development build (larger, with debug symbols)
+      init.iife.js
+      picoruby.js
+      picoruby.wasm
+```
+
+The files in `public/picoruby/` should be added to `.gitignore` and
+re-installed after gem updates.
+
+#### `funicular:install:debug_assets`
+
+Copies the component highlighter stylesheet and script for development use:
+
+```
+app/assets/
+  javascripts/funicular_debug.js
+  stylesheets/funicular_debug.css
+config/initializers/funicular.rb
+```
+
+The generated `config/initializers/funicular.rb` is the place to configure
+which PicoRuby.wasm source `picoruby_include_tag` uses (see below).
+
+### 3. Add the script tag to your layout
+
+Replace any hardcoded PicoRuby `<script>` tag with the view helper:
+
+```erb
+<%# app/views/layouts/application.html.erb %>
+<head>
+  ...
+  <%= picoruby_include_tag %>
+</head>
+```
+
+`picoruby_include_tag` chooses the right build automatically:
+
+| Environment | Default source | Path served |
+|---|---|---|
+| development | `:local_debug` | `/picoruby/debug/init.iife.js` |
+| test | `:local_debug` | `/picoruby/debug/init.iife.js` |
+| production | `:local_dist` | `/picoruby/dist/init.iife.js` |
+
+You can override the source per environment in `config/initializers/funicular.rb`:
+
+```ruby
+Funicular.configure do |config|
+  # Use jsDelivr CDN in production instead of self-hosting:
+  config.production_source = :cdn
+
+  # The CDN version defaults to the @picoruby/wasm-wasi version vendored in
+  # the gem. Override only if you need a specific version:
+  # config.cdn_version = "4.0.0"
+end
+```
+
+Available sources:
+
+| Value | Description |
+|---|---|
+| `:local_debug` | `public/picoruby/debug/init.iife.js` |
+| `:local_dist` | `public/picoruby/dist/init.iife.js` |
+| `:cdn` | `https://cdn.jsdelivr.net/npm/@picoruby/wasm-wasi@<version>/dist/init.iife.js` |
+
+You can also override the source for a single tag:
+
+```erb
+<%= picoruby_include_tag source: :cdn %>
+```
+
+### 4. (Optional) Add debug assets to your layout
+
+```erb
+<% if Rails.env.development? %>
+  <%= javascript_include_tag "funicular_debug", "data-turbo-track": "reload" %>
+  <%= stylesheet_link_tag "funicular_debug", "data-turbo-track": "reload" %>
+<% end %>
+```
+
+See [Component Debug Highlighter](#component-debug-highlighter) for details.
 
 ## Usage
 
@@ -312,37 +406,8 @@ Using `asset_path('app.mrb')` in views ensures:
 
 Funicular provides a debug tool that visually highlights components with `data-component` attributes in development mode.
 
-#### Installation
-
-Run the install task to copy debug assets to your Rails app:
-
-```bash
-bundle exec rake funicular:install
-```
-
-This creates:
-- `app/assets/javascripts/funicular_debug.js`
-- `app/assets/stylesheets/funicular_debug.css`
-
-#### Integration with Sprockets
-
-Add to `app/assets/config/manifest.js`:
-
-```javascript
-//= link_directory ../javascripts .js
-//= link_directory ../stylesheets .css
-```
-
-Then update your layout to load the debug assets in development only:
-
-```erb
-<head>
-  <% if Rails.env.development? %>
-    <%= stylesheet_link_tag "funicular_debug", "data-turbo-track": "reload" %>
-    <%= javascript_include_tag "funicular_debug", "data-turbo-track": "reload" %>
-  <% end %>
-</head>
-```
+`funicular:install` (or `funicular:install:debug_assets`) copies the
+required files and adds them to your layout as shown in [Installation](#installation).
 
 #### Features
 

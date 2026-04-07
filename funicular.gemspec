@@ -29,6 +29,17 @@ Gem::Specification.new do |spec|
         f.start_with?(*%w[bin/ test/ spec/ features/ .git .github appveyor Gemfile])
     end
   end
+
+  # Vendored PicoRuby.wasm and picorbc artifacts are populated by
+  # `rake funicular:vendor` (which `rake build` depends on) and are
+  # intentionally not tracked in git. Add them to the gem file list so
+  # they ship with releases.
+  vendor_root = File.join(__dir__, "lib", "funicular", "vendor")
+  if Dir.exist?(vendor_root)
+    vendored = Dir.glob(File.join(vendor_root, "**", "*")).reject { |f| File.directory?(f) }
+    vendored.map! { |f| f.sub("#{__dir__}/", "") }
+    spec.files = (spec.files + vendored).uniq.sort
+  end
   spec.bindir = "exe"
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
@@ -41,12 +52,15 @@ Gem::Specification.new do |spec|
 
     Thank you for installing Funicular!
 
-    IMPORTANT: Funicular requires picorbc compiler (version #{Funicular::PICORBC_VERSION})
+    Funicular bundles a WebAssembly build of picorbc, which compiles your
+    Ruby code to .mrb at request time (development) and at asset:precompile
+    time (production). Make sure Node.js is installed on machines that run
+    the compilation.
 
-    Please add it to your project dependencies:
-      npm install --save-dev @picoruby/picorbc@#{Funicular::PICORBC_VERSION}
+    To install Funicular into a Rails app:
+      bin/rails funicular:install
 
-    For more information: https://www.npmjs.com/package/@picoruby/picorbc
+    For more information: https://github.com/hasumikin/funicular
 
   MSG
 

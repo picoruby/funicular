@@ -59,6 +59,19 @@ You may want to see Tic-Tac-Toe tutorial first: [https://picoruby.org/funicular]
 
 Then, dig [docs/](docs/).
 
+## Development
+
+This repository is a submodule of [picoruby/picoruby](https://github.com/picoruby/picoruby).
+Do not check it out standalone. Instead, clone the parent repository and work from there:
+
+```console
+git clone --recurse-submodules https://github.com/picoruby/picoruby.git
+cd picoruby/mrbgems/picoruby-funicular
+```
+
+The CRubyGem side (`lib/`, `funicular.gemspec`, etc.) can be developed and tested independently inside that directory, but `rake copy_wasm` — which vendorsthe PicoRuby.wasm and picorbc wasm artifacts into the gem — relies on sibling directories within the picoruby repository (`mrbgems/picoruby-wasm/npm/`).
+Running it from a standalone checkout will fail.
+
 ## Contributing
 
 Bug reports and pull requests are welcome on GitHub at https://github.com/picoruby/funicular.

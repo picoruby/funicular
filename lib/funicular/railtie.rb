@@ -12,6 +12,13 @@ module Funicular
       end
     end
 
+    initializer "funicular.helpers" do
+      ActiveSupport.on_load(:action_view) do
+        require "funicular/helpers/picoruby_helper"
+        include Funicular::Helpers::PicorubyHelper
+      end
+    end
+
     rake_tasks do
       load "tasks/funicular.rake"
     end

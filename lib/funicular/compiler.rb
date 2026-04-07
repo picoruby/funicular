@@ -1,8 +1,15 @@
 # frozen_string_literal: true
 
+require "shellwords"
+
 module Funicular
   class Compiler
-    class PicorbcNotFoundError < StandardError; end
+    class NodeNotFoundError < StandardError; end
+    class PicorbcMissingError < StandardError; end
+
+    # picorbc.js + picorbc.wasm bundled into the gem at build time by `rake copy_wasm`.
+    PICORBC_DIR = File.expand_path("vendor/picorbc", __dir__)
+    PICORBC_JS  = File.join(PICORBC_DIR, "picorbc.js")
 
     attr_reader :source_dir, :output_file, :debug_mode, :logger
 
@@ -22,70 +29,40 @@ module Funicular
     private
 
     def check_picorbc_availability!
-      unless picorbc_command
-        raise PicorbcNotFoundError, <<~ERROR
-          picorbc command not found.
+      unless File.exist?(PICORBC_JS)
+        raise PicorbcMissingError, <<~ERROR
+          Vendored picorbc not found at #{PICORBC_JS}.
 
-          Funicular requires the picorbc mruby compiler (version #{Funicular::PICORBC_VERSION}) to compile Ruby code to .mrb format.
+          The funicular gem ships picorbc.js + picorbc.wasm inside the gem
+          package. This file is missing, which likely means the gem was not
+          installed correctly. Try reinstalling:
 
-          Please add @picoruby/picorbc to your project dependencies:
+            bundle install --redownload
 
-          1. Add to package.json:
-             npm install --save-dev @picoruby/picorbc@#{Funicular::PICORBC_VERSION}
-
-          2. Or if you don't have package.json yet:
-             npm init -y
-             npm install --save-dev @picoruby/picorbc@#{Funicular::PICORBC_VERSION}
-
-          For more information: https://www.npmjs.com/package/@picoruby/picorbc
         ERROR
       end
 
-      check_picorbc_version!
-    end
+      unless node_command
+        raise NodeNotFoundError, <<~ERROR
+          Node.js executable not found.
 
-    def picorbc_command
-      @picorbc_command ||= find_picorbc_command
-    end
-
-    def find_picorbc_command
-      # Try local node_modules first (project dependency - recommended)
-      local_picorbc = Rails.root.join("node_modules", ".bin", "picorbc")
-      return local_picorbc.to_s if File.executable?(local_picorbc)
-
-      # Check if global picorbc exists and warn
-      if system("which picorbc > /dev/null 2>&1")
-        warn_global_picorbc
-        return "picorbc"
+          Funicular compiles Ruby to .mrb using a WebAssembly build of picorbc
+          which is run via Node.js. Please install Node.js and ensure `node`
+          is on your PATH (or set the NODE environment variable).
+        ERROR
       end
+    end
 
-      # Not found
+    def node_command
+      @node_command ||= ENV["NODE"] || which("node")
+    end
+
+    def which(cmd)
+      ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).each do |dir|
+        path = File.join(dir, cmd)
+        return path if File.executable?(path) && !File.directory?(path)
+      end
       nil
-    end
-
-    def warn_global_picorbc
-      logger&.warn("Using global picorbc. Consider adding @picoruby/picorbc@#{Funicular::PICORBC_VERSION} to package.json for version consistency.")
-      puts "WARNING: Using global picorbc. Consider adding @picoruby/picorbc@#{Funicular::PICORBC_VERSION} to package.json for version consistency." if debug_mode
-    end
-
-    def check_picorbc_version!
-      version_output = `#{picorbc_command} --version 2>&1`.strip
-      actual_version = version_output.match(/(\d+\.\d+\.\d+)/)[1]
-
-      unless actual_version
-        log "Warning: Could not detect picorbc version"
-        return
-      end
-
-      if actual_version != Funicular::PICORBC_VERSION
-        warn_version_mismatch(actual_version)
-      end
-    end
-
-    def warn_version_mismatch(actual_version)
-      message = "picorbc version mismatch: expected #{Funicular::PICORBC_VERSION}, found #{actual_version}. Please install @picoruby/picorbc@#{Funicular::PICORBC_VERSION}"
-      logger&.warn(message)
-      puts "WARNING: #{message}" if debug_mode
     end
 
     def gather_source_files
@@ -125,11 +102,11 @@ module Funicular
       output_dir = File.dirname(output_file)
       FileUtils.mkdir_p(output_dir) unless Dir.exist?(output_dir)
 
-      compile_options = debug_mode ? "-g" : ""
-      # Pass all source files directly to picorbc, maintaining order
       all_files = @source_files + [@env_file]
-      files_list = all_files.join(" ")
-      command = "picorbc #{compile_options} -o #{output_file} #{files_list}"
+      argv = [node_command, PICORBC_JS]
+      argv << "-g" if debug_mode
+      argv += ["-o", output_file.to_s]
+      argv += all_files.map(&:to_s)
 
       log "Compiling Funicular application..."
       log "  Source: #{source_dir}"
@@ -141,10 +118,10 @@ module Funicular
       log "  Debug mode: #{debug_mode}"
       log "  Files: #{all_files.size} files"
 
-      result = system(command)
+      result = system(*argv)
 
       unless result
-        raise "Failed to compile with picorbc. Command: #{command}"
+        raise "Failed to compile with picorbc. Command: #{Shellwords.join(argv)}"
       end
 
       log "Successfully compiled to #{output_file}"

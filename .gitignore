@@ -7,3 +7,9 @@
 /spec/reports/
 /tmp/
 *.gem
+
+# Vendored PicoRuby.wasm and picorbc artifacts are populated by
+# `rake funicular:vendor` at gem build time; they ship in the released gem
+# but are not tracked here.
+/lib/funicular/vendor/picoruby/
+/lib/funicular/vendor/picorbc/
