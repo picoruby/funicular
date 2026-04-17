@@ -111,6 +111,12 @@ module Funicular
             end
           end
 
+          # Block javascript: URIs in URL attributes
+          if URL_ATTRIBUTES.include?(key_str) && value.to_s.strip.downcase.start_with?('javascript:')
+            puts "[WARN] Funicular: Blocked potentially malicious value for attribute '#{key_str}'."
+            next
+          end
+
           # Handle boolean attributes
           if BOOLEAN_ATTRIBUTES.include?(key_str)
             if value.nil? || value.to_s == "false"
@@ -152,6 +158,10 @@ module Funicular
           vnode.props.each do |key, value|
             key_str = key.to_s
             next if key_str.start_with?('on')
+            if URL_ATTRIBUTES.include?(key_str) && value.to_s.strip.downcase.start_with?('javascript:')
+              puts "[WARN] Funicular: Blocked potentially malicious value for attribute '#{key_str}'."
+              next
+            end
             if key_str == "value" && (vnode.tag == "input" || vnode.tag == "textarea")
               element[:value] = value.to_s
             elsif BOOLEAN_ATTRIBUTES.include?(key_str)

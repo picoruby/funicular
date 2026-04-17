@@ -4,6 +4,8 @@ module Funicular
       disabled checked selected readonly required autofocus multiple
     ]
 
+    URL_ATTRIBUTES = %w[href src action formaction data poster xlink:href]
+
     class VNode
       attr_reader :type, :key
 
@@ -123,9 +125,9 @@ module Funicular
           if key_str.start_with?('on')
             # Event handlers are handled by Funicular::Component and should not be set as attributes.
             # warn "Funicular: Attempted to set event handler '#{key_str}' as an attribute. This will be ignored."
-          elsif (key_str == 'href' || key_str == 'src') && value.to_s.start_with?('javascript:')
-            # Prevent XSS attacks by blocking javascript: URIs in href/src attributes
-            puts "[WARN] Funicular: Blocked potentially malicious value '#{value}' for attribute '#{key_str}'."
+          elsif URL_ATTRIBUTES.include?(key_str) && value.to_s.strip.downcase.start_with?('javascript:')
+            # Prevent XSS attacks by blocking javascript: URIs in URL attributes
+            puts "[WARN] Funicular: Blocked potentially malicious value for attribute '#{key_str}'."
           elsif BOOLEAN_ATTRIBUTES.include?(key_str)
             # Handle boolean attributes
             if value.nil? || value.to_s == "false"

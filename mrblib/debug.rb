@@ -57,24 +57,10 @@ module Funicular
       # Get all recorded errors as JSON
       def error_list
         return "[]" unless enabled?
-
         begin
-          errors = error_registry.map do |entry|
-            pairs = [] #: Array[String]
-            entry.each do |key, value|
-              if value.is_a?(Array)
-                escaped_arr = value.map { |v| %Q("#{v.to_s.gsub('"', '\\"')}") }.join(',')
-                pairs << %Q("#{key}":[#{escaped_arr}])
-              else
-                escaped_value = value.to_s.gsub('\\', '\\\\\\\\').gsub('"', '\\"')
-                pairs << %Q("#{key}":"#{escaped_value}")
-              end
-            end
-            "{#{pairs.join(',')}}"
-          end
-          "[#{errors.join(',')}]"
+          JSON.generate(error_registry)
         rescue => e
-          %Q([{"error":"#{e.message}"}])
+          JSON.generate([{ "error" => e.message }])
         end
       end
 
@@ -109,24 +95,27 @@ module Funicular
               state_keys = get_state_keys(component)
               class_name = component.class.to_s
               child_ids = get_child_ids(component)
-              child_ids_json = "[#{child_ids.join(',')}]"
-
-              # Check if this is an ErrorBoundary and if it has caught an error
               is_error_boundary = component.is_a?(Funicular::ErrorBoundary)
               has_error = is_error_boundary && component.instance_variable_get(:@state)&.dig(:has_error)
-
-              base = %Q("id":#{id},"class":"#{class_name}","state_keys":#{state_keys.inspect},"mounted":#{mounted},"children":#{child_ids_json})
+              entry = {
+                "id" => id,
+                "class" => class_name,
+                "state_keys" => state_keys,
+                "mounted" => mounted,
+                "children" => child_ids
+              }
               if is_error_boundary
-                base += %Q(,"is_error_boundary":true,"has_error":#{has_error})
+                entry["is_error_boundary"] = true
+                entry["has_error"] = has_error
               end
-              "{#{base}}"
+              entry
             rescue => e
-              %Q({"id":#{id},"error":"#{e.message}"})
+              { "id" => id, "error" => e.message }
             end
           end
-          "[#{components.join(',')}]"
+          JSON.generate(components)
         rescue => e
-          "{\"error\":\"#{e.message}\"}"
+          JSON.generate({ "error" => e.message })
         end
       end
 
@@ -142,18 +131,15 @@ module Funicular
         return "{}" unless component
 
         state = component.instance_variable_get(:@state) || {}
-        pairs = [] #: Array[String]
-
+        result = {}
         state.each do |key, value|
           begin
-            escaped_value = value.inspect.gsub('\\', '\\\\\\\\').gsub('"', '\\"')
-            pairs << %Q("#{key}":"#{escaped_value}")
+            result[key.to_s] = value.inspect
           rescue
-            pairs << %Q("#{key}":"<error inspecting value>")
+            result[key.to_s] = "<error inspecting value>"
           end
         end
-
-        "{#{pairs.join(',')}}"
+        JSON.generate(result)
       end
 
       def get_component_instance_variables(id)
@@ -161,25 +147,21 @@ module Funicular
         component = get_component(id)
         return "{}" unless component
 
-        pairs = [] #: Array[String]
+        result = {}
         component.instance_variables.each do |var|
-          next if var == :@state # State is handled separately
-          next if var.to_s.start_with?('@__debug') # Skip debug-internal variables
+          next if var == :@state
+          next if var.to_s.start_with?('@__debug')
           if var == :@vdom || var == :@child_components
-            pairs << %Q("#{var}":"<omitted>")
+            result[var.to_s] = "<omitted>"
             next
           end
-
           begin
-            value = component.instance_variable_get(var)
-            escaped_value = value.inspect.gsub('\\', '\\\\\\\\').gsub('"', '\\"')
-            pairs << %Q("#{var}":"#{escaped_value}")
+            result[var.to_s] = component.instance_variable_get(var).inspect
           rescue
-            pairs << %Q("#{var}":"<error inspecting value>")
+            result[var.to_s] = "<error inspecting value>"
           end
         end
-
-        "{#{pairs.join(',')}}"
+        JSON.generate(result)
       end
 
       def expose_to_global
