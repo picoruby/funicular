@@ -21,7 +21,7 @@ namespace :funicular do
         debug_mode: debug_mode
       )
       compiler.compile
-    rescue Funicular::Compiler::PicorbcNotFoundError => e
+    rescue Funicular::Compiler::PicorbcMissingError => e
       puts "ERROR: #{e.message}"
       exit 1
     rescue => e
