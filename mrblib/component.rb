@@ -62,6 +62,25 @@ module Funicular
       {}
     end
 
+    # Merge externally provided state into the component before rendering.
+    # Used by SSR to inject server data, and by client hydration to restore
+    # the same state from window.__FUNICULAR_STATE__ so the first client
+    # render matches the server HTML. Top-level keys are symbolized so they
+    # are reachable via state.foo (StateAccessor uses symbol keys); nested
+    # values are left untouched (components read them with string keys).
+    def seed_state(state_hash)
+      return self if state_hash.nil?
+      return self if state_hash.respond_to?(:empty?) && state_hash.empty?
+
+      symbolized = {} #: Hash[Symbol, untyped]
+      state_hash.each do |key, value|
+        symbolized[key.to_sym] = value
+      end
+      @state = @state.merge(symbolized)
+      @state_accessor = nil
+      self
+    end
+
     # Load all registered suspense data
     # Called automatically in component_mounted if suspense definitions exist
     def load_suspense_data
@@ -289,6 +308,57 @@ module Funicular
         @child_components.each do |child|
           child.mounted = true
           child.component_mounted if child.respond_to?(:component_mounted)
+        end
+
+        component_mounted if respond_to?(:component_mounted)
+      rescue => e
+        component_raised(e) if respond_to?(:component_raised)
+        raise e
+      end
+    end
+
+    # Hydrate this component against server-rendered DOM.
+    #
+    # Unlike mount, which builds a fresh DOM tree via VDOM::Renderer, hydrate
+    # reuses the existing DOM produced by the server: it builds the VDOM,
+    # associates it with the existing nodes, and only attaches event listeners
+    # and refs (plus wiring child components). The first client render must
+    # match the server HTML, which is why state is seeded from
+    # window.__FUNICULAR_STATE__ before calling this.
+    def hydrate(dom_element)
+      return if @mounted
+      raise "hydrate: missing server DOM element" unless dom_element
+
+      begin
+        component_will_mount if respond_to?(:component_will_mount)
+
+        # The router/start sets the container; without it, unmount could not
+        # detach this subtree later. Derive it from the existing DOM.
+        @container ||= dom_element.parentNode
+        @dom_element = dom_element
+
+        new_vdom = build_vdom
+        check_hydration_match!(new_vdom, dom_element)
+
+        # Wire child components first so their instances exist for collection.
+        hydrate_child_components(new_vdom, dom_element)
+
+        # Reuse the same positional walks as mount: they skip Component vnodes
+        # (children manage their own events/refs during their own hydrate).
+        bind_events(dom_element, new_vdom)
+        collect_refs(dom_element, new_vdom)
+        collect_child_components(new_vdom)
+
+        @vdom = new_vdom
+        @mounted = true
+
+        load_suspense_data if self.class.suspense_definitions.any?
+
+        @child_components.each do |child|
+          unless child.mounted
+            child.mounted = true
+            child.component_mounted if child.respond_to?(:component_mounted)
+          end
         end
 
         component_mounted if respond_to?(:component_mounted)
@@ -582,6 +652,43 @@ module Funicular
         end
       else
         VDOM::Text.new(value.to_s)
+      end
+    end
+
+    # Lightweight structural check: the root tag of the freshly built VDOM
+    # must match the server-rendered element. A mismatch means server and
+    # client disagree (nondeterministic render or stale state); the caller
+    # falls back to a full client render.
+    def check_hydration_match!(vnode, dom_element)
+      return unless vnode.is_a?(VDOM::Element)
+      actual = dom_element[:tagName]
+      return unless actual  # non-element node; let later steps surface issues
+      expected = vnode.tag.to_s.downcase
+      got = actual.to_s.downcase
+      unless expected == got
+        raise "Hydration mismatch: expected <#{expected}>, found <#{got}>"
+      end
+    end
+
+    # Walk the VDOM and existing DOM in parallel to hydrate nested components.
+    # Uses the same positional indexing as bind_events/collect_refs so the
+    # three walks agree on which DOM node maps to which vnode.
+    def hydrate_child_components(vnode, dom_element)
+      return unless vnode.is_a?(VDOM::Element)
+      return unless dom_element
+
+      dom_children = dom_element.children.to_a
+      vnode.children.each_with_index do |child, index|
+        child_dom = dom_children[index]
+        next unless child_dom
+
+        if child.is_a?(VDOM::Component)
+          instance = child.component_class.new(child.props)
+          child.instance = instance
+          instance.hydrate(child_dom)
+        elsif child.is_a?(VDOM::Element)
+          hydrate_child_components(child, child_dom)
+        end
       end
     end
 

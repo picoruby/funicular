@@ -176,11 +176,14 @@ end
 | Mode | Description | Funicular Support |
 |------|-------------|-------------------|
 | **CSR** | Render in browser | ✅ Yes |
-| SSR | Server-side rendering | ❌ No (for now...) |
+| **SSR + hydration** | Render HTML on the Rails server, hydrate in the browser | ✅ Yes |
 | SSG | Static site generation | ❌ No |
 | ISR | Incremental static regen | ❌ No |
 
-**Reason**: PicoRuby.wasm runs only in browsers. Rails serves JSON APIs + assets.
+**How SSR works**: the same component classes run under CRuby on the Rails
+server (the mrblib runtime is loaded into the Rails process) and their VDOM is
+serialized to an HTML string by `VDOM::HTMLSerializer`. The browser then
+hydrates that markup instead of rebuilding it. See [Server-Side Rendering](ssr.md).
 
 ### 8. Template System
 
@@ -378,7 +381,9 @@ state.messages.map { |msg| div(key: msg.id) { msg.content } }
 
 ### Limitations
 
-❌ **No SSR**: PicoRuby.wasm is browser-only (for now...)
+⚠️ **SSR is v1**: server-side rendering + hydration works (see [ssr.md](ssr.md)),
+but currently serializes a single state payload for the top routed component
+and injects data as plain hashes rather than via the Model layer.
 
 ❌ **No npm Ecosystem**: Limited to Ruby gems
 

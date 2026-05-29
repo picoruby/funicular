@@ -11,6 +11,20 @@ module Funicular
     PICORBC_DIR = File.expand_path("vendor/picorbc", __dir__)
     PICORBC_JS  = File.join(PICORBC_DIR, "picorbc.js")
 
+    # Ordered list of application source files under app/funicular/.
+    # Order matters: models -> stores -> components -> initializer, so that
+    # later files can reference classes defined earlier. Shared by the .mrb
+    # compiler (client build) and the SSR runtime (server class loading).
+    def self.source_files(source_dir)
+      models_files = Dir.glob(File.join(source_dir, "models", "**", "*.rb")).sort
+      stores_files = Dir.glob(File.join(source_dir, "stores", "**", "*.rb")).sort
+      components_files = Dir.glob(File.join(source_dir, "components", "**", "*.rb")).sort
+      initializer_files = Dir.glob(File.join(source_dir, "*_initializer.rb")).sort +
+                          Dir.glob(File.join(source_dir, "initializer.rb")).sort
+
+      models_files + stores_files + components_files + initializer_files
+    end
+
     attr_reader :source_dir, :output_file, :debug_mode, :logger
 
     def initialize(source_dir:, output_file:, debug_mode: false, logger: nil)
@@ -66,14 +80,7 @@ module Funicular
     end
 
     def gather_source_files
-      models_files = Dir.glob(File.join(source_dir, "models", "**", "*.rb")).sort
-      stores_files = Dir.glob(File.join(source_dir, "stores", "**", "*.rb")).sort
-      components_files = Dir.glob(File.join(source_dir, "components", "**", "*.rb")).sort
-      initializer_files = Dir.glob(File.join(source_dir, "*_initializer.rb")).sort +
-                          Dir.glob(File.join(source_dir, "initializer.rb")).sort
-
-      # Order: models -> stores -> components -> initializer
-      all_files = models_files + stores_files + components_files + initializer_files
+      all_files = self.class.source_files(source_dir)
 
       if all_files.empty?
         raise "No Ruby files found in #{source_dir}"

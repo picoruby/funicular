@@ -1,4 +1,11 @@
-require 'rng'
+# 'rng' is a PicoRuby gem available only in the wasm build. When the runtime
+# is loaded under CRuby for SSR it is absent; FileUpload is client-only and
+# its methods are never called on the server (see Funicular.server?).
+begin
+  require 'rng'
+rescue LoadError
+  # not available outside wasm environment
+end
 
 module Funicular
   module FileUpload
@@ -31,6 +38,7 @@ module Funicular
     JAVASCRIPT
 
     def self.mount
+      return if Funicular.server?
       script = JS.document.createElement("script")
       script[:textContent] = JS_HELPER_CODE
       JS.document.body.appendChild(script)
