@@ -4,6 +4,9 @@ module Funicular
       attr_accessor :enabled
 
       def enabled?
+        # Disabled on the server: SSR instantiates components per request and
+        # must not accumulate them in the debug registry.
+        return false if Funicular.server?
         @enabled ||= Funicular.env.development?
       end
 

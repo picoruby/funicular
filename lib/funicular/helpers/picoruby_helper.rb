@@ -27,6 +27,31 @@ module Funicular
         tag.script("", src: src, **options)
       end
 
+      # Renders the SSR #app container with the server-rendered HTML inside.
+      #
+      #   <%= funicular_app_container(@ssr[:html]) %>
+      #
+      # On the client, Funicular hydrates this element instead of rebuilding
+      # it. Pass an empty string (the default) to fall back to plain CSR.
+      def funicular_app_container(html = "", id: "app", **options)
+        content_tag(:div, raw(html.to_s), { id: id }.merge(options))
+      end
+
+      # Emits the initial state for client hydration as a global JS variable.
+      #
+      #   <%= funicular_state_tag(@ssr[:state]) %>
+      #   # => <script>window.__FUNICULAR_STATE__ = {...};</script>
+      #
+      # The JSON is escaped so it cannot break out of the <script> element.
+      def funicular_state_tag(state = {})
+        json = JSON.generate(state || {})
+        # Escape characters that could break out of the <script> element or
+        # confuse the HTML parser, using JS unicode escapes that remain valid
+        # JSON/JS string content.
+        safe = json.gsub("<", "\\u003c").gsub(">", "\\u003e").gsub("&", "\\u0026")
+        raw("<script>window.__FUNICULAR_STATE__ = #{safe};</script>")
+      end
+
       private
 
       def picoruby_src_for(source)
