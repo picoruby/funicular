@@ -92,8 +92,6 @@ module Funicular
     def log(message)
       if logger
         logger.info(message)
-        # Also output to stdout so logs are visible in terminal during development
-        puts message if debug_mode
       else
         puts message
       end
