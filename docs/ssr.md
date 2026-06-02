@@ -82,7 +82,9 @@ In the view, place the rendered HTML inside the `#app` container and embed the s
 
 ## Client side
 
-No extra code is needed. `Funicular.start` automatically hydrates when `window.__FUNICULAR_STATE__` is present; otherwise it mounts normally. If the server and client markup disagree (for example, a nondeterministic render), a warning is logged and Funicular falls back to a full client render.
+No extra code is needed. `Funicular.start` automatically hydrates when `window.__FUNICULAR_STATE__` is present; otherwise it mounts normally.
+
+Before hydrating, Funicular does a lightweight structural check: the root tag of the freshly built VDOM must match the server-rendered element. If they disagree (for example, from a nondeterministic render or stale state), Funicular logs a warning in development and recovers by rendering a fresh DOM tree and swapping it in for the server markup. The page stays usable; only the first-paint reuse is lost for that subtree, and the warning is silent in production.
 
 For determinism, avoid `Time.now`, randomness, or any value that differs between server and client inside `render`.
 
@@ -91,3 +93,4 @@ For determinism, avoid `Time.now`, randomness, or any value that differs between
 - A single state payload is serialized, for the top routed component. Child components derive their data from props or fetch it on mount.
 - Server-side data is injected as plain hashes; the `Model` layer is not used to fetch data on the server.
 - Suspense renders its resolved/empty branch on the server (no timers).
+- The hydration mismatch check compares only the root element tag of each component. Deeper structural mismatches inside a matching root are not detected; the full-render fallback covers the common root-level case.

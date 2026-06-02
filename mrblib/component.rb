@@ -338,16 +338,24 @@ module Funicular
         @dom_element = dom_element
 
         new_vdom = build_vdom
-        check_hydration_match!(new_vdom, dom_element)
 
-        # Wire child components first so their instances exist for collection.
-        hydrate_child_components(new_vdom, dom_element)
+        if hydration_match?(new_vdom, dom_element)
+          # Wire child components first so their instances exist for collection.
+          hydrate_child_components(new_vdom, dom_element)
 
-        # Reuse the same positional walks as mount: they skip Component vnodes
-        # (children manage their own events/refs during their own hydrate).
-        bind_events(dom_element, new_vdom)
-        collect_refs(dom_element, new_vdom)
-        collect_child_components(new_vdom)
+          # Reuse the same positional walks as mount: they skip Component vnodes
+          # (children manage their own events/refs during their own hydrate).
+          bind_events(dom_element, new_vdom)
+          collect_refs(dom_element, new_vdom)
+          collect_child_components(new_vdom)
+        else
+          # Server and client disagree on structure (nondeterministic render or
+          # stale state). Recover by discarding the server DOM and rendering a
+          # fresh tree, the same way mount does. The page stays usable; only the
+          # first-paint reuse is lost for this subtree.
+          warn_hydration_mismatch(new_vdom, dom_element)
+          @dom_element = full_render_fallback(new_vdom, dom_element)
+        end
 
         @vdom = new_vdom
         @mounted = true
@@ -659,15 +667,36 @@ module Funicular
     # must match the server-rendered element. A mismatch means server and
     # client disagree (nondeterministic render or stale state); the caller
     # falls back to a full client render.
-    def check_hydration_match!(vnode, dom_element)
-      return unless vnode.is_a?(VDOM::Element)
+    def hydration_match?(vnode, dom_element)
+      return true unless vnode.is_a?(VDOM::Element)
       actual = dom_element[:tagName]
-      return unless actual  # non-element node; let later steps surface issues
-      expected = vnode.tag.to_s.downcase
-      got = actual.to_s.downcase
-      unless expected == got
-        raise "Hydration mismatch: expected <#{expected}>, found <#{got}>"
-      end
+      return true unless actual  # non-element node; let later steps surface issues
+      vnode.tag.to_s.downcase == actual.to_s.downcase
+    end
+
+    # Emit a development-only warning describing a hydration mismatch. Uses
+    # puts so the message reaches the browser console (same idiom as the
+    # ErrorBoundary logger), and is silent in production.
+    def warn_hydration_mismatch(vnode, dom_element)
+      return unless Funicular.env.development?
+      expected = vnode.is_a?(VDOM::Element) ? vnode.tag.to_s.downcase : vnode.class.to_s
+      got = dom_element[:tagName].to_s.downcase
+      puts "[Funicular] Hydration mismatch: expected <#{expected}>, found <#{got}>; " \
+           "falling back to full client render"
+    end
+
+    # Recover from a hydration mismatch by rendering a fresh DOM tree and
+    # swapping it in for the server-rendered node. Mirrors mount, minus the
+    # appendChild: the stale node already has a place in the document, so we
+    # replaceChild instead.
+    def full_render_fallback(new_vdom, server_dom)
+      fresh = VDOM::Renderer.new.render(new_vdom)
+      parent = server_dom.parentNode
+      parent.replaceChild(fresh, server_dom) if parent
+      bind_events(fresh, new_vdom)
+      collect_refs(fresh, new_vdom)
+      collect_child_components(new_vdom)
+      fresh
     end
 
     # Walk the VDOM and existing DOM in parallel to hydrate nested components.
