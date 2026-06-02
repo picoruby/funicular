@@ -58,13 +58,29 @@ module Funicular
         # canonical order. Running the initializer registers routes into
         # Funicular.router (server-safe: Funicular.start skips all DOM work).
         #
+        # Funicular model files are loaded so that the constants they define
+        # (e.g. Channel, Session) are available when the initializer evaluates
+        # `load_schemas({ Channel => "channel", ... })`. If a Funicular model
+        # shares a name with a same-named ActiveRecord model that Rails has
+        # already auto-loaded, Ruby raises TypeError (superclass mismatch).
+        # In that case we rescue and continue: the AR constant is already defined
+        # and is all that load_schemas needs (it ignores the hash on the server).
+        #
         # Loaded once per process. Restart the server to pick up changes.
         def boot!(source_dir)
           load_framework!
           return if @app_loaded
 
           files = Funicular::Compiler.source_files(source_dir.to_s)
-          files.each { |file| Kernel.load(file) }
+          files.each do |file|
+            begin
+              Kernel.load(file)
+            rescue TypeError => e
+              # Funicular model name conflicts with an already-loaded AR model.
+              # The constant is already defined; safe to skip.
+              warn "[Funicular SSR] Skipped #{File.basename(file)}: #{e.message}"
+            end
+          end
           @app_loaded = true
         end
 
