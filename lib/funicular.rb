@@ -3,6 +3,7 @@
 require_relative "funicular/version"
 require_relative "funicular/configuration"
 require_relative "funicular/compiler"
+require_relative "funicular/schema"
 require_relative "funicular/ssr"
 
 module Funicular

@@ -386,6 +386,7 @@ end
 - [**Components and State**](docs/components-and-state.md) - Component lifecycle, state management, props
 - [**Styling**](docs/styling.md) - CSS-in-Ruby Styles DSL, conditional styles, variants
 - [**Forms**](docs/forms.md) - Form builder, validation, error handling
+- [**Validations**](docs/validations.md) - Model validators, errors, reusing ActiveRecord validations
 
 ### Features
 - [**Routing and Navigation**](docs/routing-and-navigation.md) - Router, URL helpers, link_to

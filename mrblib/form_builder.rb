@@ -6,8 +6,12 @@ module Funicular
       @component = component
       @model_key = model_key
       @options = options
-      @error_class = options[:error_class] || "text-red-600 text-sm mt-1"
-      @field_error_class = options[:field_error_class] || "border-red-500"
+      @error_class = options[:error_class] || "text-red-600 text-sm mt-1 font-medium"
+      # A light-red fill plus a red ring stay visible regardless of how the
+      # field's own border-color utility is ordered in the stylesheet, giving a
+      # recognizable error highlight without fighting the base border class.
+      @field_error_class = options[:field_error_class] ||
+        "border-red-500 bg-red-50 ring-1 ring-red-500"
     end
 
     # Generic field builder for input elements
@@ -26,7 +30,10 @@ module Funicular
 
       # Check for errors
       error_message = @component.state.errors ? @component.state.errors[field_key.to_sym] : nil
-      has_error = !error_message.nil?
+      # errors may be a single message (legacy) or an array of messages
+      # (Funicular::Model::Errors#messages). Show the first.
+      error_message = error_message.first if error_message.is_a?(Array)
+      has_error = !(error_message.nil? || error_message == "")
 
       # Merge CSS classes (add error class if error exists)
       css_class = field_options[:class]
@@ -89,7 +96,10 @@ module Funicular
       end
 
       error_message = @component.state.errors ? @component.state.errors[field_key.to_sym] : nil
-      has_error = !error_message.nil?
+      # errors may be a single message (legacy) or an array of messages
+      # (Funicular::Model::Errors#messages). Show the first.
+      error_message = error_message.first if error_message.is_a?(Array)
+      has_error = !(error_message.nil? || error_message == "")
 
       css_class = options[:class]
       css_class = css_class.to_s if css_class
@@ -149,7 +159,10 @@ module Funicular
       end
 
       error_message = @component.state.errors ? @component.state.errors[field_key.to_sym] : nil
-      has_error = !error_message.nil?
+      # errors may be a single message (legacy) or an array of messages
+      # (Funicular::Model::Errors#messages). Show the first.
+      error_message = error_message.first if error_message.is_a?(Array)
+      has_error = !(error_message.nil? || error_message == "")
 
       css_class = options[:class]
       css_class = css_class.to_s if css_class

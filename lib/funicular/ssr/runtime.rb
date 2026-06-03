@@ -31,6 +31,8 @@ module Funicular
         component
         error_boundary
         router
+        0_validations
+        1_validators
         model
         store
         store_singleton

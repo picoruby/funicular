@@ -1,5 +1,7 @@
 module Funicular
   class Model
+    include Validations
+
     attr_reader :id
 
     class << self
@@ -22,6 +24,41 @@ module Funicular
             @changed_attributes[name] = value
           end
         end
+
+        # Validations are inlined per attribute by Funicular::Schema.build.
+        register_schema_validations(name => config["validations"]) if config["validations"]
+      end
+
+      # Backward-compatible: a top-level { attr => rules } block also works.
+      register_schema_validations(schema_data["validations"])
+    end
+
+    # validations: { "attr" => { "presence" => true, "length" => { "maximum" => 30 } } }
+    def self.register_schema_validations(validations)
+      return unless validations.is_a?(Hash)
+      validations.each do |attribute, rules|
+        next unless rules.is_a?(Hash)
+        rules.each do |kind, opts|
+          options = normalize_validation_options(kind, opts)
+          add_schema_validator(attribute, kind, options)
+        end
+      end
+    end
+
+    # Turn JSON-shaped validator options into the Ruby options the client
+    # validators expect (notably rebuilding a Regexp for `format`). Integer
+    # Regexp flags are used so this works the same under CRuby and the client
+    # JS RegExp wrapper.
+    def self.normalize_validation_options(kind, opts)
+      return opts unless opts.is_a?(Hash)
+      if kind.to_s == "format" && opts["with"]
+        flags = opts["flags"].to_s
+        bits = 0
+        bits |= Regexp::IGNORECASE if flags.include?("i")
+        bits |= Regexp::MULTILINE if flags.include?("m")
+        { with: Regexp.new(opts["with"], bits) }
+      else
+        opts
       end
     end
 
@@ -70,6 +107,13 @@ module Funicular
       endpoint = @endpoints["create"]
       return unless endpoint
 
+      # Validate on the client before the request (mirrors ActiveRecord#save).
+      candidate = new(attrs)
+      unless candidate.valid?
+        block.call(nil, candidate.errors) if block
+        return
+      end
+
       HTTP.post(endpoint["path"], attrs) do |response|
         if response.error?
           block.call(nil, response.error_message) if block
@@ -99,6 +143,12 @@ module Funicular
     def update(attrs = nil, &block)
       if attrs
         attrs.each { |k, v| send("#{k}=", v) }
+      end
+
+      # Validate on the client before the request (mirrors ActiveRecord#save).
+      unless valid?
+        block.call(false, errors) if block
+        return
       end
 
       return if @changed_attributes.empty?
