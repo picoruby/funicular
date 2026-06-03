@@ -1,0 +1,23 @@
+/* Funicular base styles.
+ *
+ * Injected into the page by picoruby_include_tag so that class names emitted
+ * from inside the gem (which the host app's CSS pipeline never sees -- e.g.
+ * Tailwind only scans the app's own sources) still render. Keep this minimal
+ * and namespaced under .funicular-* so it cannot clash with app styles.
+ *
+ * Apps that prefer their own utilities can override per form via
+ * form_for(..., field_error_class: "...", error_class: "..."). */
+
+.funicular-field-error {
+  border-color: #ef4444 !important; /* red-500, wins over a base border color */
+  background-color: #fef2f2;        /* red-50 */
+  box-shadow: 0 0 0 1px #ef4444;
+}
+
+.funicular-error {
+  margin-top: 0.25rem;
+  color: #dc2626;                   /* red-600 */
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+}

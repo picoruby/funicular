@@ -11,6 +11,14 @@ module Funicular
         local_dist:  "/picoruby/dist/init.iife.js"
       }.freeze
 
+      # Minimal CSS the gem ships for class names it emits itself (e.g.
+      # FormBuilder error states). Read once; see assets/funicular.css.
+      BASE_CSS_PATH = File.expand_path("../assets/funicular.css", __dir__)
+
+      def self.base_css
+        @base_css ||= File.read(BASE_CSS_PATH)
+      end
+
       # Renders a <script> tag that bootstraps PicoRuby.wasm.
       #
       # The source is determined by Funicular.configuration based on the
@@ -20,11 +28,18 @@ module Funicular
       #   <%= picoruby_include_tag source: :cdn %>
       #   <%= picoruby_include_tag source: :local_dist, defer: true %>
       #
-      # Any extra options are passed straight through as HTML attributes.
-      def picoruby_include_tag(source: nil, **options)
+      # Also emits Funicular's small base stylesheet (so gem-emitted class names
+      # such as form error states render without host-CSS setup); pass
+      # base_styles: false to skip it. Any extra options become HTML attributes
+      # on the <script> tag.
+      def picoruby_include_tag(source: nil, base_styles: true, **options)
         resolved_source = source ? source.to_sym : Funicular.configuration.source_for(Rails.env)
         src = picoruby_src_for(resolved_source)
-        tag.script("", src: src, **options)
+        script = tag.script("", src: src, **options)
+        return script unless base_styles
+
+        style = tag.style(PicorubyHelper.base_css.html_safe, "data-funicular-base": "")
+        safe_join([style, script])
       end
 
       # Renders the SSR #app container with the server-rendered HTML inside.
