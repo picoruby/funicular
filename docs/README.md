@@ -405,12 +405,12 @@ end
 
 - Rails applications with SPA features
 - Small to medium SPAs (dashboards, admin panels, chat apps)
+- Content pages needing SEO and a fast first paint (via SSR + hydration; see [ssr.md](ssr.md))
 - Ruby teams doing frontend development
 - Rapid prototyping of interactive UIs
 
 ### Not Ideal For
 
-- SEO-critical applications (no SSR support for now, but planning...)
 - Large-scale SPAs with complex state management needs
 - Performance-critical applications (WebAssembly overhead)
 - Mobile applications (use React Native or native solutions)

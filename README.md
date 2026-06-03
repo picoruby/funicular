@@ -65,6 +65,7 @@ Then, dig [docs/](docs/):
 - [Forms](docs/forms.md)
 - [Styling](docs/styling.md)
 - [Realtime (ActionCable)](docs/realtime.md)
+- [Server-Side Rendering (SSR) and Hydration](docs/ssr.md)
 - [Client-Side Stores](docs/stores.md) — IndexedDB-backed caching with DSL
 - [Advanced Features](docs/advanced-features.md)
 - [Rails Integration](docs/rails-integration.md)

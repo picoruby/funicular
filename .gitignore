@@ -13,3 +13,4 @@
 # but are not tracked here.
 /lib/funicular/vendor/picoruby/
 /lib/funicular/vendor/picorbc/
+private_docs/

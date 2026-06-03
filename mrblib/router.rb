@@ -44,8 +44,22 @@ module Funicular
       @default_route = path
     end
 
+    # Resolve a path to [component_class, params] without any DOM/JS work.
+    # Public entry point used by server-side rendering.
+    def match(path)
+      find_route(path)
+    end
+
     # Start listening to popstate
-    def start
+    #
+    # When hydrate is true and the container already holds server-rendered
+    # markup, the initial route hydrates that DOM instead of mounting fresh.
+    def start(hydrate: false)
+      # No browser history on the server.
+      return if Funicular.server?
+
+      @hydrate_initial = hydrate
+
       # Clean up existing listener if any (prevents duplicate registration)
       if @popstate_callback_id
         JS::Object.removeEventListener(@popstate_callback_id)
@@ -57,8 +71,10 @@ module Funicular
         handle_route_change
       end
 
-      # Handle initial route
-      if current_location_path == '/' && @default_route
+      # Handle initial route. Skip the default-route redirect when hydrating
+      # server content: the server already rendered for the current path.
+      hydrating_now = @hydrate_initial && Funicular.first_element_child(@container)
+      if !hydrating_now && current_location_path == '/' && @default_route
         # Use replaceState to not add a new entry to the history
         JS.global.history.replaceState(JS::Bridge.to_js({}), '', @default_route)
       end
@@ -95,6 +111,11 @@ module Funicular
     def handle_route_change
       path = current_location_path
 
+      # Hydration only applies to the very first navigation. Consume the flag
+      # here so an unmatched initial route does not leave it set for later.
+      hydrate_now = @hydrate_initial
+      @hydrate_initial = false
+
       # Find matching route
       component_class, params = find_route(path)
 
@@ -113,6 +134,22 @@ module Funicular
       @current_path = path
       @current_component = component_class.new(params)
       # @type ivar @current_component: Funicular::Component
+
+      server_root = hydrate_now ? Funicular.first_element_child(@container) : nil
+
+      if server_root
+        begin
+          @current_component.seed_state(Funicular.window_state)
+          @current_component.hydrate(server_root)
+          return
+        rescue => e
+          # Server/client disagreed: discard server DOM and render fresh.
+          puts "[Funicular] Hydration failed, falling back to full render: #{e.message}"
+          @container[:innerHTML] = ''
+          @current_component = component_class.new(params)
+        end
+      end
+
       @current_component.mount(@container)
     end
 
