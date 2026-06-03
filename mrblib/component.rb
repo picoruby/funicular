@@ -754,6 +754,13 @@ module Funicular
       br hr
     ]
 
+    # The HTML tag DSL methods are public: besides being called inside render
+    # (implicit self), they are invoked by collaborators such as FormBuilder
+    # with an explicit receiver (@component.div). A private method would forbid
+    # that under CRuby (it is tolerated under mruby), which would break SSR of
+    # any component using form_for. Keep them public on both VMs.
+    public
+
     HTML_TAGS.each do |tag|
       define_method(tag) do |props = {}, &block|
         # @type self: Component
@@ -795,6 +802,8 @@ module Funicular
         element
       end
     end
+
+    private
 
     # Helper to add children in DSL blocks
     def add_child(child)

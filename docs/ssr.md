@@ -42,6 +42,46 @@ end
 
 The top routed component owns the data in its state and passes it to children as `props`. Nested components are rendered in the same server pass, so they do not need their own serialized state.
 
+### Keep the data shape identical on both sides
+
+The server and client must build the same VDOM, so the data your `render` reads has to look the same in both places:
+
+- **Use string keys for injected nested data.** Top-level state keys are symbolized (so `state.channels` works), but nested hashes are read with string keys (`ch["id"]`). The client receives the injected state through `JSON.parse`, which always produces string keys, so the server must inject string-keyed hashes too. Build them explicitly (e.g. `{ "id" => c.id, "name" => c.name }`) rather than relying on symbol keys.
+- **Normalize fetched models to that same shape.** When `component_mounted` fetches via a `Model` on the client-only path, convert the returned instances into the same string-keyed hashes the server injects, so `render` reads them the same way:
+
+  ```ruby
+  def component_mounted
+    return unless state.posts.empty?
+    Post.all { |posts, _| patch(posts: posts.map { |p| post_to_h(p) }) }
+  end
+
+  def post_to_h(post)
+    { "id" => post.id, "title" => post.title }
+  end
+  ```
+
+### Interactive and login-gated components
+
+Components built with `form_for` (and the rest of the rendering DSL) render on the server too, then hydrate into working forms. Because the server controller knows who is signed in, you can inject that into the state and branch on it, so the same markup renders on both sides with no hydration mismatch:
+
+```ruby
+def render
+  # ... article / comments rendered from injected state ...
+  if state.current_user
+    form_for(:comment, on_submit: :handle_submit) do |f|
+      f.textarea :body
+      f.submit "Post comment"
+    end
+  else
+    link_to "/login", navigate: true do
+      span { "Log in to comment" }
+    end
+  end
+end
+```
+
+Event handlers are not serialized, so the server emits the form's static markup and the client binds the submit/input handlers during hydration.
+
 ## Server side (Rails)
 
 In a controller, call `Funicular::SSR.render` and pass the data you want to inject as `state`:
@@ -79,6 +119,8 @@ In the view, place the rendered HTML inside the `#app` container and embed the s
 ```
 
 `Funicular::SSR.render` returns `{ html:, state:, component: }`. When no route matches the path, `html` is `""` so the page falls back to client-side rendering.
+
+The SSR markup lives inside `#app`, so page-level SEO tags are plain Rails: set `<title>` and a `<meta name="description">` from the controller (for example, the post title for a `/blog/:id` page) in your layout/view as usual. The server-rendered, data-filled `#app` content is what search engines index.
 
 ## Client side
 
