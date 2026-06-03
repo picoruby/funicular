@@ -25,10 +25,13 @@ module Funicular
       def render(vnode)
         case vnode&.type
         when :element
+          # @type var vnode: Funicular::VDOM::Element
           render_element(vnode)
         when :text
+          # @type var vnode: Funicular::VDOM::Text
           render_text(vnode)
         when :component
+          # @type var vnode: Funicular::VDOM::Component
           render_component(vnode)
         when nil
           ""
@@ -51,7 +54,7 @@ module Funicular
       end
 
       def render_children(children)
-        parts = []
+        parts = [] #: Array[String]
         children.each do |child|
           if child.is_a?(VNode)
             parts << render(child)
@@ -77,7 +80,7 @@ module Funicular
       end
 
       def serialize_props(props)
-        parts = []
+        parts = [] #: Array[String]
         props.each do |key, value|
           key_str = key.to_s
           next if SKIP_PROPS.include?(key)

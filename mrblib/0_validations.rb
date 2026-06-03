@@ -35,7 +35,7 @@ module Funicular
       end
 
       def full_messages
-        result = []
+        result = [] #: Array[String]
         @messages.each do |attribute, msgs|
           human = humanize(attribute)
           msgs.each { |m| result << "#{human} #{m}" }
@@ -85,7 +85,7 @@ module Funicular
         def kind
           name = self.class.to_s.split("::").last.to_s
           name = name[0...-9] if name.end_with?("Validator")
-          name.downcase.to_sym
+          name.to_s.downcase.to_sym
         end
 
         def validate(record)
@@ -135,14 +135,15 @@ module Funicular
           return if attributes.empty?
           attrs = attributes.map { |a| a.to_sym }
 
-          shared = {}
+          shared = {} #: Hash[Symbol, untyped]
           SHARED_OPTIONS.each { |k| shared[k] = options[k] if options.key?(k) }
 
           options.each do |key, opts|
             next if SHARED_OPTIONS.include?(key)
             klass = validator_class_for(key)
             next unless klass
-            base = (opts == true) ? {} : opts
+            base = {} #: Hash[Symbol, untyped]
+            base = opts unless opts == true
             validator_options = shared.merge(base) # per-validator options win
             validators << klass.new(attributes: attrs, **validator_options)
           end
@@ -157,7 +158,8 @@ module Funicular
           return if validators.any? { |v| v.attributes.include?(attr) && v.kind == k }
           klass = validator_class_for(kind)
           return unless klass
-          validator_options = (opts == true) ? {} : symbolize_keys(opts)
+          validator_options = {} #: Hash[Symbol, untyped]
+          validator_options = symbolize_keys(opts) unless opts == true
           validators << klass.new(attributes: [attr], **validator_options)
         end
 
@@ -171,7 +173,7 @@ module Funicular
 
         def symbolize_keys(hash)
           return hash unless hash.is_a?(Hash)
-          out = {}
+          out = {} #: Hash[Symbol, untyped]
           hash.each { |k, v| out[k.to_sym] = v }
           out
         end
@@ -189,7 +191,10 @@ module Funicular
 
       def valid?
         errors.clear
-        self.class.validators.each { |validator| validator.validate(self) }
+        # Steep does not know whether `self.class` extends ClassMethods
+        # @type var cls: untyped
+        cls = self.class
+        cls.validators.each { |validator| validator.validate(self) }
         errors.empty?
       end
 

@@ -54,6 +54,8 @@ module Funicular
 
     def patch: (Hash[Symbol, untyped] new_state) -> void
     def mount: (JS::Element container) -> void
+    def hydrate: (JS::Element dom_element) -> void
+    def seed_state: (Hash[untyped, untyped]? state_hash) -> self
     def unmount: () -> void
     def render: () -> (VDOM::VNode | String | Integer | Float | Array[untyped] | nil)
     def bind_events: (JS::Element dom_element, VDOM::VNode | VDOM::Text | nil vnode) -> void
@@ -97,6 +99,12 @@ module Funicular
     private def add_child: (untyped child) -> void
     private def collect_child_components: (VDOM::VNode | VDOM::Text | nil vnode) -> void
     private def collect_child_components_recursive: (VDOM::VNode | VDOM::Text | nil vnode, Array[Component] components) -> void
+
+    # Hydration helpers
+    private def hydration_match?: (untyped vnode, untyped dom_element) -> bool
+    private def warn_hydration_mismatch: (untyped vnode, untyped dom_element) -> void
+    private def full_render_fallback: (VDOM::VNode | VDOM::Text | nil new_vdom, untyped server_dom) -> JS::Element
+    private def hydrate_child_components: (untyped vnode, untyped dom_element) -> void
 
     # HTML element methods (DSL)
     def div: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element

@@ -1,0 +1,20 @@
+module Funicular
+  module VDOM
+    class HTMLSerializer
+      VOID_ELEMENTS: Array[String]
+      SKIP_PROPS: Array[Symbol]
+
+      def self.serialize: (VNode? vnode) -> String
+      def render: (VNode? vnode) -> String
+
+      private
+      def render_element: (Element element) -> String
+      def render_children: (Array[child_t] children) -> String
+      def render_text: (Text text) -> String
+      def render_component: (Component component_vnode) -> String
+      def serialize_props: (Hash[Symbol, untyped] props) -> String
+      def escape_html: (untyped str) -> String
+      def escape_attr: (untyped str) -> String
+    end
+  end
+end

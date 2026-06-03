@@ -1,0 +1,103 @@
+module Funicular
+  class Model
+    # Validation error collection (a small slice of ActiveModel::Errors).
+    class Errors
+      @messages: Hash[Symbol, Array[String]]
+
+      def initialize: () -> void
+      def add: (Symbol | String attribute, String message) -> String
+      def []: (Symbol | String attribute) -> Array[String]
+      def added?: (Symbol | String attribute) -> bool
+      def messages: () -> Hash[Symbol, Array[String]]
+      def full_messages: () -> Array[String]
+      def clear: () -> void
+      def empty?: () -> bool
+      def any?: () -> bool
+
+      private
+      def humanize: (Symbol | String attribute) -> String
+    end
+
+    # ActiveModel-style validation, mixed into Model.
+    module Validations
+      def self.included: (untyped base) -> void
+
+      # Base class for attribute validators.
+      class EachValidator
+        @attributes: Array[Symbol]
+        @options: Hash[Symbol, untyped]
+
+        attr_reader attributes: Array[Symbol]
+        attr_reader options: Hash[Symbol, untyped]
+
+        def initialize: (attributes: Array[Symbol], **untyped options) -> void
+        def kind: () -> Symbol
+        def validate: (untyped record) -> void
+        def validate_each: (untyped record, Symbol attribute, untyped value) -> void
+
+        private
+        def blank?: (untyped value) -> bool
+        def present?: (untyped value) -> bool
+      end
+
+      module ClassMethods
+        @validators: Array[EachValidator]
+
+        SHARED_OPTIONS: Array[Symbol]
+
+        def validators: () -> Array[EachValidator]
+        def validators_on: (Symbol | String attribute) -> Array[EachValidator]
+        def validates: (*Symbol | String attributes, **untyped options) -> void
+        def add_schema_validator: (Symbol | String attribute, Symbol | String kind, untyped opts) -> void
+
+        private
+        def validator_class_for: (Symbol | String key) -> singleton(EachValidator)?
+        def symbolize_keys: (untyped hash) -> Hash[Symbol, untyped]
+      end
+
+      # Instance API (mixed into Model).
+      @errors: Errors
+      def errors: () -> Errors
+      def read_attribute_for_validation: (Symbol attribute) -> untyped
+      def valid?: () -> bool
+      def invalid?: () -> bool
+
+      # --- concrete validators ---
+
+      class PresenceValidator < EachValidator
+      end
+
+      class AbsenceValidator < EachValidator
+      end
+
+      class LengthValidator < EachValidator
+        private
+        def range_include?: (untyped range, Integer length) -> bool
+      end
+
+      class FormatValidator < EachValidator
+      end
+
+      class NumericalityValidator < EachValidator
+        CHECKS: Hash[Symbol, String]
+
+        private
+        def compare: (Numeric number, Symbol option, untyped target) -> bool
+        def message_for: (Symbol option, untyped target) -> String
+        def to_number: (untyped value) -> (Numeric | nil)
+      end
+
+      class InclusionValidator < EachValidator
+      end
+
+      class ExclusionValidator < EachValidator
+      end
+
+      class AcceptanceValidator < EachValidator
+      end
+
+      class ConfirmationValidator < EachValidator
+      end
+    end
+  end
+end

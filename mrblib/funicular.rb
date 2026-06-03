@@ -66,10 +66,13 @@ module Funicular
   def self.window_state
     return {} if server?
     win = JS.global[:window]
+    # @type var win: JS::Object?
     return {} unless win
     raw = win[:__FUNICULAR_STATE__]
     return {} if raw.nil?
-    json_str = JS.global[:JSON].stringify(raw)
+    json = JS.global[:JSON]
+    # @type var json: untyped
+    json_str = json.stringify(raw)
     JSON.parse(json_str.to_s)
   rescue => e
     puts "[Funicular] Failed to read window state: #{e.message}"
@@ -80,6 +83,7 @@ module Funicular
   def self.has_ssr_state?
     return false if server?
     win = JS.global[:window]
+    # @type var win: JS::Object?
     return false unless win
     !win[:__FUNICULAR_STATE__].nil?
   rescue
@@ -209,7 +213,9 @@ module Funicular
         error_class: "funicular-error",
         field_error_class: "funicular-field-error"
       }
-      yield @form_builder_config if block_given?
+      config = @form_builder_config
+      # @type var config: Hash[Symbol, String]
+      yield config if block_given?
     end
   end
 
