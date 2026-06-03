@@ -203,9 +203,11 @@ module Funicular
     attr_accessor :form_builder_config
 
     def configure_forms
+      # Defaults are semantic class names whose CSS the gem ships and injects
+      # via picoruby_include_tag (see assets/funicular.css).
       @form_builder_config ||= {
-        error_class: "text-red-600 text-sm mt-1",
-        field_error_class: "border-red-500"
+        error_class: "funicular-error",
+        field_error_class: "funicular-field-error"
       }
       yield @form_builder_config if block_given?
     end

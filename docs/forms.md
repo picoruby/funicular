@@ -140,7 +140,7 @@ class LoginComponent < Funicular::Component
     form_for(:user, on_submit: :handle_submit) do |f|
       f.email_field(:email, class: "w-full p-2 border rounded")
       # If errors[:email] exists, it's displayed in red below the field
-      # Field automatically gets border-red-500 class
+      # Field automatically gets the funicular-field-error class
 
       f.password_field(:password, class: "w-full p-2 border rounded")
       # If errors[:password] exists, it's displayed in red below the field
@@ -153,10 +153,11 @@ end
 
 ### Error Behavior
 
-When `state.errors` contains a key matching a field name:
-1. The error message is displayed below the field
-2. The field gets an error class added (default: `border-red-500`)
-3. Error messages are styled with `error_class` (default: `text-red-600 text-sm mt-1`)
+When `state.errors` contains a key matching a field name (the value may be a single message string or an array of messages — the first is shown):
+1. The error message is displayed in a `<div>` below the field, styled with the `error_class` (default: `funicular-error`).
+2. The field itself gets the `field_error_class` added (default: `funicular-field-error`).
+
+These two defaults are **semantic class names whose CSS the gem ships and injects for you**: `picoruby_include_tag` writes a small `<style>` block (`assets/funicular.css`) that styles `.funicular-field-error` (red border, light-red fill, red ring) and `.funicular-error` (red message text). This is why error highlighting works out of the box with no CSS-framework setup — important because a tool like Tailwind only scans your app's own sources and never sees class names emitted from inside the gem. Pass `picoruby_include_tag(base_styles: false)` if you want to provide the styles yourself.
 
 ## Nested Fields
 
@@ -207,9 +208,11 @@ end
 
 ## Customizing Error Styles
 
+By default, error fields use the gem's `funicular-field-error` / `funicular-error` classes (styled by the stylesheet `picoruby_include_tag` injects). You can override them globally or per form.
+
 ### Global Configuration
 
-Configure error display styles globally:
+Configure error display classes globally:
 
 ```ruby
 # In your initializer (e.g., app/funicular/initializer.rb)
@@ -230,6 +233,8 @@ form_for(:user,
   f.submit("Submit")
 end
 ```
+
+> **If you override with utility classes (e.g., Tailwind), make sure your CSS pipeline actually generates them.** The class names you set here live in your Ruby code under `app/funicular/`, which Tailwind scans, so utilities there are fine. But because these classes are applied from inside the framework, keep using class names your build is aware of — or rely on the shipped `funicular-*` defaults, which need no setup.
 
 ## Form Submission
 

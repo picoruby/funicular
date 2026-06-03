@@ -6,12 +6,15 @@ module Funicular
       @component = component
       @model_key = model_key
       @options = options
-      @error_class = options[:error_class] || "text-red-600 text-sm mt-1 font-medium"
-      # A light-red fill plus a red ring stay visible regardless of how the
-      # field's own border-color utility is ordered in the stylesheet, giving a
-      # recognizable error highlight without fighting the base border class.
-      @field_error_class = options[:field_error_class] ||
-        "border-red-500 bg-red-50 ring-1 ring-red-500"
+      # Per-form options win, then the global Funicular.configure_forms config,
+      # then the built-in defaults. The defaults are semantic class names whose
+      # CSS the gem ships and injects via picoruby_include_tag, so error styling
+      # works without depending on the host app's CSS pipeline (e.g. Tailwind,
+      # which never scans the gem and so would not generate utility classes
+      # emitted from here).
+      config = Funicular.form_builder_config || {}
+      @error_class = options[:error_class] || config[:error_class] || "funicular-error"
+      @field_error_class = options[:field_error_class] || config[:field_error_class] || "funicular-field-error"
     end
 
     # Generic field builder for input elements
