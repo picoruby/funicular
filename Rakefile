@@ -78,6 +78,35 @@ task :copy_wasm do
   File.chmod(0755, File.join(picorbc_dest, "picorbc.js"))
   File.write(File.join(picorbc_dest, "VERSION"), "#{picorbc_version}\n")
   puts "  copied picorbc (#{picorbc_version})"
+
+  # ------------------------------------------------------------------
+  # 3) PicoRuby runtime for DOM-backed Node.js tests
+  # ------------------------------------------------------------------
+  test_runtime_src = ENV["PICORUBY_WASM_TEST_DIR"] ||
+                     File.expand_path("../../build/picoruby-wasm-test/bin", __dir__)
+  test_runtime_dest = File.join(vendor_root, "picoruby-test-node")
+  test_runtime_files = %w[picoruby.js picoruby.wasm]
+  optional_test_runtime_files = %w[picoruby.wasm.map]
+
+  unless Dir.exist?(test_runtime_src)
+    abort "PicoRuby WASM test runtime not found: #{test_runtime_src}\n" \
+          "Run `MRUBY_CONFIG=picoruby-wasm-test rake all` from the picoruby checkout, " \
+          "or set PICORUBY_WASM_TEST_DIR to the directory containing picoruby.js."
+  end
+
+  FileUtils.rm_rf(test_runtime_dest)
+  FileUtils.mkdir_p(test_runtime_dest)
+  test_runtime_files.each do |fname|
+    src_file = File.join(test_runtime_src, fname)
+    abort "Missing file: #{src_file}" unless File.exist?(src_file)
+    FileUtils.copy_file(src_file, File.join(test_runtime_dest, fname))
+  end
+  optional_test_runtime_files.each do |fname|
+    src_file = File.join(test_runtime_src, fname)
+    FileUtils.copy_file(src_file, File.join(test_runtime_dest, fname)) if File.exist?(src_file)
+  end
+  File.write(File.join(test_runtime_dest, "VERSION"), "#{picoruby_version}\n")
+  puts "  copied picoruby-test-node (#{picoruby_version})"
 end
 
 # Make sure the wasm artifacts are refreshed before the gem is packaged for release.

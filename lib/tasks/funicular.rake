@@ -46,8 +46,8 @@ namespace :funicular do
     end
   end
 
-  desc "Install Funicular debug assets and PicoRuby.wasm artifacts into a Rails app"
-  task install: ["install:debug_assets", "install:wasm"] do
+  desc "Install Funicular debug assets, PicoRuby.wasm artifacts, and test support into a Rails app"
+  task install: ["install:debug_assets", "install:wasm", "install:test"] do
     puts ""
     puts "All Funicular assets installed."
     puts ""
@@ -64,6 +64,10 @@ namespace :funicular do
     puts '         <%= javascript_include_tag "funicular_debug", "data-turbo-track": "reload" %>'
     puts '         <%= stylesheet_link_tag "funicular_debug", "data-turbo-track": "reload" %>'
     puts '       <% end %>'
+    puts ""
+    puts "  4. Run `npm install` if package.json was created or updated."
+    puts "     Client-side Funicular tests live under test/funicular/client/**/*_picotest.rb"
+    puts "     and run through `bin/rails test`."
   end
 
   namespace :install do
@@ -125,6 +129,77 @@ namespace :funicular do
 
         puts "Installed PicoRuby #{variant} build to #{dst}"
       end
+    end
+
+
+    desc "Install Funicular client test support"
+    task :test do
+      require "fileutils"
+      require "json"
+
+      test_dir = Rails.root.join("test")
+      funicular_test_dir = test_dir.join("funicular")
+      client_test_dir = funicular_test_dir.join("client")
+      FileUtils.mkdir_p(client_test_dir)
+
+      test_helper = test_dir.join("test_helper.rb")
+      unless File.exist?(test_helper)
+        File.write(test_helper, <<~TEST_HELPER)
+          ENV["RAILS_ENV"] ||= "test"
+
+          require_relative "../config/environment"
+          require "rails/test_help"
+        TEST_HELPER
+        puts "Installed #{test_helper}"
+      end
+
+      application_test = funicular_test_dir.join("application_test.rb")
+      unless File.exist?(application_test)
+        File.write(application_test, <<~APPLICATION_TEST)
+          require_relative "../test_helper"
+          require "funicular/testing"
+
+          class FunicularApplicationTest < ActiveSupport::TestCase
+            test "client-side Funicular tests" do
+              result = Funicular::Testing.run!(timeout_ms: 10_000)
+              assert result.success?, result.output
+            end
+          end
+        APPLICATION_TEST
+        puts "Installed #{application_test}"
+      end
+
+      keep_file = client_test_dir.join(".keep")
+      FileUtils.touch(keep_file) unless File.exist?(keep_file)
+
+      package_json = Rails.root.join("package.json")
+      package = if File.exist?(package_json)
+                  JSON.parse(File.read(package_json))
+                else
+                  { "private" => true }
+                end
+      package["devDependencies"] ||= {}
+      package["devDependencies"]["jsdom"] ||= "^26.1.0"
+      File.write(package_json, JSON.pretty_generate(package) + "\n")
+      puts "Updated #{package_json}"
+
+      gitignore = Rails.root.join(".gitignore")
+      if File.exist?(gitignore)
+        content = File.read(gitignore)
+        unless content.lines.any? { |line| line.chomp == "/node_modules" }
+          File.open(gitignore, "a") do |f|
+            f.puts
+            f.puts "# Ignore Node dependencies."
+            f.puts "/node_modules"
+          end
+          puts "Updated #{gitignore}"
+        end
+      end
+
+      puts "Installed Funicular test support:"
+      puts "  - #{application_test}"
+      puts "  - #{client_test_dir}"
+      puts "  - jsdom dev dependency in #{package_json}"
     end
   end
 end

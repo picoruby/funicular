@@ -11,6 +11,7 @@
 # Vendored PicoRuby.wasm and picorbc artifacts are populated by
 # `rake funicular:vendor` at gem build time; they ship in the released gem
 # but are not tracked here.
+/lib/funicular/vendor/picoruby-test-node/
 /lib/funicular/vendor/picoruby/
 /lib/funicular/vendor/picorbc/
 private_docs/
