@@ -214,6 +214,34 @@ class VDOMDifferTest < Picotest::Test
     assert_equal('b', removes[0][1].key)
   end
 
+  def test_diff_children_with_keys_removes_unmatched_unkeyed_old
+    # Regression: switching from an unkeyed placeholder to a keyed list must
+    # remove the placeholder. Previously unkeyed unmatched old children were
+    # left in place, so e.g. a "Loading..." node never disappeared once the
+    # keyed message list replaced it.
+    old_element = Funicular::VDOM::Element.new('div', {}, [
+      Funicular::VDOM::Element.new('div', {}) # unkeyed placeholder
+    ])
+    new_element = Funicular::VDOM::Element.new('div', {}, [
+      Funicular::VDOM::Element.new('li', {key: 'a'}),
+      Funicular::VDOM::Element.new('li', {key: 'b'})
+    ])
+    patches = @differ.diff(old_element, new_element)
+    assert_equal(1, patches.length)
+    assert_equal(:keyed_children, patches[0][0])
+    ops = patches[0][1]
+    removes = patches[0][2]
+    # both keyed children inserted
+    assert_equal(:insert, ops[0][0])
+    assert_equal('a', ops[0][2].key)
+    assert_equal(:insert, ops[1][0])
+    assert_equal('b', ops[1][2].key)
+    # the unkeyed placeholder at old_index 0 is removed
+    assert_equal(1, removes.length)
+    assert_equal(0, removes[0][0]) # old_index
+    assert_nil(removes[0][1].key)
+  end
+
   def test_diff_children_with_keys_element_props_changed
     old_element = Funicular::VDOM::Element.new('ul', {}, [
       Funicular::VDOM::Element.new('li', {key: 'a', class: 'foo'}),

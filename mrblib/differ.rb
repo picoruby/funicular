@@ -151,17 +151,18 @@ module Funicular
           end
         end
 
-        # 3. Collect unmatched keyed old children to remove. Unkeyed olds
-        #    that do not match any new positional slot are left untouched
-        #    (matches the prior behavior of diff_children_with_keys).
+        # 3. Collect every unmatched old child to remove, keyed or not. An old
+        #    child that no new child matched (by key, or positionally for
+        #    unkeyed ones) is gone from the new render and must be removed.
+        #    Skipping unkeyed olds here left stale nodes in the DOM, e.g. a
+        #    "Loading..." placeholder that never disappeared once the keyed
+        #    list it was replaced by arrived.
         removes = [] #: Array[[Integer, child_t]]
         old_children.each_with_index do |old_child, old_index|
           next unless old_child.is_a?(VNode)
           next if matched_old_indices[old_index]
-          if old_child.respond_to?(:key) && old_child.key
-            removes << [old_index, old_child]
-            has_change = true
-          end
+          removes << [old_index, old_child]
+          has_change = true
         end
 
         return [] unless has_change
