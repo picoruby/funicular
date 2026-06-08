@@ -192,10 +192,14 @@ module Funicular
     #     div { user.name }
     #   end
     def suspense(fallback:, error: nil, &block)
+      current_children = @current_children
+      child_count_before = current_children&.size
+      result = nil
+
       # Check for any rejected suspense
       rejected_name = self.class.suspense_definitions.keys.find { |name| @suspense_states[name] == :rejected }
       if rejected_name
-        if error
+        result = if error
           error.call(@suspense_errors[rejected_name])
         else
           fallback.call
@@ -203,13 +207,17 @@ module Funicular
       elsif suspense_loading?
         # Check if any suspense is still loading
         # Note: Loading is started in mount(), not here
-        fallback.call
+        result = fallback.call
       else
         # All suspense data loaded, render content
-        block.call
+        result = block.call
       end
-      # Note: We don't add result to @current_children because
-      # the DSL methods inside fallback/block already do that
+
+      if current_children && current_children.size == child_count_before
+        add_child(result)
+      end
+
+      result
     end
 
     # Class methods for styles DSL
