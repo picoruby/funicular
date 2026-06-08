@@ -35,11 +35,15 @@ module Funicular
         manifest = build_manifest
         with_manifest_file(manifest) do |path|
           stdout, stderr, status = Open3.capture3(node, runner_js, path, chdir: app_root)
-          Result.new(status: status, stdout: stdout, stderr: stderr)
+          Result.new(status: status, stdout: strip_ansi(stdout), stderr: strip_ansi(stderr))
         end
       end
 
       private
+
+      def strip_ansi(output)
+        output.gsub(/\e\[[0-9;]*m/, "")
+      end
 
       def rails_root
         Rails.root.to_s if defined?(Rails) && Rails.respond_to?(:root) && Rails.root
