@@ -25,13 +25,14 @@ module Funicular
       models_files + stores_files + components_files + initializer_files
     end
 
-    attr_reader :source_dir, :output_file, :debug_mode, :logger
+    attr_reader :source_dir, :output_file, :debug_mode, :logger, :prepend_source_files
 
-    def initialize(source_dir:, output_file:, debug_mode: false, logger: nil)
+    def initialize(source_dir:, output_file:, debug_mode: false, logger: nil, prepend_source_files: [])
       @source_dir = source_dir
       @output_file = output_file
       @debug_mode = debug_mode
       @logger = logger
+      @prepend_source_files = prepend_source_files.map(&:to_s)
     end
 
     def compile
@@ -92,7 +93,7 @@ module Funicular
         f.puts "ENV['FUNICULAR_ENV'] = '#{Rails.env}'"
       end
 
-      @source_files = all_files
+      @source_files = prepend_source_files + all_files
       @env_file = env_file
     end
 
@@ -108,14 +109,15 @@ module Funicular
       output_dir = File.dirname(output_file)
       FileUtils.mkdir_p(output_dir) unless Dir.exist?(output_dir)
 
-      all_files = @source_files + [@env_file]
+      all_files = @source_files.dup
+      all_files << @env_file if @env_file
       argv = [node_command, PICORBC_JS]
       argv << "-g" if debug_mode
       argv += ["-o", output_file.to_s]
       argv += all_files.map(&:to_s)
 
-      log "Compiling Funicular application..."
-      log "  Source: #{source_dir}"
+      log "Compiling Funicular Ruby..."
+      log "  Source: #{source_dir}" if source_dir
       log "  Input files:"
       all_files.each do |file|
         log "    - #{file}"

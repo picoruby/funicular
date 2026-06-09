@@ -84,12 +84,31 @@ module Funicular
       def source_files
         return [] unless Dir.exist?(source_dir)
 
-        files = if defined?(Funicular::Compiler)
+        files = if rails_app_source_dir? && defined?(Funicular::Compiler)
                   Funicular::Compiler.source_files(source_dir)
                 else
-                  Dir.glob(File.join(source_dir, "**", "*.rb")).sort
+                  generic_source_files
                 end
-        files.reject { |path| File.basename(path) == "initializer.rb" || path.end_with?("_initializer.rb") }
+        app_files = files.reject { |path| File.basename(path) == "initializer.rb" || path.end_with?("_initializer.rb") }
+        plugin_source_files + app_files
+      end
+
+      def rails_app_source_dir?
+        source_dir == File.expand_path(File.join(app_root, "app", "funicular"))
+      end
+
+      def generic_source_files
+        nested = Dir.glob(File.join(source_dir, "*", "**", "*.rb")).sort
+        top_level = Dir.glob(File.join(source_dir, "*.rb")).sort
+        nested + top_level
+      end
+
+      def plugin_source_files
+        return [] unless defined?(Funicular::Plugin::Registry)
+
+        Funicular::Plugin::Registry.new(app_root).local_source_files
+      rescue Funicular::Plugin::Error
+        []
       end
 
       def test_files

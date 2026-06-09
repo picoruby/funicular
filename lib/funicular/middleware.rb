@@ -49,13 +49,17 @@ module Funicular
 
       begin
         Rails.logger.info "Funicular: Source files changed, recompiling..."
-        compiler = Compiler.new(
-          source_dir: @source_dir,
-          output_file: @output_file,
-          debug_mode: true,
-          logger: Rails.logger
-        )
-        compiler.compile
+        plugin_registry = build_plugins
+        if Dir.exist?(@source_dir)
+          compiler = Compiler.new(
+            source_dir: @source_dir,
+            output_file: @output_file,
+            debug_mode: true,
+            logger: Rails.logger,
+            prepend_source_files: plugin_registry.local_source_files
+          )
+          compiler.compile
+        end
         self.class.last_mtime = current_mtime
         invalidate_asset_pipeline_cache
       rescue => e
@@ -90,9 +94,30 @@ module Funicular
 
     def latest_source_mtime
       source_files = Dir.glob(File.join(@source_dir, "**", "*.rb"))
-      return Time.at(0) if source_files.empty?
+      plugin_files = plugin_source_files
+      all_files = source_files + plugin_files
+      return Time.at(0) if all_files.empty?
 
-      source_files.map { |f| File.mtime(f) }.max
+      all_files.map { |f| File.mtime(f) }.max
+    end
+
+    def build_plugins
+      registry = Plugin::Registry.new(Rails.root)
+      return registry if registry.specs.empty?
+
+      registry.validate!
+      registry.sync_assets
+      registry
+    rescue Plugin::Error => e
+      Rails.logger.error "Funicular plugin compilation failed: #{e.message}"
+      Plugin::Registry.new(Rails.root)
+    end
+
+    def plugin_source_files
+      registry = Plugin::Registry.new(Rails.root)
+      registry.local_source_files + registry.specs.flat_map { |spec| spec.css_paths.map(&:to_s) }
+    rescue Plugin::Error
+      []
     end
   end
 end

@@ -4,6 +4,7 @@ namespace :funicular do
   desc "Compile Funicular Ruby files to .mrb format"
   task compile: :environment do
     require "funicular/compiler"
+    require "funicular/plugin"
 
     source_dir = Rails.root.join("app", "funicular")
     output_file = Rails.root.join("app", "assets", "builds", "app.mrb")
@@ -15,12 +16,19 @@ namespace :funicular do
     end
 
     begin
+      plugin_registry = Funicular::Plugin::Registry.new(Rails.root)
+      plugin_registry.validate!
+      plugin_registry.sync_assets
       compiler = Funicular::Compiler.new(
         source_dir: source_dir,
         output_file: output_file,
-        debug_mode: debug_mode
+        debug_mode: debug_mode,
+        prepend_source_files: plugin_registry.local_source_files
       )
       compiler.compile
+    rescue Funicular::Plugin::Error => e
+      puts "ERROR: #{e.message}"
+      exit 1
     rescue Funicular::Compiler::PicorbcMissingError => e
       puts "ERROR: #{e.message}"
       exit 1
