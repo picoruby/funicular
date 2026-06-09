@@ -7,13 +7,59 @@ require "tempfile"
 module Funicular
   module Testing
     class NodeRunner
-      Result = Struct.new(:status, :stdout, :stderr, keyword_init: true) do
+      RESULT_MARKER = "__FUNICULAR_TEST_RESULTS_JSON__="
+
+      Result = Struct.new(:status, :stdout, :stderr, :picotest_results, keyword_init: true) do
         def success?
           status.success?
         end
 
         def output
           [stdout, stderr].reject(&:empty?).join("\n")
+        end
+
+        def picotest_assertion_count
+          each_picotest_result.sum do |_name, result|
+            result.fetch("success_count", 0) +
+              Array(result["failures"]).size +
+              Array(result["exceptions"]).size +
+              Array(result["crashes"]).size
+          end
+        end
+
+        def picotest_test_count
+          picotest_assertion_count + picotest_skip_count
+        end
+
+        def picotest_failure_count
+          each_picotest_result.sum { |_name, result| Array(result["failures"]).size }
+        end
+
+        def picotest_exception_count
+          each_picotest_result.sum { |_name, result| Array(result["exceptions"]).size }
+        end
+
+        def picotest_crash_count
+          each_picotest_result.sum { |_name, result| Array(result["crashes"]).size }
+        end
+
+        def picotest_skip_count
+          each_picotest_result.sum { |_name, result| result.fetch("skipped_count", 0) }
+        end
+
+        def picotest_summary
+          "Funicular picotest: #{picotest_test_count} tests, " \
+            "#{picotest_assertion_count} assertions, " \
+            "#{picotest_failure_count} failures, " \
+            "#{picotest_exception_count} exceptions, " \
+            "#{picotest_crash_count} crashes, " \
+            "#{picotest_skip_count} skips"
+        end
+
+        private
+
+        def each_picotest_result
+          (picotest_results || {}).each
         end
       end
 
@@ -35,7 +81,10 @@ module Funicular
         manifest = build_manifest
         with_manifest_file(manifest) do |path|
           stdout, stderr, status = Open3.capture3(node, runner_js, path, chdir: app_root)
-          Result.new(status: status, stdout: strip_ansi(stdout), stderr: strip_ansi(stderr))
+          stdout = strip_ansi(stdout)
+          stderr = strip_ansi(stderr)
+          results, stdout = extract_picotest_results(stdout)
+          Result.new(status: status, stdout: stdout, stderr: stderr, picotest_results: results)
         end
       end
 
@@ -43,6 +92,19 @@ module Funicular
 
       def strip_ansi(output)
         output.gsub(/\e\[[0-9;]*m/, "")
+      end
+
+      def extract_picotest_results(output)
+        results = {}
+        lines = output.lines.reject do |line|
+          next false unless line.start_with?(RESULT_MARKER)
+
+          results = JSON.parse(line.delete_prefix(RESULT_MARKER))
+          true
+        rescue JSON::ParserError
+          false
+        end
+        [results, lines.join]
       end
 
       def rails_root
