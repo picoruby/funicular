@@ -67,6 +67,28 @@ module Funicular
         raw("<script>window.__FUNICULAR_STATE__ = #{safe};</script>")
       end
 
+      # Renders registered Funicular plugin browser assets.
+      #
+      # Plugins are gems in the Gemfile :funicular group. Their Ruby sources
+      # are compiled into app.mrb before the application sources; this helper
+      # emits browser assets such as CSS.
+      def funicular_plugin_include_tags
+        registry = Funicular::Plugin::Registry.new(Rails.root)
+        tags = registry.asset_entries.map do |entry|
+          logical_path = entry.fetch("logical_path")
+          if entry["type"] == "css"
+            stylesheet_link_tag(logical_path, "data-turbo-track": "reload")
+          else
+            tag.script("", type: "application/x-mrb", src: asset_path(logical_path), data: { funicular_plugin: true })
+          end
+        end
+        safe_join(tags)
+      rescue Funicular::Plugin::Error => e
+        raise e if Rails.env.production?
+
+        tag.comment("Funicular plugin assets skipped: #{e.message}")
+      end
+
       private
 
       def picoruby_src_for(source)
