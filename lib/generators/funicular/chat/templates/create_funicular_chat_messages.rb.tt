@@ -1,0 +1,10 @@
+class CreateFunicularChatMessages < ActiveRecord::Migration<%= migration_version %>
+  def change
+    create_table :funicular_chat_messages do |t|
+      t.string :name, null: false
+      t.text :body, null: false
+
+      t.timestamps
+    end
+  end
+end

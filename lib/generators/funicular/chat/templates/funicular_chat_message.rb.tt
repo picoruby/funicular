@@ -1,0 +1,13 @@
+class FunicularChatMessage < ApplicationRecord
+  validates :name, presence: true, length: { maximum: 40 }
+  validates :body, presence: true, length: { maximum: 500 }
+
+  def as_json(*)
+    {
+      id: id,
+      name: name,
+      body: body,
+      created_at: created_at.iso8601
+    }
+  end
+end

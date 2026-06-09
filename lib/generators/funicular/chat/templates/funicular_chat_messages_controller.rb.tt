@@ -1,0 +1,23 @@
+class FunicularChatMessagesController < ApplicationController
+  def index
+    messages = FunicularChatMessage.order(:created_at).last(50)
+    render json: messages
+  end
+
+  def create
+    message = FunicularChatMessage.new(message_params)
+
+    if message.save
+      ActionCable.server.broadcast("funicular_chat", message.as_json)
+      render json: message, status: :created
+    else
+      render json: { errors: message.errors.full_messages }, status: :unprocessable_entity
+    end
+  end
+
+  private
+
+  def message_params
+    params.require(:message).permit(:name, :body)
+  end
+end

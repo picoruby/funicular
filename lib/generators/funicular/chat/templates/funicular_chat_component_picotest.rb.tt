@@ -1,0 +1,64 @@
+class FunicularChatComponentTest < Funicular::Testing::DOMTest
+  def setup
+    super
+    Funicular::HTTP.__test_messages = [
+      { "id" => 1, "name" => "Alice", "body" => "Hello from Rails" }
+    ]
+  end
+
+  def test_renders_loaded_messages
+    mount FunicularChatComponent
+    drain
+
+    assert_text "Funicular Chat"
+    assert_text "Hello from Rails"
+  end
+end
+
+module Funicular
+  module HTTP
+    class << self
+      attr_accessor :__test_messages
+
+      def get(url, &block)
+        block.call(Response.new(200, __test_messages))
+      end
+
+      def post(url, body = nil, &block)
+        block.call(Response.new(201, { "id" => 2, "name" => body[:message][:name], "body" => body[:message][:body] }))
+      end
+    end
+  end
+
+  module Cable
+    class TestConsumer
+      attr_reader :subscriptions
+
+      def initialize
+        @subscriptions = TestSubscriptions.new
+      end
+
+      def cleanup
+      end
+    end
+
+    class TestSubscriptions
+      def create(params, &block)
+        TestSubscription.new
+      end
+    end
+
+    class TestSubscription
+      def on_connected(&block)
+        block.call
+      end
+
+      def unsubscribe
+      end
+    end
+
+    def self.create_consumer(url)
+      TestConsumer.new
+    end
+  end
+end

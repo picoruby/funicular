@@ -1,0 +1,6 @@
+<%% content_for :head do %>
+  <%%= stylesheet_link_tag "funicular_chat", "data-turbo-track": "reload" %>
+<%% end %>
+
+<%%= funicular_app_container %>
+<script type="application/x-mrb" src="<%%= asset_path("app.mrb") %>"></script>

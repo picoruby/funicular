@@ -1,0 +1,135 @@
+class FunicularChatComponent < Funicular::Component
+  styles do
+    shell "funicular-chat"
+    panel "funicular-chat__panel"
+    header "funicular-chat__header"
+    title "funicular-chat__title"
+    subtitle "funicular-chat__subtitle"
+    messages "funicular-chat__messages"
+    empty "funicular-chat__empty"
+    message "funicular-chat__message"
+    name "funicular-chat__message-name"
+    body "funicular-chat__message-body"
+    form "funicular-chat__form"
+    row "funicular-chat__form-row"
+    input "funicular-chat__input"
+    button base: "funicular-chat__button",
+           variants: {
+             enabled: "funicular-chat__button--enabled",
+             disabled: "funicular-chat__button--disabled"
+           }
+    error "funicular-chat__error"
+  end
+
+  def initialize_state
+    {
+      name: "Rails developer",
+      body: "",
+      messages: [],
+      error: nil,
+      sending: false,
+      connected: false
+    }
+  end
+
+  def component_mounted
+    load_messages
+    subscribe
+  end
+
+  def component_will_unmount
+    @subscription.unsubscribe if @subscription
+    @consumer.cleanup if @consumer
+  end
+
+  def load_messages
+    Funicular::HTTP.get("/funicular_chat/messages") do |response|
+      if response.ok
+        patch(messages: response.data)
+      else
+        patch(error: response.error_message || "Failed to load messages")
+      end
+    end
+  end
+
+  def subscribe
+    @consumer = Funicular::Cable.create_consumer("/cable")
+    @subscription = @consumer.subscriptions.create(channel: "FunicularChatChannel") do |message|
+      patch(messages: state.messages + [message])
+    end
+    @subscription.on_connected do
+      patch(connected: true)
+    end
+  end
+
+  def update_name(event)
+    patch(name: event.target[:value].to_s)
+  end
+
+  def update_body(event)
+    patch(body: event.target[:value].to_s)
+  end
+
+  def send_message(event = nil)
+    event.preventDefault if event
+    return if state.sending
+
+    name = state.name.to_s.strip
+    body = state.body.to_s.strip
+    if name == "" || body == ""
+      patch(error: "Name and message are required")
+      return
+    end
+
+    patch(sending: true, error: nil)
+    Funicular::HTTP.post(
+      "/funicular_chat/messages",
+      { message: { name: name, body: body } }
+    ) do |response|
+      if response.ok
+        patch(body: "", sending: false)
+      else
+        patch(error: response.error_message || "Failed to send message", sending: false)
+      end
+    end
+  end
+
+  def render
+    div(class: s.shell) do
+      div(class: s.panel) do
+        div(class: s.header) do
+          h1(class: s.title) { "Funicular Chat" }
+          p(class: s.subtitle) do
+            state.connected ? "Realtime Ruby chat over ActionCable" : "Connecting..."
+          end
+        end
+
+        div(class: s.messages) do
+          if state.messages.empty?
+            p(class: s.empty) { "No messages yet." }
+          else
+            state.messages.each do |message|
+              div(class: s.message, key: message["id"]) do
+                div(class: s.name) { message["name"] }
+                div(class: s.body) { message["body"] }
+              end
+            end
+          end
+        end
+
+        form(onsubmit: :send_message, class: s.form) do
+          if state.error
+            div(class: s.error) { state.error }
+          end
+          div(class: s.row) do
+            input(type: "text", value: state.name, placeholder: "Name", oninput: :update_name, class: s.input)
+            input(type: "text", value: state.body, placeholder: "Message", oninput: :update_body, class: s.input)
+            button(type: "submit", class: s.button(state.sending ? :disabled : :enabled), disabled: state.sending) do
+              state.sending ? "Sending..." : "Send"
+            end
+          end
+        end
+      end
+    end
+  end
+end

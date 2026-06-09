@@ -1,0 +1,141 @@
+.funicular-chat {
+  min-height: 100vh;
+  background: #f3f4f6;
+  padding: 1.5rem;
+}
+
+.funicular-chat__panel {
+  max-width: 48rem;
+  margin: 0 auto;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.funicular-chat__header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.funicular-chat__title {
+  margin: 0;
+  color: #111827;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.funicular-chat__subtitle {
+  margin: 0.25rem 0 0;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.funicular-chat__messages {
+  height: 24rem;
+  overflow-y: auto;
+  padding: 1.25rem;
+  background: #f9fafb;
+}
+
+.funicular-chat__empty {
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.funicular-chat__message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.375rem;
+}
+
+.funicular-chat__message-name {
+  flex: 0 0 auto;
+  min-width: 7rem;
+  color: #1f2937;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.funicular-chat__message-body {
+  min-width: 0;
+  color: #374151;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.funicular-chat__form {
+  padding: 1.25rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.funicular-chat__form-row {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.funicular-chat__input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  font: inherit;
+}
+
+.funicular-chat__input:focus {
+  border-color: #2563eb;
+  outline: 2px solid rgba(37, 99, 235, 0.25);
+}
+
+.funicular-chat__button {
+  flex: 0 0 auto;
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: 0.375rem;
+  font: inherit;
+  font-weight: 700;
+}
+
+.funicular-chat__button--enabled {
+  color: #fff;
+  background: #2563eb;
+  cursor: pointer;
+}
+
+.funicular-chat__button--enabled:hover {
+  background: #1d4ed8;
+}
+
+.funicular-chat__button--disabled {
+  color: #fff;
+  background: #2563eb;
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.funicular-chat__error {
+  margin-bottom: 0.75rem;
+  color: #b91c1c;
+  font-size: 0.875rem;
+}
+
+@media (max-width: 640px) {
+  .funicular-chat {
+    padding: 0.75rem;
+  }
+
+  .funicular-chat__form-row {
+    flex-direction: column;
+  }
+
+  .funicular-chat__message-name {
+    min-width: 5rem;
+  }
+}

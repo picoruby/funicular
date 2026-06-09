@@ -1,0 +1,5 @@
+class FunicularChatChannel < ApplicationCable::Channel
+  def subscribed
+    stream_from "funicular_chat"
+  end
+end

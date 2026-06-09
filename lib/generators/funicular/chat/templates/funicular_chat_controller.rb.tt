@@ -1,0 +1,4 @@
+class FunicularChatController < ApplicationController
+  def show
+  end
+end

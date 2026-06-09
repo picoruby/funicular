@@ -1,0 +1,4 @@
+Funicular.start(container: "app") do |router|
+  router.get("/funicular_chat", to: FunicularChatComponent, as: "funicular_chat")
+  router.set_default("/funicular_chat")
+end
