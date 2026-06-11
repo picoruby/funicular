@@ -65,7 +65,8 @@ Gem::Specification.new do |spec|
       seamless asset pipeline support.
         bin/rails funicular:install
 
-    For more information: https://github.com/picoruby/funicular
+    For Web App Developers: https://picoruby.org/funicular
+    For Funicular Contributors: https://github.com/picoruby/funicular
 
   MSG
 
