@@ -53,6 +53,7 @@ module Funicular
 
       # Build field attributes
       attrs = {
+        name: field_options[:name] || field_key,
         type: field_type,
         value: value,
         oninput: on_input
@@ -117,6 +118,7 @@ module Funicular
       end
 
       attrs = {
+        name: options[:name] || field_key,
         value: value,
         oninput: on_input
       }.merge(options.reject { |k, _| k == :class })
@@ -143,6 +145,7 @@ module Funicular
       end
 
       attrs = {
+        name: options[:name] || field_key,
         type: "checkbox",
         checked: value,
         onchange: on_change
@@ -181,6 +184,7 @@ module Funicular
       end
 
       attrs = {
+        name: options[:name] || field_key,
         onchange: on_change
       }.merge(options.reject { |k, _| k == :class })
 
@@ -223,6 +227,7 @@ module Funicular
       on_change = custom_handler || default_handler
 
       attrs = {
+        name: options[:name] || field_key,
         type: "file",
         onchange: on_change
       }.merge(options)

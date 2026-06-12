@@ -854,20 +854,7 @@ module Funicular
         ->(event) do
           event.preventDefault
 
-          # Collect form data from state
-          model_data = state.send(model_key)
-          form_data = if model_data.is_a?(Hash)
-            model_data
-          elsif model_data.respond_to?(:instance_variables)
-            data = {} #: Hash[Symbol, untyped]
-            model_data.instance_variables.each do |var|
-              key = var.to_s.sub('@', '').to_sym
-              data[key] = model_data.instance_variable_get(var)
-            end
-            data
-          else
-            {} #: Hash[Symbol, untyped]
-          end
+          form_data = collect_form_data(event, model_key)
 
           # Call the submit handler (Symbol, Method, or Proc)
           case on_submit
@@ -889,6 +876,79 @@ module Funicular
       form({ onsubmit: submit_handler, class: form_class }.merge(options)) do
         builder = Funicular::FormBuilder.new(self, model_key, options)
         block.call(builder)
+      end
+    end
+
+    def collect_form_data(event, model_key)
+      form_data = collect_dom_form_data(event)
+      return form_data unless form_data.empty?
+
+      collect_state_form_data(model_key)
+    end
+
+    def collect_dom_form_data(event)
+      form = event_target(event)
+      return {} unless form
+
+      elements = form[:elements]
+      return {} unless elements
+
+      data = {} #: Hash[Symbol, untyped]
+      length_value = elements[:length]
+      length = length_value ? length_value.to_i : 0
+      i = 0
+      while i < length
+        field = elements[i]
+        add_form_field_value(data, field) if field
+        i += 1
+      end
+      data
+    end
+
+    def event_target(event)
+      target = nil
+      begin
+        target = event[:target]
+      rescue
+        target = nil
+      end
+      return target if target
+
+      event.target if event.respond_to?(:target)
+    end
+
+    def add_form_field_value(data, field)
+      name = field[:name].to_s
+      return if name.empty?
+
+      type = field[:type].to_s.downcase
+      return if %w[submit button reset].include?(type)
+      return if type == "radio" && !field[:checked]
+
+      value = if type == "checkbox"
+        field[:checked]
+      elsif type == "file"
+        field[:files]
+      else
+        field[:value]
+      end
+
+      data[name.to_sym] = value
+    end
+
+    def collect_state_form_data(model_key)
+      model_data = state.send(model_key)
+      if model_data.is_a?(Hash)
+        model_data
+      elsif model_data.respond_to?(:instance_variables)
+        data = {} #: Hash[Symbol, untyped]
+        model_data.instance_variables.each do |var|
+          key = var.to_s.sub('@', '').to_sym
+          data[key] = model_data.instance_variable_get(var)
+        end
+        data
+      else
+        {} #: Hash[Symbol, untyped]
       end
     end
 
