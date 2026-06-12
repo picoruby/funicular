@@ -117,13 +117,14 @@ module Funicular
       end
 
       attrs = {
+        value: value,
         oninput: on_input
       }.merge(options.reject { |k, _| k == :class })
 
       attrs[:class] = css_class unless css_class.empty?
 
       @component.div do
-        @component.textarea(attrs) { value }
+        @component.textarea(attrs)
         if has_error
           @component.div(class: @error_class) { error_message }
         end

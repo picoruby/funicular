@@ -187,8 +187,10 @@ module Funicular
           if BOOLEAN_ATTRIBUTES.include?(key_str)
             if value.nil? || value.to_s == "false"
               element.removeAttribute(key_str)
+              element[key_str] = false
             else
               element.setAttribute(key_str, key_str)
+              element[key_str] = true
             end
           elsif value.nil?
             element.removeAttribute(key_str)
@@ -232,8 +234,10 @@ module Funicular
               element[:value] = value.to_s
             elsif BOOLEAN_ATTRIBUTES.include?(key_str)
               if value.nil? || value.to_s == "false"
+                element[key_str] = false
               else
                 element.setAttribute(key_str, key_str)
+                element[key_str] = true
               end
             else
               element.setAttribute(key_str, value.to_s)
