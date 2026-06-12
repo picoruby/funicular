@@ -88,6 +88,8 @@ module Funicular
       end
 
       # Create a small temp file for ENV setting
+      output_dir = File.dirname(output_file)
+      FileUtils.mkdir_p(output_dir) unless Dir.exist?(output_dir)
       env_file = "#{output_file}.env.rb"
       File.open(env_file, "w") do |f|
         f.puts "ENV['FUNICULAR_ENV'] = '#{Rails.env}'"
@@ -106,9 +108,6 @@ module Funicular
     end
 
     def compile_to_mrb
-      output_dir = File.dirname(output_file)
-      FileUtils.mkdir_p(output_dir) unless Dir.exist?(output_dir)
-
       all_files = @source_files.dup
       all_files << @env_file if @env_file
       argv = [node_command, PICORBC_JS]
