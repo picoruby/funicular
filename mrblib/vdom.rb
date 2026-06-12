@@ -132,8 +132,10 @@ module Funicular
             # Handle boolean attributes
             if value.nil? || value.to_s == "false"
               # Do not set attribute (leave it absent)
+              dom_node[key_str] = false
             else
               dom_node.setAttribute(key_str, key_str)
+              dom_node[key_str] = true
             end
           else
             # Attribute

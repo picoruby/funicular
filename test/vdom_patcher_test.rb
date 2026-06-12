@@ -171,6 +171,38 @@ class VDOMPatcherTest < Picotest::Test
     assert_nil(element.attributes['class'])
   end
 
+  def test_update_props_sets_boolean_property
+    element = @doc.createElement('button')
+    patches = [[:props, {disabled: true}]]
+
+    @patcher.apply(element, patches)
+
+    assert_equal('disabled', element.attributes['disabled'])
+    assert_equal(true, element.properties['disabled'])
+  end
+
+  def test_update_props_clears_boolean_property
+    element = @doc.createElement('button')
+    element.setAttribute('disabled', 'disabled')
+    element[:disabled] = true
+    patches = [[:props, {disabled: false}]]
+
+    @patcher.apply(element, patches)
+
+    assert_nil(element.attributes['disabled'])
+    assert_equal(false, element.properties['disabled'])
+  end
+
+  def test_update_props_sets_textarea_value_property
+    element = @doc.createElement('textarea')
+    patches = [[:props, {value: 'hello'}]]
+
+    @patcher.apply(element, patches)
+
+    assert_equal('hello', element.properties['value'])
+    assert_nil(element.attributes['value'])
+  end
+
   def test_update_props_skip_event_handlers
     element = @doc.createElement('div')
     patches = [[:props, {onclick: 'handler', class: 'foo'}]]
@@ -200,6 +232,23 @@ class VDOMPatcherTest < Picotest::Test
     assert(element.is_a?(MockElement))
     assert_equal('div', element.tag_name)
     assert_equal('foo', element.attributes['class'])
+    assert_equal(0, element.children.length)
+  end
+
+  def test_create_element_sets_boolean_property
+    vnode = Funicular::VDOM::Element.new('button', {disabled: true})
+    element = @patcher.send(:create_element, vnode)
+
+    assert_equal('disabled', element.attributes['disabled'])
+    assert_equal(true, element.properties['disabled'])
+  end
+
+  def test_create_element_sets_textarea_value_property
+    vnode = Funicular::VDOM::Element.new('textarea', {value: 'hello'})
+    element = @patcher.send(:create_element, vnode)
+
+    assert_equal('hello', element.properties['value'])
+    assert_nil(element.attributes['value'])
     assert_equal(0, element.children.length)
   end
 
