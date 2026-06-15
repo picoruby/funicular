@@ -1,19 +1,21 @@
 class FormForTest < Picotest::Test
-  class FormComponent < Funicular::Component
-    attr_reader :submitted
+  def component_class
+    Class.new(Funicular::Component) do
+      attr_reader :submitted
 
-    def initialize_state
-      { comment: { body: "" } }
-    end
+      def initialize_state
+        { comment: { body: "" } }
+      end
 
-    def handle_submit(data)
-      @submitted = data
-    end
+      def handle_submit(data)
+        @submitted = data
+      end
 
-    def render
-      form_for(:comment, on_submit: :handle_submit) do |f|
-        f.textarea(:body)
-        f.submit("Post")
+      def render
+        form_for(:comment, on_submit: :handle_submit) do |f|
+          f.textarea(:body)
+          f.submit("Post")
+        end
       end
     end
   end
@@ -72,7 +74,7 @@ class FormForTest < Picotest::Test
   end
 
   def test_form_for_submits_current_dom_values
-    component = FormComponent.new
+    component = component_class.new
     vnode = component.build_vdom
     event = SubmitEvent.new(
       FormElement.new([
@@ -87,7 +89,7 @@ class FormForTest < Picotest::Test
   end
 
   def test_form_builder_fields_include_names
-    component = FormComponent.new
+    component = component_class.new
     vnode = component.build_vdom
     textarea = vnode.children[0].children[0]
 
