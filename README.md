@@ -57,22 +57,22 @@ The others are common resources.
 
 User documentation is hosted on **picoruby.org**:
 
-- [Getting Started with Funicular](https://picoruby.org/funicular-getting-started) — a standalone, no-Rails tutorial
-- [Funicular on Rails](https://picoruby.org/funicular-on-rails) — installation, the asset pipeline, and a feature-by-feature tutorial plus reference (components, routing, forms, data fetching, stores, realtime, SSR, styling, debugging)
+- [Getting Started with Funicular](https://picoruby.org/funicular) — a standalone, no-Rails tutorial
+- [Funicular on Rails](https://picoruby.org/funicular-on-rails-quick-chat) — quick tutorial, installation, the asset pipeline, and a feature-by-feature tutorial plus reference (components, routing, forms and validation, data fetching, stores, SSR, styling, debugging)
 
 For contributors working on the gem itself, see [docs/architecture.md](docs/architecture.md).
 
 ## Development
 
 This repository is a submodule of [picoruby/picoruby](https://github.com/picoruby/picoruby).
-Do not check it out standalone. Instead, clone the parent repository and work from there:
+Do not check it out as a standalone. Instead, clone the parent repository and work from there:
 
 ```console
 git clone --recurse-submodules https://github.com/picoruby/picoruby.git
 cd picoruby/mrbgems/picoruby-funicular
 ```
 
-The CRubyGem side (`lib/`, `funicular.gemspec`, etc.) can be developed and tested independently inside that directory, but `rake copy_wasm` — which vendorsthe PicoRuby.wasm and picorbc wasm artifacts into the gem — relies on sibling directories within the picoruby repository (`mrbgems/picoruby-wasm/npm/`).
+The CRubyGem side (`lib/`, `funicular.gemspec`, etc.) can be developed and tested independently inside that directory, but `rake copy_wasm` — which vendors the PicoRuby.wasm and picorbc wasm artifacts into the gem — relies on sibling directories within the picoruby repository (`mrbgems/picoruby-wasm/npm/`).
 Running it from a standalone checkout will fail.
 
 ## Testing
