@@ -100,6 +100,12 @@ module Funicular
     private def collect_child_components: (VDOM::VNode | VDOM::Text | nil vnode) -> void
     private def collect_child_components_recursive: (VDOM::VNode | VDOM::Text | nil vnode, Array[Component] components) -> void
 
+    private def collect_form_data: (JS::Event event, Symbol model_key) -> Hash[Symbol, untyped]
+    private def collect_dom_form_data: (JS::Event event) -> Hash[Symbol, untyped]
+    private def collect_state_form_data: (Symbol model_key) -> Hash[Symbol, untyped]
+    private def event_target: (JS::Event event) -> untyped
+    private def add_form_field_value: (Hash[Symbol, untyped] data, JS::Element field) -> void
+
     # Hydration helpers
     private def hydration_match?: (untyped vnode, untyped dom_element) -> bool
     private def warn_hydration_mismatch: (untyped vnode, untyped dom_element) -> void
