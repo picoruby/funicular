@@ -3,6 +3,8 @@ MRuby::Gem::Specification.new('picoruby-funicular') do |spec|
   spec.author  = 'HASUMI Hitoshi'
   spec.summary = 'Browser application framework with VDOM for PicoRuby.wasm'
 
+  spec.test_rbfiles = build.wasm? ? Dir["#{spec.dir}/test/**/*.rb"].sort : []
+
   unless ENV['TEST_TASK']
     spec.add_dependency 'picoruby-wasm'
   end
