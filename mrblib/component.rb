@@ -256,7 +256,7 @@ module Funicular
     end
 
     def self.suspense_definitions
-      @suspense_definitions ||= {} # steep:ignore UnannotatedEmptyCollection
+      @suspense_definitions ||= {}
     end
 
     # Instance method to access styles

@@ -152,16 +152,17 @@ module Funicular
 
         result = {} #: Hash[String, String]
         component.instance_variables.each do |var|
-          next if var == :@state
-          next if var.to_s.start_with?('@__debug')
-          if var == :@vdom || var == :@child_components
-            result[var.to_s] = "<omitted>"
+          name = var.to_s
+          next if name == '@state'
+          next if name.start_with?('@__debug')
+          if name == '@vdom' || name == '@child_components'
+            result[name] = "<omitted>"
             next
           end
           begin
-            result[var.to_s] = component.instance_variable_get(var).inspect
+            result[name] = component.instance_variable_get(var).inspect
           rescue
-            result[var.to_s] = "<error inspecting value>"
+            result[name] = "<error inspecting value>"
           end
         end
         JSON.generate(result)
