@@ -7,9 +7,9 @@ module Funicular
     class NodeNotFoundError < StandardError; end
     class PicorbcMissingError < StandardError; end
 
-    # picorbc.js + picorbc.wasm bundled into the gem at build time by `rake copy_wasm`.
+    # mrbc-prism.js + picorbc.wasm bundled into the gem at build time by `rake copy_wasm`.
     PICORBC_DIR = File.expand_path("vendor/picorbc", __dir__)
-    PICORBC_JS  = File.join(PICORBC_DIR, "picorbc.js")
+    PICORBC_JS  = File.join(PICORBC_DIR, "mrbc-prism.js")
 
     # Ordered list of application source files under app/funicular/.
     # Order matters: models -> stores -> components -> initializer, so that
@@ -48,7 +48,7 @@ module Funicular
         raise PicorbcMissingError, <<~ERROR
           Vendored picorbc not found at #{PICORBC_JS}.
 
-          The funicular gem ships picorbc.js + picorbc.wasm inside the gem
+          The funicular gem ships mrbc-prism.js + picorbc.wasm inside the gem
           package. This file is missing, which likely means the gem was not
           installed correctly. Try reinstalling:
 

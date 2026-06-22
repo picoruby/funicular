@@ -66,7 +66,7 @@ task :copy_wasm do
   abort "Missing #{picorbc_src}" unless Dir.exist?(picorbc_src)
 
   picorbc_version = JSON.parse(File.read(File.join(npm_root, "picorbc", "package.json"))).fetch("version")
-  picorbc_files = %w[picorbc.js picorbc.wasm]
+  picorbc_files = %w[mrbc-prism.js mrbc-prism.wasm]
 
   FileUtils.rm_rf(picorbc_dest)
   FileUtils.mkdir_p(picorbc_dest)
@@ -75,7 +75,7 @@ task :copy_wasm do
     abort "Missing file: #{src_file}" unless File.exist?(src_file)
     FileUtils.copy_file(src_file, File.join(picorbc_dest, fname))
   end
-  File.chmod(0755, File.join(picorbc_dest, "picorbc.js"))
+  File.chmod(0755, File.join(picorbc_dest, "mrbc-prism.js"))
   File.write(File.join(picorbc_dest, "VERSION"), "#{picorbc_version}\n")
   puts "  copied picorbc (#{picorbc_version})"
 
