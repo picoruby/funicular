@@ -78,7 +78,7 @@ Running it from a standalone checkout will fail.
 ## Testing
 
 - CRubygem (Rails integration) test: `rake test` in this repository
-- PicoGem Funicular test: `rake test:gems:picoruby[picoruby-funicular]` in picoruby where mrbgems/picoruby-funicular exists as a submodule
+- PicoGem Funicular test: `rake test:gems:wasm[picoruby-funicular]` in picoruby where mrbgems/picoruby-funicular exists as a submodule
 
 ## Contributing
 
