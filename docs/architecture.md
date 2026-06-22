@@ -53,7 +53,7 @@ with `Patcher`. Event handlers are native DOM listeners, re-bound on each render
 
 ## `lib/` Rails integration
 
-- `compiler.rb` -- runs the vendored `picorbc` (WebAssembly, via Node.js) to
+- `compiler.rb` -- runs the vendored `mrbc` (WebAssembly, via Node.js) to
   compile `app/funicular/**/*.rb` (models, then stores, then components, then
   initializers) into a single `app/assets/builds/app.mrb`. `-g` is added in
   development for debug symbols.
@@ -73,12 +73,12 @@ with `Patcher`. Event handlers are native DOM listeners, re-bound on each render
 ## Vendored artifacts
 
 `rake copy_wasm` (run by `rake build`) copies the PicoRuby.wasm runtime and the
-`picorbc` compiler from the sibling `mrbgems/picoruby-wasm/npm/` directory into
+`mrbc` compiler from the sibling `mrbgems/picoruby-wasm/npm/` directory into
 `lib/funicular/vendor/`:
 
 - `vendor/picoruby/dist/` -- production runtime build
 - `vendor/picoruby/debug/` -- development runtime build (debug symbols)
-- `vendor/picorbc/` -- the mruby compiler (run through Node.js)
+- `vendor/mrbc/` -- the mruby compiler (run through Node.js)
 
 Because `copy_wasm` reads sibling directories inside the picoruby repository, it
 only works from within that checkout -- see Development below.

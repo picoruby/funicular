@@ -13,5 +13,5 @@
 # but are not tracked here.
 /lib/funicular/vendor/picoruby-test-node/
 /lib/funicular/vendor/picoruby/
-/lib/funicular/vendor/picorbc/
+/lib/funicular/vendor/mrbc/
 private_docs/

@@ -29,7 +29,7 @@ namespace :funicular do
     rescue Funicular::Plugin::Error => e
       puts "ERROR: #{e.message}"
       exit 1
-    rescue Funicular::Compiler::PicorbcMissingError => e
+    rescue Funicular::Compiler::MrbcMissingError => e
       puts "ERROR: #{e.message}"
       exit 1
     rescue => e

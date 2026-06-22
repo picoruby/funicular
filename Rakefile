@@ -11,7 +11,7 @@ end
 
 task default: :test
 
-desc "Copy picoruby and picorbc wasm artifacts from picoruby-wasm into the gem"
+desc "Copy picoruby and mrbc wasm artifacts from picoruby-wasm into the gem"
 task :copy_wasm do
   require "fileutils"
   require "json"
@@ -59,25 +59,25 @@ task :copy_wasm do
   puts "  wrote picoruby/VERSION (#{picoruby_version})"
 
   # ------------------------------------------------------------------
-  # 2) picorbc compiler (node CLI, run by Funicular::Compiler)
+  # 2) mrbc compiler (node CLI, run by Funicular::Compiler)
   # ------------------------------------------------------------------
-  picorbc_src  = File.join(npm_root, "picorbc", "debug")
-  picorbc_dest = File.join(vendor_root, "picorbc")
-  abort "Missing #{picorbc_src}" unless Dir.exist?(picorbc_src)
+  mrbc_src  = File.join(npm_root, "mrbc", "debug")
+  mrbc_dest = File.join(vendor_root, "mrbc")
+  abort "Missing #{mrbc_src}" unless Dir.exist?(mrbc_src)
 
-  picorbc_version = JSON.parse(File.read(File.join(npm_root, "picorbc", "package.json"))).fetch("version")
-  picorbc_files = %w[picorbc.js picorbc.wasm]
+  mrbc_version = JSON.parse(File.read(File.join(npm_root, "mrbc", "package.json"))).fetch("version")
+  mrbc_files = %w[mrbc.js mrbc.wasm]
 
-  FileUtils.rm_rf(picorbc_dest)
-  FileUtils.mkdir_p(picorbc_dest)
-  picorbc_files.each do |fname|
-    src_file = File.join(picorbc_src, fname)
+  FileUtils.rm_rf(mrbc_dest)
+  FileUtils.mkdir_p(mrbc_dest)
+  mrbc_files.each do |fname|
+    src_file = File.join(mrbc_src, fname)
     abort "Missing file: #{src_file}" unless File.exist?(src_file)
-    FileUtils.copy_file(src_file, File.join(picorbc_dest, fname))
+    FileUtils.copy_file(src_file, File.join(mrbc_dest, fname))
   end
-  File.chmod(0755, File.join(picorbc_dest, "picorbc.js"))
-  File.write(File.join(picorbc_dest, "VERSION"), "#{picorbc_version}\n")
-  puts "  copied picorbc (#{picorbc_version})"
+  File.chmod(0755, File.join(mrbc_dest, "mrbc.js"))
+  File.write(File.join(mrbc_dest, "VERSION"), "#{mrbc_version}\n")
+  puts "  copied mrbc (#{mrbc_version})"
 
   # ------------------------------------------------------------------
   # 3) PicoRuby runtime for DOM-backed Node.js tests

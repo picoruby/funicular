@@ -72,7 +72,7 @@ git clone --recurse-submodules https://github.com/picoruby/picoruby.git
 cd picoruby/mrbgems/picoruby-funicular
 ```
 
-The CRubyGem side (`lib/`, `funicular.gemspec`, etc.) can be developed and tested independently inside that directory, but `rake copy_wasm` — which vendors the PicoRuby.wasm and picorbc wasm artifacts into the gem — relies on sibling directories within the picoruby repository (`mrbgems/picoruby-wasm/npm/`).
+The CRubyGem side (`lib/`, `funicular.gemspec`, etc.) can be developed and tested independently inside that directory, but `rake copy_wasm` — which vendors the PicoRuby.wasm and mrbc wasm artifacts into the gem — relies on sibling directories within the picoruby repository (`mrbgems/picoruby-wasm/npm/`).
 Running it from a standalone checkout will fail.
 
 ## Testing

@@ -30,7 +30,7 @@ Gem::Specification.new do |spec|
     end
   end
 
-  # Vendored PicoRuby.wasm and picorbc artifacts are populated by
+  # Vendored PicoRuby.wasm and mrbc artifacts are populated by
   # `rake funicular:vendor` (which `rake build` depends on) and are
   # intentionally not tracked in git. Add them to the gem file list so
   # they ship with releases.
@@ -52,7 +52,7 @@ Gem::Specification.new do |spec|
 
     Thank you for installing Funicular!
 
-    Funicular bundles a WebAssembly build of picorbc, which compiles your
+    Funicular bundles a WebAssembly build of mrbc, which compiles your
     Ruby code to .mrb bytecode. Make sure Node.js is installed on machines
     that run the compilation.
 

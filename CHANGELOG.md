@@ -2,6 +2,22 @@
 
 ### Added
 
+### Changed
+
+- Since mruby-compiler-prism, which used to be mruby-compiler2 producing
+  picorbc, has become the default compiler for mruby, we changed the name
+  from picorbc to mrbc.
+
+## [0.2.1] - 2026-06-15
+
+### Added
+
+- **Funicular::Component**: Add `name` field to form to find state changed.
+
+## [0.2.0] - 2026-06-11
+
+### Added
+
 - **Funicular::Store DSL**: Declarative client-side stores backed by
   IndexedDB. Subclass `Funicular::Store::Singleton` (one value per scope)
   or `Funicular::Store::Collection` (ordered list per scope) and use

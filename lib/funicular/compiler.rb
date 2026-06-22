@@ -5,11 +5,11 @@ require "shellwords"
 module Funicular
   class Compiler
     class NodeNotFoundError < StandardError; end
-    class PicorbcMissingError < StandardError; end
+    class MrbcMissingError < StandardError; end
 
-    # picorbc.js + picorbc.wasm bundled into the gem at build time by `rake copy_wasm`.
-    PICORBC_DIR = File.expand_path("vendor/picorbc", __dir__)
-    PICORBC_JS  = File.join(PICORBC_DIR, "picorbc.js")
+    # mrbc.js + mrbc.wasm bundled into the gem at build time by `rake copy_wasm`.
+    MRBC_DIR = File.expand_path("vendor/mrbc", __dir__)
+    MRBC_JS  = File.join(MRBC_DIR, "mrbc.js")
 
     # Ordered list of application source files under app/funicular/.
     # Order matters: models -> stores -> components -> initializer, so that
@@ -36,19 +36,19 @@ module Funicular
     end
 
     def compile
-      check_picorbc_availability!
+      check_mrbc_availability!
       gather_source_files
       compile_to_mrb
     end
 
     private
 
-    def check_picorbc_availability!
-      unless File.exist?(PICORBC_JS)
-        raise PicorbcMissingError, <<~ERROR
-          Vendored picorbc not found at #{PICORBC_JS}.
+    def check_mrbc_availability!
+      unless File.exist?(MRBC_JS)
+        raise MrbcMissingError, <<~ERROR
+          Vendored mrbc not found at #{MRBC_JS}.
 
-          The funicular gem ships picorbc.js + picorbc.wasm inside the gem
+          The funicular gem ships mrbc.js + mrbc.wasm inside the gem
           package. This file is missing, which likely means the gem was not
           installed correctly. Try reinstalling:
 
@@ -61,7 +61,7 @@ module Funicular
         raise NodeNotFoundError, <<~ERROR
           Node.js executable not found.
 
-          Funicular compiles Ruby to .mrb using a WebAssembly build of picorbc
+          Funicular compiles Ruby to .mrb using a WebAssembly build of mrbc
           which is run via Node.js. Please install Node.js and ensure `node`
           is on your PATH (or set the NODE environment variable).
         ERROR
@@ -110,7 +110,7 @@ module Funicular
     def compile_to_mrb
       all_files = @source_files.dup
       all_files << @env_file if @env_file
-      argv = [node_command, PICORBC_JS]
+      argv = [node_command, MRBC_JS]
       argv << "-g" if debug_mode
       argv += ["-o", output_file.to_s]
       argv += all_files.map(&:to_s)
@@ -128,7 +128,7 @@ module Funicular
       result = system(*argv)
 
       unless result
-        raise "Failed to compile with picorbc. Command: #{Shellwords.join(argv)}"
+        raise "Failed to compile with mrbc. Command: #{Shellwords.join(argv)}"
       end
 
       log "Successfully compiled to #{output_file}"
