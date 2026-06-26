@@ -53,6 +53,12 @@ class HTMLSerializerTest < Picotest::Test
     assert_equal('<img src="/a.png">', serialize(el('img', {src: '/a.png'})))
   end
 
+  def test_serializes_custom_element
+    component = Class.new(Funicular::Component).new
+    vnode = component.tag(:'custom-element', {id: 'x'}) { 'hi' }
+    assert_equal('<custom-element id="x">hi</custom-element>', serialize(vnode))
+  end
+
   def test_blocks_javascript_uri
     assert_equal('<a>x</a>',
                  serialize(el('a', {href: 'javascript:alert(1)'}, ['x'])))
