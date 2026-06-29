@@ -215,6 +215,39 @@ class VDOMPatcherTest < Picotest::Test
     assert_equal('foo', element.attributes['class'])
   end
 
+  def test_update_props_security_checks_are_case_insensitive
+    element = @doc.createElement('a')
+    patches = [[:props, {'ONCLICK' => 'alert(1)', 'HREF' => 'javascript:alert(2)'}]]
+
+    @patcher.apply(element, patches)
+
+    assert_nil(element.attributes['ONCLICK'])
+    assert_nil(element.attributes['HREF'])
+  end
+
+  def test_update_props_blocks_obfuscated_javascript_and_srcdoc
+    element = @doc.createElement('div')
+    patches = [[:props, {href: "java\nscript:alert(1)", srcdoc: '<script>alert(2)</script>'}]]
+
+    @patcher.apply(element, patches)
+
+    assert_nil(element.attributes['href'])
+    assert_nil(element.attributes['srcdoc'])
+  end
+
+  def test_renderer_blocks_active_attributes
+    vnode = Funicular::VDOM::Element.new(
+      'a',
+      {'ONCLICK' => 'alert(1)', 'HREF' => "java\nscript:alert(2)", 'SRCDOC' => '<script>alert(3)</script>'}
+    )
+
+    element = Funicular::VDOM::Renderer.new(@doc).render(vnode)
+
+    assert_nil(element.attributes['ONCLICK'])
+    assert_nil(element.attributes['HREF'])
+    assert_nil(element.attributes['SRCDOC'])
+  end
+
   # Test element creation from VDOM
   def test_create_text_element
     text_vnode = Funicular::VDOM::Text.new('hello')

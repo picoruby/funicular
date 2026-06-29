@@ -4,6 +4,13 @@ module Funicular
     type child_t = Element | Text | Component | String | Array[Element | Text | Component | String]
 
     URL_ATTRIBUTES: Array[String]
+    SCRIPTING_ELEMENTS: Array[String]
+
+    def self.valid_tag_name?: (untyped name) -> bool
+    def self.valid_attribute_name?: (untyped name) -> bool
+    def self.event_attribute?: (untyped name) -> bool
+    def self.unsafe_url?: (untyped name, untyped value) -> bool
+    def self.blocked_attribute?: (untyped name, untyped value) -> bool
 
     class VNode
       attr_reader type: Symbol
