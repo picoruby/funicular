@@ -46,7 +46,7 @@ module Funicular
         tag = element.tag
         attrs = serialize_props(element.props)
 
-        if VOID_ELEMENTS.include?(tag)
+        if VOID_ELEMENTS.include?(tag.downcase)
           "<#{tag}#{attrs}>"
         else
           "<#{tag}#{attrs}>#{render_children(element.children)}</#{tag}>"
@@ -83,17 +83,12 @@ module Funicular
         parts = [] #: Array[String]
         props.each do |key, value|
           key_str = key.to_s
-          next if SKIP_PROPS.include?(key)
+          normalized_key = key_str.downcase
+          next if SKIP_PROPS.include?(key) || SKIP_PROPS.include?(normalized_key.to_sym)
           # Event handlers are bound on the client, never serialized.
-          next if key_str.start_with?("on")
+          next if VDOM.blocked_attribute?(normalized_key, value)
 
-          if URL_ATTRIBUTES.include?(key_str) &&
-             value.to_s.strip.downcase.start_with?("javascript:")
-            # Prevent XSS via javascript: URIs (mirrors Renderer#render_element).
-            next
-          end
-
-          if BOOLEAN_ATTRIBUTES.include?(key_str)
+          if BOOLEAN_ATTRIBUTES.include?(normalized_key)
             # Boolean attributes are absent when false/nil, otherwise present.
             next if value.nil? || value.to_s == "false"
             parts << " #{key_str}=\"#{key_str}\""

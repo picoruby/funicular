@@ -452,7 +452,7 @@ module Funicular
 
       vnode.props.each do |key, value|
         key_str = key.to_s
-        next unless key_str.start_with?('on')
+        next unless VDOM.event_attribute?(key_str)
 
         event_name = key_str[2..-1]&.downcase || ""
         event_types << event_name

@@ -59,6 +59,36 @@ class SSRTest < Minitest::Test
                  serialize(el("a", { href: "javascript:alert(1)" }, ["x"]))
   end
 
+  def test_security_checks_are_case_insensitive
+    assert_equal "<button>Go</button>",
+                 serialize(el("button", { "ONCLICK" => "alert(1)" }, ["Go"]))
+    assert_equal "<a>x</a>",
+                 serialize(el("a", { "HREF" => "JAVASCRIPT:alert(1)" }, ["x"]))
+  end
+
+  def test_blocks_obfuscated_javascript_uri
+    assert_equal "<a>x</a>",
+                 serialize(el("a", { href: "java\nscript:alert(1)" }, ["x"]))
+    assert_equal "<a>x</a>",
+                 serialize(el("a", { href: "\x01javascript:alert(1)" }, ["x"]))
+  end
+
+  def test_blocks_srcdoc
+    assert_equal "<div></div>",
+                 serialize(el("div", { srcdoc: "<script>alert(1)</script>" }))
+  end
+
+  def test_rejects_invalid_attribute_name
+    assert_raises(ArgumentError) do
+      el("div", { 'x" autofocus onfocus' => "alert(1)" })
+    end
+  end
+
+  def test_rejects_invalid_and_active_tag_names
+    assert_raises(ArgumentError) { el('div><script>alert(1)</script><div') }
+    assert_raises(ArgumentError) { el("script", {}, ["alert(1)"]) }
+  end
+
   # --- Full SSR render (runtime + fixture app) --------------------------
 
   def test_render_injects_server_state

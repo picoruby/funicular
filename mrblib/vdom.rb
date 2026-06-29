@@ -6,6 +6,69 @@ module Funicular
 
     URL_ATTRIBUTES = %w[href src action formaction data poster xlink:href]
 
+    # VDOM input is normally authored by application code, but props and tags
+    # can also be assembled from hashes. Validate names before either the DOM
+    # renderer or the SSR serializer sees them so an attacker-controlled key
+    # cannot become HTML syntax.
+    SCRIPTING_ELEMENTS = %w[script]
+
+    def self.valid_tag_name?(name)
+      str = name.to_s
+      return false if str.empty?
+
+      index = 0
+      str.each_byte do |byte|
+        alpha = (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122)
+        digit = byte >= 48 && byte <= 57
+        return false unless alpha || (index > 0 && (digit || byte == 45))
+        index += 1
+      end
+      true
+    end
+
+    def self.valid_attribute_name?(name)
+      str = name.to_s
+      return false if str.empty?
+
+      str.each_byte do |byte|
+        alpha = (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122)
+        digit = byte >= 48 && byte <= 57
+        punctuation = byte == 45 || byte == 46 || byte == 58 || byte == 95
+        return false unless alpha || digit || punctuation
+      end
+      true
+    end
+
+    def self.event_attribute?(name)
+      name.to_s.downcase.start_with?('on')
+    end
+
+    def self.unsafe_url?(name, value)
+      return false unless URL_ATTRIBUTES.include?(name.to_s.downcase)
+
+      # Browsers discard ASCII tabs and newlines while parsing URLs, so test
+      # the same canonical form rather than only a literal "javascript:".
+      raw = value.to_s
+      start = 0
+      start += 1 while (byte = raw.getbyte(start)) && byte <= 32
+
+      normalized = (raw[start..-1] || "")
+                        .gsub("\t", "")
+                        .gsub("\n", "")
+                        .gsub("\r", "")
+                        .gsub("\f", "")
+                        .strip
+                        .downcase
+      normalized.start_with?('javascript:') || normalized.start_with?('vbscript:')
+    end
+
+    def self.blocked_attribute?(name, value)
+      normalized_name = name.to_s.downcase
+      event_attribute?(normalized_name) ||
+        normalized_name == 'srcdoc' ||
+        unsafe_url?(normalized_name, value)
+    end
+
     class VNode
       attr_reader :type, :key
 
@@ -20,8 +83,20 @@ module Funicular
       def initialize(tag, props = {}, children = [])
         super(:element)
         @tag = tag.to_s
+        unless VDOM.valid_tag_name?(@tag)
+          raise ArgumentError, "Invalid VDOM tag name: #{@tag.inspect}"
+        end
+        if SCRIPTING_ELEMENTS.include?(@tag.downcase)
+          raise ArgumentError, "Unsafe VDOM tag: #{@tag.inspect}"
+        end
+
         @key = props.delete(:key)
         @props = props || {}
+        @props.each_key do |name|
+          unless VDOM.valid_attribute_name?(name)
+            raise ArgumentError, "Invalid VDOM attribute name: #{name.inspect}"
+          end
+        end
         @children = normalize_children(children || [])
       end
 
@@ -122,13 +197,14 @@ module Funicular
 
         element.props.each do |key, value|
           key_str = key.to_s
-          if key_str.start_with?('on')
+          normalized_key = key_str.downcase
+          if VDOM.event_attribute?(normalized_key)
             # Event handlers are handled by Funicular::Component and should not be set as attributes.
             # warn "Funicular: Attempted to set event handler '#{key_str}' as an attribute. This will be ignored."
-          elsif URL_ATTRIBUTES.include?(key_str) && value.to_s.strip.downcase.start_with?('javascript:')
-            # Prevent XSS attacks by blocking javascript: URIs in URL attributes
+          elsif VDOM.blocked_attribute?(normalized_key, value)
+            # Prevent active HTML content and unsafe URL schemes.
             puts "[WARN] Funicular: Blocked potentially malicious value for attribute '#{key_str}'."
-          elsif BOOLEAN_ATTRIBUTES.include?(key_str)
+          elsif BOOLEAN_ATTRIBUTES.include?(normalized_key)
             # Handle boolean attributes
             if value.nil? || value.to_s == "false"
               # Do not set attribute (leave it absent)

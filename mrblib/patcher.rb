@@ -159,9 +159,10 @@ module Funicular
 
         props_patch.each do |key, value|
           key_str = key.to_s
+          normalized_key = key_str.downcase
 
           # Skip event handlers (handled by bind_events)
-          next if key_str.start_with?('on')
+          next if VDOM.event_attribute?(normalized_key)
 
           # Skip updating value for focused input/textarea elements
           if key_str == "value"
@@ -178,13 +179,13 @@ module Funicular
           end
 
           # Block javascript: URIs in URL attributes
-          if URL_ATTRIBUTES.include?(key_str) && value.to_s.strip.downcase.start_with?('javascript:')
+          if VDOM.blocked_attribute?(normalized_key, value)
             puts "[WARN] Funicular: Blocked potentially malicious value for attribute '#{key_str}'."
             next
           end
 
           # Handle boolean attributes
-          if BOOLEAN_ATTRIBUTES.include?(key_str)
+          if BOOLEAN_ATTRIBUTES.include?(normalized_key)
             if value.nil? || value.to_s == "false"
               element.removeAttribute(key_str)
               element[key_str] = false
@@ -225,14 +226,15 @@ module Funicular
           element = @doc.createElement(vnode.tag)
           vnode.props.each do |key, value|
             key_str = key.to_s
-            next if key_str.start_with?('on')
-            if URL_ATTRIBUTES.include?(key_str) && value.to_s.strip.downcase.start_with?('javascript:')
+            normalized_key = key_str.downcase
+            next if VDOM.event_attribute?(normalized_key)
+            if VDOM.blocked_attribute?(normalized_key, value)
               puts "[WARN] Funicular: Blocked potentially malicious value for attribute '#{key_str}'."
               next
             end
             if key_str == "value" && (vnode.tag == "input" || vnode.tag == "textarea")
               element[:value] = value.to_s
-            elsif BOOLEAN_ATTRIBUTES.include?(key_str)
+            elsif BOOLEAN_ATTRIBUTES.include?(normalized_key)
               if value.nil? || value.to_s == "false"
                 element[key_str] = false
               else

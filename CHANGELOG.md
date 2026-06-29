@@ -8,6 +8,13 @@
   picorbc, has become the default compiler for mruby, we changed the name
   from picorbc to mrbc.
 
+### Fixed
+
+- Harden VDOM rendering against HTML and script injection in both SSR and
+  browser rendering: validate tag and attribute names, reject `script`
+  elements, and consistently block case-obfuscated event handlers, `srcdoc`,
+  and unsafe URL schemes including control-character variants.
+
 ## [0.2.1] - 2026-06-15
 
 ### Added
