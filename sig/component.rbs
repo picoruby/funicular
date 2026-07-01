@@ -112,44 +112,124 @@ module Funicular
     private def full_render_fallback: (VDOM::VNode | VDOM::Text | nil new_vdom, untyped server_dom) -> JS::Element
     private def hydrate_child_components: (untyped vnode, untyped dom_element) -> void
 
-    # HTML element methods (DSL)
-    def div: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def span: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def p: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def a: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    # DSL methods for the HTML elements defined in the HTML Living Standard.
+    def tag: (Symbol | String name, ?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+
+    # sections
+    def article: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def section: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def nav: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def aside: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
     def h1: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
     def h2: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
     def h3: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
     def h4: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
     def h5: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
     def h6: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def ul: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def ol: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def li: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def table: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def thead: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def tbody: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def tr: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def th: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def td: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def form: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def input: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def textarea: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def button: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def select: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def option: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def label: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def hgroup: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
     def header: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
     def footer: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def nav: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def section: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def article: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def aside: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def address: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+
+    # grouping
+    def p: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def hr: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def pre: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def blockquote: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def ol: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def ul: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def menu: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def li: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def dl: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def dt: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def dd: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def figure: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def figcaption: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def main: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def div: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+
+    # text-level
+    def a: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def em: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def strong: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def small: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def cite: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def q: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def dfn: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def abbr: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def ruby: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def rt: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def rp: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def data: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def time: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def code: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def var: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def samp: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def kbd: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def sub: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def sup: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def i: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def b: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def u: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def mark: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def bdi: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def bdo: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def span: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def br: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def wbr: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+
+    # edits
+    def ins: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def del: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+
+    # embedded
+    def picture: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def source: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
     def img: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def iframe: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def embed: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def object: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
     def video: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
     def audio: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def track: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def map: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def area: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def svg: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+
+    # tabular
+    def table: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def caption: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def colgroup: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def col: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def tbody: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def thead: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def tfoot: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def tr: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def td: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def th: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+
+    # forms
+    def form: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def label: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def input: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def button: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def select: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def datalist: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def optgroup: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def option: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def textarea: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def output: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def progress: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def meter: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def fieldset: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def legend: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+
+    # interactive
+    def details: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def summary: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def dialog: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+
+    # scripting
     def canvas: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def br: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def hr: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
   end
 end

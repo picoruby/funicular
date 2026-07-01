@@ -750,18 +750,6 @@ module Funicular
       end
     end
 
-    # DSL methods for HTML elements
-    HTML_TAGS = %w[
-      div span p a
-      h1 h2 h3 h4 h5 h6
-      ul ol li
-      table thead tbody tr th td
-      form input textarea button select option label
-      header footer nav section article aside
-      img video audio canvas
-      br hr
-    ]
-
     # The HTML tag DSL methods are public: besides being called inside render
     # (implicit self), they are invoked by collaborators such as FormBuilder
     # with an explicit receiver (@component.div). A private method would forbid
@@ -769,45 +757,70 @@ module Funicular
     # any component using form_for. Keep them public on both VMs.
     public
 
-    HTML_TAGS.each do |tag|
-      define_method(tag) do |props = {}, &block|
+    # Generic element DSL. Builds a VDOM::Element for any tag name, so custom
+    # elements / Web Components (e.g. tag(:"custom-element")) and any HTML tag
+    # not listed in HTML_TAGS can be rendered. The named tag methods generated
+    # below are thin wrappers that delegate here with a fixed name.
+    def tag(name, props = {}, &block)
+      # @type self: Component
+      children = [] #: Array[Funicular::VDOM::child_t]
+
+      if block
+        prev_children = @current_children
+        @current_children = children
+        # @type var block: Proc
+        result = block.call
+        @current_children = prev_children
+
+        # Add block result to children if not already added via add_child
+        if result && !result.equal?(children) && children.empty?
+          normalized = normalize_vnode(result)
+          children << normalized if normalized
+        end
+      end
+
+      # Normalize props (convert StyleValue to String for :class)
+      normalized_props = {}
+      # @type var props: Hash[Symbol, String]
+      props.each do |key, value|
+        if key == :class && value.is_a?(StyleValue)
+          normalized_props[key] = value.to_s
+        else
+          normalized_props[key] = value
+        end
+      end
+
+      # @type var normalized_props: Hash[Symbol, String]
+      element = VDOM::Element.new(name.to_s, normalized_props, children)
+
+      # If we're inside another element's block, add this element to parent's children
+      if @rendering && @current_children
+        @current_children << element
+      end
+
+      element
+    end
+
+    # DSL methods for the HTML elements defined in the HTML Living Standard.
+    # `s` collides with the styles accessor, so it is excluded. Use tag instead.
+    HTML_TAGS = %w[
+      article section nav aside h1 h2 h3 h4 h5 h6 hgroup header footer address
+      p hr pre blockquote ol ul menu li dl dt dd figure figcaption main div
+      a em strong small cite q dfn abbr ruby rt rp data time code var samp kbd
+      sub sup i b u mark bdi bdo span br wbr
+      ins del
+      picture source img iframe embed object video audio track map area svg
+      table caption colgroup col tbody thead tfoot tr td th
+      form label input button select datalist optgroup option textarea output
+      progress meter fieldset legend
+      details summary dialog
+      canvas
+    ]
+
+    HTML_TAGS.each do |html_tag|
+      define_method(html_tag) do |props = {}, &block|
         # @type self: Component
-        children = [] #: Array[Funicular::VDOM::child_t]
-
-        if block
-          prev_children = @current_children
-          @current_children = children
-          # @type var block: Proc
-          result = block.call
-          @current_children = prev_children
-
-          # Add block result to children if not already added via add_child
-          if result && !result.equal?(children) && children.empty?
-            normalized = normalize_vnode(result)
-            children << normalized if normalized
-          end
-        end
-
-        # Normalize props (convert StyleValue to String for :class)
-        normalized_props = {}
-        # @type var props: Hash[Symbol, String]
-        props.each do |key, value|
-          if key == :class && value.is_a?(StyleValue)
-            normalized_props[key] = value.to_s
-          else
-            normalized_props[key] = value
-          end
-        end
-
-        # @type var normalized_props: Hash[Symbol, String]
-        element = VDOM::Element.new(tag, normalized_props, children)
-
-        # If we're inside another element's block, add this element to parent's children
-        if @rendering && @current_children
-          @current_children << element
-        end
-
-        element
+        tag(html_tag, props, &block)
       end
     end
 
