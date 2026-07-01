@@ -121,4 +121,31 @@ class SSRTest < Minitest::Test
     result = Funicular::SSR.render(path: "/greet/42", source_dir: APP_DIR)
     assert_includes result[:html], "greeting"
   end
+
+  def test_symbolize_keys_handles_nil_and_string_keys
+    assert_equal({}, Funicular::SSR.symbolize_keys(nil))
+    assert_equal({ a: 1, b: 2 }, Funicular::SSR.symbolize_keys("a" => 1, "b" => 2))
+  end
+
+  # --- Runtime lifecycle flags -----------------------------------------
+
+  def test_framework_reports_loaded_after_setup
+    assert Funicular::SSR::Runtime.framework_loaded?
+  end
+
+  def test_reset_app_allows_rebooting_a_different_app
+    Funicular::SSR::Runtime.boot!(APP_DIR)
+    Funicular::SSR::Runtime.reset_app!
+    # A second boot after reset re-`load`s the fixture, which redefines its
+    # methods; that "method redefined" warning is expected here (it's the whole
+    # point of reset_app!), so silence it rather than leak noise into the run.
+    original_verbose = $VERBOSE
+    $VERBOSE = nil
+    begin
+      Funicular::SSR::Runtime.boot!(APP_DIR)
+    ensure
+      $VERBOSE = original_verbose
+    end
+    assert Funicular::SSR::Runtime.framework_loaded?
+  end
 end

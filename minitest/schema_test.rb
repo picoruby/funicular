@@ -88,6 +88,29 @@ class SchemaDerivationTest < Minitest::Test
     assert_equal({ "update" => { method: "PATCH", path: "/x/:id" } }, schema[:endpoints])
   end
 
+  def test_length_range_is_serialized_as_min_and_max
+    klass = Class.new do
+      include ActiveModel::Validations
+      def self.name = "Ranged"
+      attr_accessor :bio
+      validates :bio, length: { in: 2..10 }
+    end
+    result = Funicular::Schema.validations_for(klass, ["bio"])
+    assert_equal({ "minimum" => 2, "maximum" => 10 }, result["bio"]["length"])
+  end
+
+  def test_format_multiline_flag_is_translated
+    klass = Class.new do
+      include ActiveModel::Validations
+      def self.name = "Multi"
+      attr_accessor :body
+      validates :body, format: { with: /\Aline/m }
+    end
+    result = Funicular::Schema.validations_for(klass, ["body"])
+    assert_equal "m", result["body"]["format"]["flags"]
+    assert_equal "^line", result["body"]["format"]["with"]
+  end
+
   def test_extended_regexp_is_skipped
     klass = Class.new do
       include ActiveModel::Validations
