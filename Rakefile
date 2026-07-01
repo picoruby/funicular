@@ -9,6 +9,14 @@ Rake::TestTask.new(:test) do |t|
   t.test_files = FileList["minitest/**/*_test.rb"]
 end
 
+namespace :test do
+  desc "Run the test suite with SimpleCov coverage measurement (report in coverage/)"
+  task :coverage do
+    ENV["COVERAGE"] = "1"
+    Rake::Task["test"].invoke
+  end
+end
+
 task default: :test
 
 desc "Copy picoruby and mrbc wasm artifacts from picoruby-wasm into the gem"

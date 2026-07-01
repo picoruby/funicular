@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 # Coverage must start before any lib/ file is required so every line is
-# tracked. Opt in with COVERAGE=1 to avoid slowing down focused runs.
+# tracked. Opt in via `rake test:coverage` (or COVERAGE=1) to avoid slowing
+# down focused, single-file runs.
 if ENV["COVERAGE"]
   require "simplecov"
   SimpleCov.start do
