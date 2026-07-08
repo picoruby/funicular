@@ -60,6 +60,12 @@ class SSRTest < Minitest::Test
     assert_equal '<custom-element id="x">hi</custom-element>', serialize(vnode)
   end
 
+  def test_tag_rejects_invalid_and_active_tag_names
+    component = Class.new(Funicular::Component).new
+    assert_raises(ArgumentError) { component.tag("div><script>alert(1)</script><div") }
+    assert_raises(ArgumentError) { component.tag(:script) }
+  end
+
   def test_blocks_javascript_uri
     assert_equal "<a>x</a>",
                  serialize(el("a", { href: "javascript:alert(1)" }, ["x"]))
