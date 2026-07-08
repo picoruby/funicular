@@ -801,7 +801,9 @@ module Funicular
       element
     end
 
-    # DSL methods for the HTML elements defined in the HTML Living Standard.
+    # DSL methods for HTML elements defined in the HTML Living Standard,
+    # ordered by spec category. Named methods are generated for body content
+    # elements that the VDOM and HTMLSerializer render as-is.
     # `s` collides with the styles accessor, so it is excluded. Use tag instead.
     HTML_TAGS = %w[
       article section nav aside h1 h2 h3 h4 h5 h6 hgroup header footer address
