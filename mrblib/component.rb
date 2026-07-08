@@ -809,7 +809,7 @@ module Funicular
       a em strong small cite q dfn abbr ruby rt rp data time code var samp kbd
       sub sup i b u mark bdi bdo span br wbr
       ins del
-      picture source img iframe embed object video audio track map area svg
+      picture source img iframe embed object video audio track map area
       table caption colgroup col tbody thead tfoot tr td th
       form label input button select datalist optgroup option textarea output
       progress meter fieldset legend

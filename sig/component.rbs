@@ -194,7 +194,6 @@ module Funicular
     def track: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
     def map: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
     def area: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
-    def svg: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
 
     # tabular
     def table: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
