@@ -146,6 +146,7 @@ module Funicular
     def figure: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
     def figcaption: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
     def main: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
+    def search: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
     def div: (?Hash[Symbol, untyped] props) ?{ -> untyped } -> VDOM::Element
 
     # text-level

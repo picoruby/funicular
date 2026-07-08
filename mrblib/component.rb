@@ -805,7 +805,8 @@ module Funicular
     # `s` collides with the styles accessor, so it is excluded. Use tag instead.
     HTML_TAGS = %w[
       article section nav aside h1 h2 h3 h4 h5 h6 hgroup header footer address
-      p hr pre blockquote ol ul menu li dl dt dd figure figcaption main div
+      p hr pre blockquote ol ul menu li dl dt dd figure figcaption main search
+      div
       a em strong small cite q dfn abbr ruby rt rp data time code var samp kbd
       sub sup i b u mark bdi bdo span br wbr
       ins del
