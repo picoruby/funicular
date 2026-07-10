@@ -51,26 +51,6 @@ The render cycle: a state change calls `patch()`, which rebuilds the component's
 VDOM, diffs it against the previous VDOM with `Differ`, and applies the result
 with `Patcher`. Event handlers are native DOM listeners, re-bound on each render.
 
-## Scheduler-driven GC opt-in
-
-Funicular's browser runtime is a good fit for PicoRuby.wasm's
-`GC.scheduler_driven` mode because a typical SPA becomes idle after the initial
-render and between user-driven callbacks. DOM event handlers are represented as
-Ruby tasks waiting on callback queues; when no callback is ready,
-`mrb_task_run_once()` reaches an idle point that the PicoRuby.wasm host loop can
-use to advance scheduler-driven GC one step at a time.
-
-Applications can opt in at startup:
-
-```ruby
-Funicular.start(App, gc_scheduler_driven: true)
-```
-
-The option is intentionally explicit. Enabling scheduler-driven GC changes the
-underlying mruby GC mode by turning allocation-synchronous auto stepping off and
-disabling generational mode. Funicular applies the option only in the browser
-runtime, before mount or hydration; SSR keeps its existing process GC settings.
-
 ## `lib/` Rails integration
 
 - `compiler.rb` -- runs the vendored `mrbc` (WebAssembly, via Node.js) to

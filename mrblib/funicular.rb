@@ -139,11 +139,10 @@ module Funicular
   # Usage:
   #   Funicular.start(MyComponent, container: 'app')
   #   Funicular.start(MyComponent, container: 'app', props: { name: 'John' })
-  #   Funicular.start(MyComponent, gc_scheduler_driven: true)
-  def self.start(component_class = nil, container: 'app', props: {}, hydrate: false, gc_scheduler_driven: false, &block)
+  def self.start(component_class = nil, container: 'app', props: {}, hydrate: false, &block)
     # On the server we only need route registration so SSR can resolve a
     # path to a component. Skip all DOM/JS work (container lookup, popstate
-    # listener, debug export, browser-side GC tuning).
+    # listener, debug export).
     if server?
       if block
         router = Router.new(nil)
@@ -153,8 +152,6 @@ module Funicular
       end
       return nil
     end
-
-    GC.scheduler_driven = true if gc_scheduler_driven
 
     # Export debug configuration to JavaScript
     export_debug_config

@@ -17,7 +17,7 @@ module Funicular
   def self.first_element_child: (JS::Element container_element) -> JS::Element?
 
   def self.load_schemas: (Hash[singleton(Model), String] models) ?{ () -> void } -> void
-  def self.start: (?singleton(Component)? component_class, ?container: String | JS::Element, ?props: Hash[Symbol, untyped], ?hydrate: bool, ?gc_scheduler_driven: bool) ?{ (Router router) -> void } -> (Component | Router | nil)
+  def self.start: (?singleton(Component)? component_class, ?container: String | JS::Element, ?props: Hash[Symbol, untyped], ?hydrate: bool) ?{ (Router router) -> void } -> (Component | Router | nil)
   def self.configure_forms: () ?{ (Hash[Symbol, String]) -> void } -> void
   def self.form_builder_config: () -> Hash[Symbol, String]?
   def self.form_builder_config=: (Hash[Symbol, String] config) -> Hash[Symbol, String]
