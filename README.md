@@ -62,6 +62,21 @@ User documentation is hosted on **picoruby.org**:
 
 For contributors working on the gem itself, see [docs/architecture.md](docs/architecture.md).
 
+## Scheduler-Driven GC
+
+Funicular applications usually become event-driven after the initial render:
+DOM callbacks wait on task queues until the user clicks, submits, navigates, or
+another browser event arrives. That waiting period is visible to mruby-task as
+idle time, so Funicular can opt in to PicoRuby.wasm's scheduler-driven GC:
+
+```ruby
+Funicular.start(App, gc_scheduler_driven: true)
+```
+
+This option is disabled by default. When enabled in the browser runtime,
+`GC.scheduler_driven = true` is set before mounting or hydrating the app. Server
+side rendering does not change GC settings.
+
 ## Development
 
 This repository is a submodule of [picoruby/picoruby](https://github.com/picoruby/picoruby).
