@@ -126,9 +126,9 @@ module Funicular
         wasm = File.join(Funicular::VENDOR_PICORUBY_DIR, variant, "picoruby.wasm")
         mtime = File.mtime(wasm).to_i
 
-        [version, mtime].compact.join("-")
+        [version || Funicular::VERSION, mtime].join("-")
       rescue Errno::ENOENT
-        Funicular.vendored_wasm_version
+        Funicular.vendored_wasm_version || Funicular::VERSION
       end
     end
   end
