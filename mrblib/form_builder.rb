@@ -1,9 +1,10 @@
 module Funicular
   class FormBuilder
-    attr_reader :component, :model_key, :options
+    attr_reader :component, :view_context, :model_key, :options
 
-    def initialize(component, model_key, options = {})
+    def initialize(component, view_context, model_key, options = {})
       @component = component
+      @view_context = view_context
       @model_key = model_key
       @options = options
       # Per-form options win, then the global Funicular.configure_forms config,
@@ -32,7 +33,8 @@ module Funicular
       end
 
       # Check for errors
-      error_message = @component.state.errors ? @component.state.errors[field_key.to_sym] : nil
+      errors = @component.state[:errors]
+      error_message = errors ? errors[field_key.to_sym] : nil
       # errors may be a single message (legacy) or an array of messages
       # (Funicular::Model::Errors#messages). Show the first.
       error_message = error_message.first if error_message.is_a?(Array)
@@ -63,10 +65,10 @@ module Funicular
       attrs[:class] = css_class unless css_class.empty?
 
       # Render field + error message
-      @component.div do
-        @component.input(attrs)
+      @view_context.div do |h|
+        h.input(attrs)
         if has_error
-          @component.div(class: @error_class) { error_message }
+          h.div(class: @error_class) { error_message }
         end
       end
     end
@@ -99,7 +101,8 @@ module Funicular
         set_nested_value(@model_key, field_key, new_value)
       end
 
-      error_message = @component.state.errors ? @component.state.errors[field_key.to_sym] : nil
+      errors = @component.state[:errors]
+      error_message = errors ? errors[field_key.to_sym] : nil
       # errors may be a single message (legacy) or an array of messages
       # (Funicular::Model::Errors#messages). Show the first.
       error_message = error_message.first if error_message.is_a?(Array)
@@ -125,10 +128,10 @@ module Funicular
 
       attrs[:class] = css_class unless css_class.empty?
 
-      @component.div do
-        @component.textarea(attrs)
+      @view_context.div do |h|
+        h.textarea(attrs)
         if has_error
-          @component.div(class: @error_class) { error_message }
+          h.div(class: @error_class) { error_message }
         end
       end
     end
@@ -151,7 +154,7 @@ module Funicular
         onchange: on_change
       }.merge(options)
 
-      @component.input(attrs)
+      @view_context.input(attrs)
     end
 
     def select(field_name, choices, options = {})
@@ -165,7 +168,8 @@ module Funicular
         set_nested_value(@model_key, field_key, new_value)
       end
 
-      error_message = @component.state.errors ? @component.state.errors[field_key.to_sym] : nil
+      errors = @component.state[:errors]
+      error_message = errors ? errors[field_key.to_sym] : nil
       # errors may be a single message (legacy) or an array of messages
       # (Funicular::Model::Errors#messages). Show the first.
       error_message = error_message.first if error_message.is_a?(Array)
@@ -190,18 +194,18 @@ module Funicular
 
       attrs[:class] = css_class unless css_class.empty?
 
-      @component.div do
-        @component.select(attrs) do
+      @view_context.div do |h|
+        h.select(attrs) do |hh|
           choices.each do |choice|
             option_value, option_text = choice.is_a?(Array) ? choice : [choice, choice]
             selected = value.to_s == option_value.to_s
-            @component.option(value: option_value, selected: selected) do
+            hh.option(value: option_value, selected: selected) do
               option_text
             end
           end
         end
         if has_error
-          @component.div(class: @error_class) { error_message }
+          h.div(class: @error_class) { error_message }
         end
       end
     end
@@ -232,17 +236,17 @@ module Funicular
         onchange: on_change
       }.merge(options)
 
-      @component.input(attrs)
+      @view_context.input(attrs)
     end
 
     def submit(label = "Submit", options = {})
       attrs = { type: "submit" }.merge(options)
-      @component.button(attrs) { label }
+      @view_context.button(attrs) { label }
     end
 
     def label(field_name, text = nil, options = {})
       text ||= field_name.to_s.split('_').map { |word| word.capitalize }.join(' ')
-      @component.label(options) { text }
+      @view_context.label(options) { text }
     end
 
     private
@@ -252,10 +256,10 @@ module Funicular
       keys = key_path.split('.')
       value = state
       keys.each do |key|
-        if value.respond_to?(key.to_sym)
-          value = value.send(key.to_sym)
-        elsif value.is_a?(Hash)
+        if value.is_a?(Hash)
           value = value[key.to_sym] || value[key]
+        elsif value.respond_to?(:[])
+          value = value[key.to_sym]
         else
           value = nil
         end
@@ -270,12 +274,12 @@ module Funicular
       if field_key.include?('.')
         # Complex nested update
         keys = field_key.split('.')
-        current_model = @component.state.send(model_key.to_sym)
+        current_model = @component.state[model_key.to_sym]
         updated_model = deep_merge_value(current_model, keys, new_value)
         @component.patch(model_key.to_sym => updated_model)
       else
         # Simple update
-        current_model = @component.state.send(model_key.to_sym)
+        current_model = @component.state[model_key.to_sym]
         if current_model.nil?
           @component.patch(model_key.to_sym => { field_key.to_sym => new_value })
         elsif current_model.is_a?(Hash)

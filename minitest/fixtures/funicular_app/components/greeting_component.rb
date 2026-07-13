@@ -3,12 +3,12 @@ class GreetingComponent < Funicular::Component
     { title: "Default Title", items: [] }
   end
 
-  def render
-    div(class: "greeting") do
-      h1 { state.title }
-      ul do
-        state.items.each do |item|
-          li(key: item["id"]) { item["name"] }
+  def render(h)
+    h.div(class: "greeting") do |hh|
+      hh.h1 { state[:title] }
+      hh.ul do |hhh|
+        state[:items].each do |item|
+          hhh.li(key: item["id"]) { item["name"] }
         end
       end
     end

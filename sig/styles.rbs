@@ -7,11 +7,10 @@ module Funicular
     def to_s: () -> String
   end
 
-  # StyleAccessor provides access to defined styles via method calls
+  # StyleAccessor provides explicit access to defined styles.
   class StyleAccessor
     def initialize: (Hash[Symbol, Hash[Symbol, untyped]] definitions) -> void
-    private def method_missing: (Symbol name, *untyped args) -> StyleValue
-    private def respond_to_missing?: (Symbol name, ?bool include_private) -> bool
+    def []: (Symbol name, ?(Symbol | bool) variant) -> StyleValue
   end
 
   # StyleBuilder is used to define styles within the styles {} block
@@ -19,7 +18,7 @@ module Funicular
     @definitions: Hash[Symbol, Hash[Symbol, untyped]]
 
     def initialize: () -> void
+    def define: (Symbol name, ?(String | Hash[Symbol, untyped]) value, **untyped options) -> void
     def to_definitions: () -> Hash[Symbol, Hash[Symbol, untyped]]
-    private def method_missing: (Symbol name, *untyped args) -> void
   end
 end

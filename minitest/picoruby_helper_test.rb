@@ -35,14 +35,14 @@ class PicorubyHelperTest < Minitest::Test
 
   def test_local_dist_source_emits_script_and_base_style
     html = @view.picoruby_include_tag(source: :local_dist)
-    assert_includes html, '<script src="/picoruby/dist/init.iife.js">'
+    assert_includes html, '<script src="/picoruby/dist/init.iife.js?v='
     assert_includes html, "<style"
     assert_includes html, "data-funicular-base"
   end
 
   def test_local_debug_source_path
     html = @view.picoruby_include_tag(source: :local_debug)
-    assert_includes html, '<script src="/picoruby/debug/init.iife.js">'
+    assert_includes html, '<script src="/picoruby/debug/init.iife.js?v='
   end
 
   def test_base_styles_can_be_skipped
@@ -71,14 +71,11 @@ class PicorubyHelperTest < Minitest::Test
   end
 
   def test_cdn_source_without_version_raises
-    @config.cdn_version = nil
-    Funicular.instance_variable_set(:@vendored_wasm_version, nil)
+    @config.define_singleton_method(:cdn_version) { nil }
     error = assert_raises(ArgumentError) do
       @view.picoruby_include_tag(source: :cdn)
     end
     assert_includes error.message, ":cdn requires a version"
-  ensure
-    Funicular.instance_variable_set(:@vendored_wasm_version, nil)
   end
 
   def test_unknown_source_raises

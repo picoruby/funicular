@@ -5,10 +5,10 @@ module Funicular
     def initialize_state: () -> Hash[Symbol, untyped]
     def catch_error: (Exception error, ?Hash[Symbol, untyped]? error_info) -> bool
     def reset: () -> void
-    def render: () -> (VDOM::VNode | String | Integer | Float | Array[untyped] | nil)
+    def render: (ViewContext h) -> (VDOM::VNode | String | Integer | Float | Array[untyped] | nil)
 
-    private def render_fallback: () -> (VDOM::VNode | String)
-    private def default_fallback: () -> VDOM::VNode
-    private def render_children: () -> VDOM::VNode
+    private def render_fallback: (ViewContext h) -> (VDOM::VNode | String)
+    private def default_fallback: (ViewContext h) -> VDOM::VNode
+    private def render_children: (ViewContext h) -> VDOM::VNode
   end
 end

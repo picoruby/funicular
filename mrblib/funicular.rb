@@ -18,7 +18,7 @@ module Funicular
   # Guard against redefinition: when the mrblib runtime is loaded into a
   # CRuby/Rails process for SSR, lib/funicular/version.rb has already defined
   # VERSION for the CRuby gem. In the wasm build VERSION is undefined here.
-  VERSION = '0.1.0' unless Funicular.const_defined?(:VERSION)
+  VERSION = '0.3.0' unless Funicular.const_defined?(:VERSION)
 
   def self.version
     VERSION
@@ -185,6 +185,7 @@ module Funicular
     # Otherwise, mount single component (backward compatible)
     if component_class
       instance = component_class.new(props)
+      instance.runtime = Funicular::Runtime.new(nil)
       server_root = hydrate ? first_element_child(container_element) : nil
       if server_root
         instance.seed_state(window_state)

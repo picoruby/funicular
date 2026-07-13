@@ -2,6 +2,37 @@
 
 ### Added
 
+- 0.3.0 rendering architecture: `render(h)` now receives a `ViewContext`
+  facade for elements, components, forms, styles, resources, and routes.
+- Per-app `Runtime` context for route helpers and renderer/serializer
+  propagation, enabling isolated route helper sets across multiple apps.
+
+### Breaking Changes
+
+- **0.3.0 is a deliberate breaking DSL redesign. Existing Funicular
+  components written for 0.2.x require source changes.**
+- Component render methods must now accept a view context:
+  `def render(h)`. The former implicit component-level DSL methods for HTML
+  tags, `component`, `form_for`, `link_to`, `button_to`, `suspense`, styles,
+  resources, and route helpers have been removed.
+- HTML and framework helpers are now called through `h`, for example
+  `h.div`, `h.component(...)`, `h.form_for(...)`, `h.link_to(...)`,
+  `h.suspense(...)`, `h.styles[...]`, `h.resources[...]`, and `h.routes`.
+- Component state reads are explicit: use `state[:key]`, `state.fetch(:key)`,
+  or `h.state[:key]`. The old `state.key_name` method-style access has been
+  removed.
+- Style definitions are explicit: use `styles { |css| css.define(...) }`.
+  The old dynamic style definition DSL has been removed.
+- Component children are stored as `VDOM::Component#children`. The old
+  `children_block` prop path has been removed and no compatibility shim is
+  provided.
+- Route helpers are scoped by `Funicular::Runtime`; global
+  `Funicular::RouteHelpers` injection has been removed. Code that depends on
+  route helpers should use `h.routes`.
+- `FormBuilder`, `ErrorBoundary`, SSR, hydration, renderer, patcher, and HTML
+  serialization now operate through the same `ViewContext` / `Runtime`
+  architecture.
+
 ### Changed
 
 - Since mruby-compiler-prism, which used to be mruby-compiler2 producing

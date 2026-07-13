@@ -213,11 +213,13 @@ module Funicular
           # If only Proc props changed, update props but skip VDOM rebuild
           unless data_props_changed
             instance.props = new_node.props
+            instance.children = new_node.children
             return []
           end
 
           old_internal_vdom = instance.vdom
           instance.props = new_node.props
+          instance.children = new_node.children
           new_internal_vdom = instance.build_vdom
           internal_patches = diff(old_internal_vdom, new_internal_vdom)
 
@@ -227,7 +229,7 @@ module Funicular
         end
 
         # Original logic: If props changed, replace the entire component
-        if old_node.props != new_node.props
+        if old_node.props != new_node.props || old_node.children != new_node.children
           return [[:replace, new_node, old_node]]
         end
 

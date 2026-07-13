@@ -1,10 +1,11 @@
 module Funicular
   class FormBuilder
     attr_reader component: Component
+    attr_reader view_context: ViewContext
     attr_reader model_key: Symbol
     attr_reader options: Hash[Symbol, untyped]
 
-    def initialize: (Component component, Symbol model_key, ?Hash[Symbol, untyped] options) -> void
+    def initialize: (Component component, ViewContext view_context, Symbol model_key, ?Hash[Symbol, untyped] options) -> void
 
     # Field builder methods
     def text_field: (Symbol field_name, ?Hash[Symbol, untyped] options) -> VDOM::Element

@@ -32,6 +32,7 @@ module Funicular
     private def self.now_seconds: () -> Integer
     private def self.cache_hit?: (untyped entry, Integer ttl) -> bool
     private def self.serve_from_cache: (Hash[String, untyped] entry) { (Response) -> void } -> void
+    private def self.parse_response_body: (untyped text) -> untyped
     private def self.request: (String method, String url, Hash[untyped, untyped]? body, ?cache: Integer?) { (Response) -> void } -> void
   end
 end

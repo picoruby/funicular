@@ -40,26 +40,26 @@
 
       def increment(event)
         event.preventDefault if event
-        patch(count: state.count + 1)
+        patch(count: state[:count] + 1)
       end
 
       def decrement(event)
         event.preventDefault if event
-        patch(count: state.count - 1)
+        patch(count: state[:count] - 1)
       end
 
-      def render
-        div(id: "counter-app") do
-          h2 { "Counter: #{state.count}" }
-          div(id: "status") do
-            "Mounted: #{state.mounted}"
+      def render(h)
+        h.div(id: "counter-app") do |hh|
+          hh.h2 { "Counter: #{state[:count]}" }
+          hh.div(id: "status") do
+            "Mounted: #{state[:mounted]}"
           end
-          div do
-            button(id: "increment-btn", onclick: :increment) { "+1" }
-            button(id: "decrement-btn", onclick: :decrement) { "-1" }
+          hh.div do |hhh|
+            hhh.button(id: "increment-btn", onclick: :increment) { "+1" }
+            hhh.button(id: "decrement-btn", onclick: :decrement) { "-1" }
           end
-          div(ref: :display, id: "display") do
-            "Current value: #{state.count}"
+          hh.div(ref: :display, id: "display") do
+            "Current value: #{state[:count]}"
           end
         end
       end
@@ -89,7 +89,7 @@
       # Test 2: Initial state
       begin
         counter = TestCounter.new
-        initial_state = counter.state.count == 0
+        initial_state = counter.state[:count] == 0
         log_test("Initial state", initial_state)
       rescue => e
         log_test("Initial state", false)
@@ -139,13 +139,13 @@
         has_button = btn != nil
 
         # Test handler logic by calling it directly (standard testing approach)
-        initial_count = counter.state.count
+        initial_count = counter.state[:count]
         counter.increment(nil)
         sleep 0.05
 
         h2_element = JS.document.querySelector('#counter-app h2')
         text = h2_element.textContent.to_s
-        handler_works = counter.state.count == initial_count + 1 && text.include?("#{initial_count + 1}")
+        handler_works = counter.state[:count] == initial_count + 1 && text.include?("#{initial_count + 1}")
 
         log_test("Event handler (click)", has_button && handler_works)
       rescue => e

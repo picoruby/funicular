@@ -70,6 +70,7 @@ class RouterTest < Picotest::Test
     helper = Object.new
     helper.extend(url_helpers)
     assert_equal('/posts', helper.posts_path)
+    assert_equal('/posts', @router.route_helpers.posts_path)
   end
 
   # Test URL helper with single parameter
@@ -79,6 +80,7 @@ class RouterTest < Picotest::Test
     helper = Object.new
     helper.extend(url_helpers)
     assert_equal('/posts/123', helper.post_path(123))
+    assert_equal('/posts/123', @router.route_helpers.post_path(123))
   end
 
   # Test URL helper with multiple parameters

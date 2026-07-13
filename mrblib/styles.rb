@@ -30,32 +30,28 @@ module Funicular
       @definitions = definitions
     end
 
-    def method_missing(name, *args)
+    def [](name, variant = nil)
       style = @definitions[name]
       return StyleValue.new("") unless style
 
-      if args.empty?
+      if variant.nil?
         # No arguments: return base or value
         StyleValue.new(style[:base] || style[:value] || "")
-      elsif args[0] == true || args[0] == false
+      elsif variant == true || variant == false
         # Boolean argument: base + active (if true)
         # JS::Object#== now supports direct comparison with Ruby true/false
         base = style[:base] || ""
-        active_class = (args[0] == true) ? (style[:active] || "") : ""
+        active_class = (variant == true) ? (style[:active] || "") : ""
         StyleValue.new("#{base} #{active_class}".strip)
-      elsif args[0].is_a?(Symbol)
+      elsif variant.is_a?(Symbol)
         # Symbol argument: base + variants[symbol]
         base = style[:base] || ""
-        variant_class = style[:variants] ? (style[:variants][args[0]] || "") : ""
+        variant_class = style[:variants] ? (style[:variants][variant] || "") : ""
         StyleValue.new("#{base} #{variant_class}".strip)
       else
         # Other types: just return base
         StyleValue.new(style[:base] || style[:value] || "")
       end
-    end
-
-    def respond_to_missing?(name, include_private = false)
-      @definitions.key?(name) || super
     end
   end
 
@@ -64,13 +60,13 @@ module Funicular
       @definitions = {}
     end
 
-    def method_missing(name, *args)
-      if args.size == 1 && args[0].is_a?(String)
-        # Simple style: name "class-string"
-        @definitions[name] = { value: args[0] }
-      elsif args.size == 1 && args[0].is_a?(Hash)
-        # Complex style with base/active/variants
-        @definitions[name] = args[0]
+    def define(name, value = nil, **options)
+      if value.is_a?(String)
+        @definitions[name] = { value: value }
+      elsif value.is_a?(Hash)
+        @definitions[name] = value
+      elsif !options.empty?
+        @definitions[name] = options
       else
         raise ArgumentError, "Invalid style definition for #{name}"
       end

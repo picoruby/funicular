@@ -4,7 +4,8 @@ module Funicular
       VOID_ELEMENTS: Array[String]
       SKIP_PROPS: Array[Symbol]
 
-      def self.serialize: (VNode? vnode) -> String
+      def self.serialize: (VNode? vnode, ?Runtime? runtime) -> String
+      def initialize: (?Runtime? runtime) -> void
       def render: (VNode? vnode) -> String
 
       private

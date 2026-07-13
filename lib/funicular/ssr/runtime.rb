@@ -27,6 +27,8 @@ module Funicular
         differ
         patcher
         styles
+        runtime
+        view_context
         debug
         component
         error_boundary

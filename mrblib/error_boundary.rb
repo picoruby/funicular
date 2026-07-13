@@ -3,13 +3,13 @@ module Funicular
   # a fallback UI instead of crashing the entire application.
   #
   # Usage:
-  #   component(ErrorBoundary) do
-  #     component(RiskyComponent)
+  #   h.component(ErrorBoundary) do |hh|
+  #     hh.component(RiskyComponent)
   #   end
   #
   # With custom fallback:
-  #   component(ErrorBoundary, fallback: ->(error) { div { "Error: #{error.message}" } }) do
-  #     component(RiskyComponent)
+  #   h.component(ErrorBoundary, fallback: ->(h, error) { h.div { "Error: #{error.message}" } }) do |hh|
+  #     hh.component(RiskyComponent)
   #   end
   #
   # Props:
@@ -60,56 +60,48 @@ module Funicular
       end
     end
 
-    def render
+    def render(h)
       if state[:has_error]
-        render_fallback
+        render_fallback(h)
       else
-        render_children
+        render_children(h)
       end
     end
 
     private
 
-    def render_fallback
+    def render_fallback(h)
       if props[:fallback]
-        result = props[:fallback].call(state[:error])
+        result = props[:fallback].call(h, state[:error])
         if result.is_a?(VDOM::VNode)
           result
         else
-          div { result.to_s }
+          h.div { result.to_s }
         end
       else
-        default_fallback
+        default_fallback(h)
       end
     end
 
-    def default_fallback
-      div(class: 'error-boundary-fallback', style: 'padding: 20px; background: #fee; border: 1px solid #f00; border-radius: 4px;') do
-        h3(style: 'color: #c00; margin: 0 0 10px 0;') { "Something went wrong" }
+    def default_fallback(h)
+      h.div(class: 'error-boundary-fallback', style: 'padding: 20px; background: #fee; border: 1px solid #f00; border-radius: 4px;') do |hh|
+        hh.h3(style: 'color: #c00; margin: 0 0 10px 0;') { "Something went wrong" }
         if state[:error]
-          div(style: 'font-family: monospace; white-space: pre-wrap; font-size: 12px; color: #600;') do
+          hh.div(style: 'font-family: monospace; white-space: pre-wrap; font-size: 12px; color: #600;') do
             "#{state[:error].class}: #{state[:error].message}"
           end
         end
         if Funicular.env.development? && state[:error_info]
-          div(style: 'margin-top: 10px; font-size: 11px; color: #666;') do
+          hh.div(style: 'margin-top: 10px; font-size: 11px; color: #666;') do
             "Component: #{state[:error_info][:component_class]}"
           end
         end
       end
     end
 
-    def render_children
-      # Children are passed via children_block prop from the component() DSL
-      # Errors are caught by VDOM::Renderer.render_component
-      if props[:children_block]
-        div(class: 'error-boundary-content') do
-          props[:children_block].call
-        end
-      elsif props[:children]
-        props[:children]
-      else
-        div { "" }
+    def render_children(h)
+      h.div(class: 'error-boundary-content') do
+        children
       end
     end
   end
