@@ -26,30 +26,43 @@ stay free of browser-only calls on any server code path
 
 ## `mrblib/` runtime: responsibilities
 
-| File(s)                                          | Responsibility                                                            |
-|--------------------------------------------------|---------------------------------------------------------------------------|
-| `funicular.rb`                                   | Top-level module: `start`, `router`, `server?`, `debug_color` export      |
-| `component.rb`                                   | `Funicular::Component` base: state, props, lifecycle, suspense, refs, styles |
-| `vdom.rb`                                         | Virtual DOM nodes and the element-factory DSL (`div`, `button`, ...)      |
-| `differ.rb`                                       | `Differ.diff(old, new)` -- minimal patch set, key-based list reconciliation |
-| `patcher.rb`                                      | `Patcher.apply(dom, patches)` -- apply patches to the real DOM            |
-| `html_serializer.rb`                             | `VDOM::HTMLSerializer` -- VDOM to HTML string (used by SSR)               |
-| `router.rb`                                       | Client-side router, route DSL, `RouteHelpers` generation, History API     |
-| `model.rb`                                        | Object-REST Mapper (`all`/`find`/`create`/`update`/`destroy`)            |
-| `http.rb`                                         | Low-level fetch wrapper, CSRF, IndexedDB response cache                    |
-| `cable.rb`                                        | ActionCable-compatible consumer/subscription client                       |
-| `store.rb`, `store_singleton.rb`, `store_collection.rb` | IndexedDB-backed stores, scope API, `subscribes_to`, event dispatch |
-| `form_builder.rb`                                | `form_for` and field helpers with inline error rendering                  |
-| `0_validations.rb`, `1_validators.rb`            | ActiveModel-style validators and `errors`                                 |
-| `styles.rb`                                       | CSS-in-Ruby `styles` DSL and the `s` helper                              |
-| `error_boundary.rb`                              | `ErrorBoundary` component                                                 |
-| `file_upload.rb`                                 | File / FormData upload helper                                              |
-| `debug.rb`                                        | Development-only component/error registry for the DevTools extension      |
-| `environment_inquirer.rb`                        | Environment detection (`server?`, `development?`)                         |
+| File(s)                                                 | Responsibility                                                                                  |
+|---------------------------------------------------------|-------------------------------------------------------------------------------------------------|
+| `funicular.rb`                                          | Top-level module: `start`, `router`, `server?`, `debug_color` export                            |
+| `runtime.rb`                                            | Per-app runtime context propagated through render/SSR/hydration                                 |
+| `view_context.rb`                                       | Thin render facade passed as `render(h)`: elements, components, forms, routes, styles, suspense |
+| `component.rb`                                          | `Funicular::Component` base: state, props, lifecycle, suspense loading, refs                    |
+| `vdom.rb`                                               | Virtual DOM nodes, including component vnodes with ordinary `children`                          |
+| `differ.rb`                                             | `Differ.diff(old, new)` -- minimal patch set, key-based list reconciliation                     |
+| `patcher.rb`                                            | `Patcher.apply(dom, patches)` -- apply patches to the real DOM                                  |
+| `html_serializer.rb`                                    | `VDOM::HTMLSerializer` -- VDOM to HTML string (used by SSR)                                     |
+| `router.rb`                                             | Client-side router, route DSL, per-runtime route helper object, History API                     |
+| `model.rb`                                              | Object-REST Mapper (`all`/`find`/`create`/`update`/`destroy`)                                   |
+| `http.rb`                                               | Low-level fetch wrapper, CSRF, IndexedDB response cache                                         |
+| `cable.rb`                                              | ActionCable-compatible consumer/subscription client                                             |
+| `store.rb`, `store_singleton.rb`, `store_collection.rb` | IndexedDB-backed stores, scope API, `subscribes_to`, event dispatch                             |
+| `form_builder.rb`                                       | `h.form_for` field helpers with inline error rendering                                          |
+| `0_validations.rb`, `1_validators.rb`                   | ActiveModel-style validators and `errors`                                                       |
+| `styles.rb`                                             | CSS-in-Ruby `styles { |css| css.define ... }` and `h.styles[...]` access                        |
+| `error_boundary.rb`                                     | `ErrorBoundary` component                                                                       |
+| `file_upload.rb`                                        | File / FormData upload helper                                                                   |
+| `debug.rb`                                              | Development-only component/error registry for the DevTools extension                            |
+| `environment_inquirer.rb`                               | Environment detection (`server?`, `development?`)                                               |
 
 The render cycle: a state change calls `patch()`, which rebuilds the component's
-VDOM, diffs it against the previous VDOM with `Differ`, and applies the result
-with `Patcher`. Event handlers are native DOM listeners, re-bound on each render.
+VDOM by calling `render(h)`, diffs it against the previous VDOM with `Differ`,
+and applies the result with `Patcher`. Event handlers are native DOM listeners,
+re-bound on each render.
+
+Application code receives all render helpers through `h`. HTML is authored as
+`h.div`, custom elements as `h.tag(:custom_element)`, child components as
+`h.component`, forms as `h.form_for`, styles as `h.styles[:name]`, resources as
+`h.resources[:name]`, and routes as `h.routes.user_path(id)`. Component state is
+explicitly read with `state[:name]` or `state.fetch(:name)`.
+
+Component children are ordinary VDOM children stored on
+`VDOM::Component#children`; there is no delayed `children_block` prop. This keeps
+SSR, diffing, ErrorBoundary rendering, and hydration on the same data model.
 
 ## `lib/` Rails integration
 
@@ -87,11 +100,11 @@ only works from within that checkout -- see Development below.
 
 For SSR the `mrblib/` framework is loaded into the Rails process under CRuby.
 `Funicular::SSR.render(path:, state:)` resolves the path against the routes in
-`app/funicular/initializer.rb`, builds the component's VDOM, and serializes it
-with `HTMLSerializer`. The state is also embedded as `window.__FUNICULAR_STATE__`
-so the browser can hydrate the markup rather than rebuild it. Keep `render`
-deterministic and free of browser-only calls so the same code is safe on both
-sides.
+`app/funicular/initializer.rb`, builds a `Runtime` around that router, builds the
+component's VDOM, and serializes it with `HTMLSerializer`. The state is also
+embedded as `window.__FUNICULAR_STATE__` so the browser can hydrate the markup
+rather than rebuild it. Keep `render(h)` deterministic and free of browser-only
+calls so the same code is safe on both sides.
 
 ## Development
 

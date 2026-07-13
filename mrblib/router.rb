@@ -1,6 +1,6 @@
 module Funicular
   class Router
-    attr_reader :routes, :current_component, :current_path
+    attr_reader :routes, :current_component, :current_path, :url_helpers, :route_helpers
 
     def initialize(container)
       @container = container
@@ -10,7 +10,9 @@ module Funicular
       @current_path = nil
       @popstate_callback_id = nil
       @url_helpers = Module.new
-      Funicular.const_set(:RouteHelpers, @url_helpers) unless Funicular.const_defined?(:RouteHelpers)
+      @route_helpers = Object.new
+      @route_helpers.extend(@url_helpers)
+      @runtime = Funicular::Runtime.new(self)
     end
 
     # Rails-style DSL methods
@@ -133,6 +135,7 @@ module Funicular
       # Mount new component
       @current_path = path
       @current_component = component_class.new(params)
+      @current_component.runtime = @runtime
       # @type ivar @current_component: Funicular::Component
 
       server_root = hydrate_now ? Funicular.first_element_child(@container) : nil
@@ -147,6 +150,7 @@ module Funicular
           puts "[Funicular] Hydration failed, falling back to full render: #{e.message}"
           @container[:innerHTML] = ''
           @current_component = component_class.new(params)
+          @current_component.runtime = @runtime
         end
       end
 
@@ -194,19 +198,19 @@ module Funicular
       if param_names.empty?
         # No parameters - return static path
         @url_helpers.module_eval do
-          define_method(helper_method_name) do # steep:ignore
+          define_method(helper_method_name) do
             path_pattern
           end
         end
       else
         # With parameters
         @url_helpers.module_eval do
-          define_method(helper_method_name) do |*args| # steep:ignore
+          define_method(helper_method_name) do |*args|
             # Handle model objects with id method
             if args.length == 1 && args[0].respond_to?(:id) && param_names.length == 1
               args = [args[0].id]
             elsif args.length != param_names.length
-              raise ArgumentError, "#{helper_method_name} expects #{param_names.length} argument(s), got #{args.length}"
+              Kernel.raise ArgumentError, "#{helper_method_name} expects #{param_names.length} argument(s), got #{args.length}"
             end
 
             result = path_pattern.dup

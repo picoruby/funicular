@@ -1,0 +1,47 @@
+module Funicular
+  class ViewContext
+    HTML_TAGS: Array[String]
+
+    def initialize: (Component component) -> void
+    def state: () -> Component::StateAccessor
+    def props: () -> Hash[Symbol, untyped]
+    def resources: () -> Component::ResourceAccessor
+    def styles: () -> StyleAccessor
+    def routes: () -> untyped
+    def tag: (Symbol | String name, ?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def component: (singleton(Component) component_class, ?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Component
+    def form_for: (Symbol model_key, ?Hash[Symbol, untyped] options) { (FormBuilder) -> void } -> VDOM::Element
+    def suspense: (Symbol name, fallback: untyped, ?error: untyped) { (ViewContext, Component::ResourceAccessor) -> untyped } -> untyped
+    def link_to: (String path, **untyped options) ?{ -> untyped } -> VDOM::Element
+    def button_to: (String path, ?method: Symbol, **untyped options) ?{ -> untyped } -> VDOM::Element
+    def capture: () { (ViewContext) -> untyped } -> Array[VDOM::child_t]
+    def add_child: (untyped child) -> void
+    private def build_element: (Symbol | String tag_name, ?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    private def normalize_props: (Hash[Symbol, untyped] props) -> Hash[Symbol, untyped]
+
+    def div: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def span: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def p: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def a: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def data: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def h1: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def h2: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def h3: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def h4: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def h5: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def h6: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def ul: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def ol: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def li: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def table: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def form: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def input: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def textarea: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def button: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def select: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def option: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def label: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def nav: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+    def canvas: (?Hash[Symbol, untyped] props) ?{ (ViewContext) -> untyped } -> VDOM::Element
+  end
+end

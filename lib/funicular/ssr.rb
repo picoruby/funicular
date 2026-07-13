@@ -30,8 +30,9 @@ module Funicular
       return { html: "", state: {}, component: nil } unless component_class
 
       instance = component_class.new(symbolize_keys(params).merge(props))
+      instance.runtime = Funicular::Runtime.new(router)
       instance.seed_state(state)
-      html = Funicular::VDOM::HTMLSerializer.serialize(instance.build_vdom)
+      html = Funicular::VDOM::HTMLSerializer.serialize(instance.build_vdom, instance.runtime)
 
       { html: html, state: state, component: component_class }
     end

@@ -5,46 +5,77 @@ module Funicular
         @state = state_hash
       end
 
-      # Support dynamic key access: state[:key] or state[variable_key]
       def [](key)
         @state[key]
       end
-      def method_missing(method, *args)
-        if method.to_s.end_with?('=')
-          key = method.to_s[0..-2] || method
-          raise "Use patch(#{key}: value) to update state"
-        else
-          @state[method]
-        end
+
+      def fetch(key, default = nil)
+        return @state.fetch(key) if default.nil? && @state.key?(key)
+        @state.fetch(key, default)
       end
 
-      def respond_to_missing?(method, include_private = false)
-        return false if method.to_s.end_with?('=')
-        @state.key?(method) || super
+      def key?(key)
+        @state.key?(key)
+      end
+
+      def to_h
+        @state
       end
     end
 
-    attr_accessor :props, :vdom, :dom_element, :mounted
+    class ResourceAccessor
+      def initialize(data, states, errors)
+        @data = data
+        @states = states
+        @errors = errors
+      end
+
+      def [](key)
+        @data[key]
+      end
+
+      def fetch(key, default = nil)
+        return @data.fetch(key) if default.nil? && @data.key?(key)
+        @data.fetch(key, default)
+      end
+
+      def loading?(key)
+        @states[key] == :pending || @states[key] == :loading
+      end
+
+      def error?(key)
+        @states[key] == :rejected
+      end
+
+      def error(key)
+        @errors[key]
+      end
+    end
+
+    attr_accessor :props, :vdom, :dom_element, :mounted, :runtime, :children, :current_children
     attr_reader :refs
 
     def initialize(props = {})
       @props = props
       @state = initialize_state || {}
       @state_accessor = nil
+      @resource_accessor = nil
       @style_accessor = nil
+      @runtime = Funicular::Runtime.new
+      @children = [] #: Array[Funicular::VDOM::child_t]
       @vdom = nil
       @dom_element = nil
-      @refs = {}
-      @event_listeners = []
+      @refs = {} #: Hash[Symbol, JS::Element]
+      @event_listeners = [] #: Array[untyped]
       @mounted = false
       @updating = false
-      @child_components = []
+      @child_components = [] #: Array[Funicular::Component]
 
       # Initialize suspense state
-      @suspense_data = {}
-      @suspense_states = {}   # :pending, :loading, :resolved, :rejected
-      @suspense_errors = {}
-      @suspense_pending_timers = []  # Track pending setTimeout IDs for cleanup
+      @suspense_data = {} #: Hash[Symbol, untyped]
+      @suspense_states = {} #: Hash[Symbol, Symbol]
+      @suspense_errors = {} #: Hash[Symbol, untyped]
+      @suspense_pending_timers = [] #: Array[untyped]
       self.class.suspense_definitions.each_key do |name|
         @suspense_states[name] = :pending
       end
@@ -57,6 +88,14 @@ module Funicular
       @state_accessor ||= StateAccessor.new(@state)
     end
 
+    def resources
+      @resource_accessor ||= ResourceAccessor.new(@suspense_data, @suspense_states, @suspense_errors)
+    end
+
+    def styles
+      @style_accessor ||= StyleAccessor.new(self.class.styles_definitions)
+    end
+
     # Override this method in subclasses to define initial state
     def initialize_state
       {}
@@ -66,7 +105,7 @@ module Funicular
     # Used by SSR to inject server data, and by client hydration to restore
     # the same state from window.__FUNICULAR_STATE__ so the first client
     # render matches the server HTML. Top-level keys are symbolized so they
-    # are reachable via state.foo (StateAccessor uses symbol keys); nested
+    # are reachable via state[:foo] (StateAccessor uses symbol keys); nested
     # values are left untouched (components read them with string keys).
     def seed_state(state_hash)
       return self if state_hash.nil?
@@ -191,30 +230,25 @@ module Funicular
     #   ) do
     #     div { user.name }
     #   end
-    def suspense(fallback:, error: nil, &block)
+    def render_suspense(h, name, fallback:, error: nil, &block)
       current_children = @current_children
       child_count_before = current_children&.size
       result = nil
 
-      # Check for any rejected suspense
-      rejected_name = self.class.suspense_definitions.keys.find { |name| @suspense_states[name] == :rejected }
-      if rejected_name
+      if @suspense_states[name] == :rejected
         result = if error
-          error.call(@suspense_errors[rejected_name])
+          error.call(h, @suspense_errors[name])
         else
-          fallback.call
+          fallback.call(h)
         end
-      elsif suspense_loading?
-        # Check if any suspense is still loading
-        # Note: Loading is started in mount(), not here
-        result = fallback.call
+      elsif suspense_loading?(name)
+        result = fallback.call(h)
       else
-        # All suspense data loaded, render content
-        result = block.call
+        result = block.call(h, resources)
       end
 
       if current_children && current_children.size == child_count_before
-        add_child(result)
+        add_child_from_view(result)
       end
 
       result
@@ -223,7 +257,7 @@ module Funicular
     # Class methods for styles DSL
     def self.styles(&block)
       builder = StyleBuilder.new
-      builder.instance_eval(&block)
+      block.call(builder)
       @styles_definitions = builder.to_definitions
     end
 
@@ -257,11 +291,6 @@ module Funicular
 
     def self.suspense_definitions
       @suspense_definitions ||= {}
-    end
-
-    # Instance method to access styles
-    def s
-      @style_accessor ||= StyleAccessor.new(self.class.styles_definitions)
     end
 
     # Update state and trigger re-render
@@ -301,7 +330,7 @@ module Funicular
 
         @container = container
         new_vdom = build_vdom
-        @dom_element = VDOM::Renderer.new.render(new_vdom)
+        @dom_element = VDOM::Renderer.new(nil, @runtime).render(new_vdom)
         bind_events(@dom_element, new_vdom)
         collect_refs(@dom_element, new_vdom)
         collect_child_components(new_vdom)
@@ -397,7 +426,7 @@ module Funicular
         @child_components.each do |child|
           child.unmount if child.respond_to?(:unmount)
         end
-        @child_components = []
+        @child_components = [] #: Array[Funicular::Component]
 
         cleanup_events
         cleanup_suspense_timers
@@ -418,17 +447,23 @@ module Funicular
     end
 
     # Override this method in subclasses to define render logic
-    def render
-      raise "Subclasses must implement the render method"
+    def render(h)
+      raise "Subclasses must implement render(h)"
     end
 
     # Build VDOM tree from render method
     # Called by VDOM::Renderer, Differ, and Patcher
     def build_vdom
+      previous_rendering = @rendering
+      previous_children = @current_children
       @rendering = true
       @current_children = nil
-      result = render
-      @rendering = false
+      begin
+        result = render(ViewContext.new(self))
+      ensure
+        @rendering = previous_rendering
+        @current_children = previous_children
+      end
 
       # Convert render result to VNode
       vnode = normalize_vnode(result)
@@ -563,7 +598,7 @@ module Funicular
       @event_listeners.each do |callback_id|
         JS::Object.removeEventListener(callback_id)
       end
-      @event_listeners = []
+      @event_listeners = [] #: Array[untyped]
 
       # NOTE: Do NOT cleanup child component events here!
       # Child components manage their own events and will cleanup
@@ -576,7 +611,74 @@ module Funicular
       @suspense_pending_timers.each do |timer_id|
         JS.global.clearTimeout(timer_id)
       end
-      @suspense_pending_timers = []
+      @suspense_pending_timers = [] #: Array[untyped]
+    end
+
+    private
+
+    public
+
+    def normalize_vnode_for_view(value)
+      normalize_vnode(value)
+    end
+
+    def add_child_from_view(child)
+      current_children = @current_children
+      return unless @rendering && current_children
+
+      normalized = normalize_vnode(child)
+      current_children << normalized if normalized
+    end
+
+    def build_form_for(h, model_key, options = {}, &block)
+      on_submit = options.delete(:on_submit)
+      form_class = options.delete(:class)
+
+      submit_handler = if on_submit
+        ->(event) do
+          event.preventDefault
+          form_data = collect_form_data(event, model_key)
+
+          case on_submit
+          when Symbol
+            send(on_submit, form_data)
+          when Method
+            on_submit.call(form_data)
+          when Proc
+            on_submit.call(form_data)
+          else
+            raise "on_submit must be Symbol, Method, or Proc, got #{on_submit.class}"
+          end
+        end
+      else
+        ->(event) { event.preventDefault }
+      end
+
+      h.form({ onsubmit: submit_handler, class: form_class }.merge(options)) do |hh|
+        builder = Funicular::FormBuilder.new(self, hh, model_key, options)
+        block.call(builder)
+      end
+    end
+
+    def build_link_to(h, path, method: :get, **options, &block)
+      merged_options = options.merge(href: path)
+      merged_options[:onclick] = ->(event) {
+        event.preventDefault
+        if method.to_s.downcase.to_sym == :get
+          handle_link_click(path)
+        else
+          handle_link_with_method(path, method)
+        end
+      }
+      h.a(merged_options, &block)
+    end
+
+    def build_button_to(h, path, method: :post, **options, &block)
+      merged_options = options.merge(
+        type: options[:type] || "button",
+        onclick: -> { handle_link_with_method(path, method) }
+      )
+      h.button(merged_options, &block)
     end
 
     private
@@ -615,7 +717,7 @@ module Funicular
       cleanup_events
 
       unless patches.empty?
-        new_dom_element = VDOM::Patcher.new.apply(@dom_element, patches)
+        new_dom_element = VDOM::Patcher.new(nil, @runtime).apply(@dom_element, patches)
         # apply returns JS::Object (it must accept text-node patches), but
         # the component's root is always an Element. Narrow to JS::Element.
         @dom_element = new_dom_element if new_dom_element.is_a?(JS::Element)
@@ -698,7 +800,7 @@ module Funicular
     # appendChild: the stale node already has a place in the document, so we
     # replaceChild instead.
     def full_render_fallback(new_vdom, server_dom)
-      fresh = VDOM::Renderer.new.render(new_vdom)
+      fresh = VDOM::Renderer.new(nil, @runtime).render(new_vdom)
       parent = server_dom.parentNode
       parent.replaceChild(fresh, server_dom) if parent
       bind_events(fresh, new_vdom)
@@ -721,6 +823,8 @@ module Funicular
 
         if child.is_a?(VDOM::Component)
           instance = child.component_class.new(child.props)
+          instance.runtime = child.runtime || @runtime
+          instance.children = child.children
           child.instance = instance
           instance.hydrate(child_dom)
         elsif child.is_a?(VDOM::Element)
@@ -731,7 +835,7 @@ module Funicular
 
     # Collect child component instances from VDOM tree
     def collect_child_components(vnode)
-      @child_components = []
+      @child_components = [] #: Array[Funicular::Component]
       collect_child_components_recursive(vnode, @child_components)
     end
 
@@ -747,135 +851,6 @@ module Funicular
           # @type var child: VDOM::VNode
           collect_child_components_recursive(child, components)
         end
-      end
-    end
-
-    # DSL methods for HTML elements
-    HTML_TAGS = %w[
-      div span p a
-      h1 h2 h3 h4 h5 h6
-      ul ol li
-      table thead tbody tr th td
-      form input textarea button select option label
-      header footer nav section article aside
-      img video audio canvas
-      br hr
-    ]
-
-    # The HTML tag DSL methods are public: besides being called inside render
-    # (implicit self), they are invoked by collaborators such as FormBuilder
-    # with an explicit receiver (@component.div). A private method would forbid
-    # that under CRuby (it is tolerated under mruby), which would break SSR of
-    # any component using form_for. Keep them public on both VMs.
-    public
-
-    HTML_TAGS.each do |tag|
-      define_method(tag) do |props = {}, &block|
-        # @type self: Component
-        children = [] #: Array[Funicular::VDOM::child_t]
-
-        if block
-          prev_children = @current_children
-          @current_children = children
-          # @type var block: Proc
-          result = block.call
-          @current_children = prev_children
-
-          # Add block result to children if not already added via add_child
-          if result && !result.equal?(children) && children.empty?
-            normalized = normalize_vnode(result)
-            children << normalized if normalized
-          end
-        end
-
-        # Normalize props (convert StyleValue to String for :class)
-        normalized_props = {}
-        # @type var props: Hash[Symbol, String]
-        props.each do |key, value|
-          if key == :class && value.is_a?(StyleValue)
-            normalized_props[key] = value.to_s
-          else
-            normalized_props[key] = value
-          end
-        end
-
-        # @type var normalized_props: Hash[Symbol, String]
-        element = VDOM::Element.new(tag, normalized_props, children)
-
-        # If we're inside another element's block, add this element to parent's children
-        if @rendering && @current_children
-          @current_children << element
-        end
-
-        element
-      end
-    end
-
-    private
-
-    # Helper to add children in DSL blocks
-    def add_child(child)
-      return unless @rendering && @current_children
-
-      normalized = normalize_vnode(child)
-      @current_children << normalized if normalized
-    end
-
-    # Helper method to render child components in DSL
-    # Accepts optional block for passing children to the component
-    def component(component_class, props = {}, &block)
-      unless component_class.is_a?(Class) && component_class.ancestors.include?(Funicular::Component)
-        raise "component() expects a Funicular::Component class"
-      end
-
-      # If a block is provided, store the children builder in props
-      # This allows components like ErrorBoundary to control child rendering
-      if block
-        props = props.merge(children_block: block)
-      end
-
-      vnode = VDOM::Component.new(component_class, props)
-
-      # If we're inside another element's block, add this component to parent's children
-      if @rendering && @current_children
-        @current_children << vnode
-      end
-
-      vnode
-    end
-
-    # Rails-style form_for helper
-    def form_for(model_key, options = {}, &block)
-      on_submit = options.delete(:on_submit)
-      form_class = options.delete(:class)
-
-      # Build submit handler
-      submit_handler = if on_submit
-        ->(event) do
-          event.preventDefault
-
-          form_data = collect_form_data(event, model_key)
-
-          # Call the submit handler (Symbol, Method, or Proc)
-          case on_submit
-          when Symbol
-            send(on_submit, form_data)
-          when Method
-            on_submit.call(form_data)
-          when Proc
-            on_submit.call(form_data)
-          else
-            raise "on_submit must be Symbol, Method, or Proc, got #{on_submit.class}"
-          end
-        end
-      else
-        ->(event) { event.preventDefault }
-      end
-
-      # Render form
-      form({ onsubmit: submit_handler, class: form_class }.merge(options)) do
-        builder = Funicular::FormBuilder.new(self, model_key, options)
-        block.call(builder)
       end
     end
 
@@ -937,7 +912,7 @@ module Funicular
     end
 
     def collect_state_form_data(model_key)
-      model_data = state.send(model_key)
+      model_data = state[model_key]
       if model_data.is_a?(Hash)
         model_data
       elsif model_data.respond_to?(:instance_variables)
@@ -952,34 +927,9 @@ module Funicular
       end
     end
 
-    # Rails-style link_to helper
-    # Default behavior: Fetch API for same-page actions (SPA-friendly)
-    # Use navigate: true for router navigation (different component tree)
-    def link_to(path, method: :get, navigate: false, **options, &block)
-      if navigate
-        # Navigation: Use <a> tag with real href for browser features
-        # (right-click -> open in new tab, link preview, etc.)
-        # Note: preventDefault is automatically called by js_add_event_listener
-        # for <a> tags to enable SPA navigation
-        merged_options = options.merge(href: path)
-        merged_options[:onclick] = ->(event) {
-          event.preventDefault  # Called for clarity, but already handled by JS layer
-          handle_link_click(path)
-        }
-        a(merged_options, &block)
-      else
-        # Action: Use <div> tag (semantically more appropriate for actions)
-        # No href needed, purely onclick-driven
-        merged_options = options.merge(
-          onclick: -> { handle_link_with_method(path, method) }
-        )
-        div(merged_options, &block)
-      end
-    end
-
     # Handle router navigation (navigate using History API)
     def handle_link_click(path)
-      Funicular.router&.navigate(path)
+      @runtime.router&.navigate(path)
     end
 
     # Handle link action via Fetch API
@@ -1005,35 +955,6 @@ module Funicular
     def handle_link_response(response, path, method)
       if response.error?
         puts "Link action failed (#{method.to_s.upcase} #{path}): #{response.error_message}"
-      end
-    end
-
-    # Enable URL helpers from RouteHelpers module and suspense data accessors
-    def method_missing(method, *args)
-      # Check for suspense data accessor
-      if self.class.suspense_definitions.key?(method)
-        return @suspense_data[method]
-      end
-
-      if Funicular.const_defined?(:RouteHelpers)
-        helpers = Funicular::RouteHelpers
-        if helpers.instance_methods.include?(method)
-          # Include helpers module and retry
-          self.class.include(helpers) unless self.class.include?(helpers)
-          return send(method, *args)
-        end
-      end
-      super
-    end
-
-    def respond_to_missing?(method, include_private = false)
-      # Check for suspense data accessor
-      return true if self.class.suspense_definitions.key?(method)
-
-      if Funicular.const_defined?(:RouteHelpers)
-        Funicular::RouteHelpers.instance_methods.include?(method) || super
-      else
-        super
       end
     end
 

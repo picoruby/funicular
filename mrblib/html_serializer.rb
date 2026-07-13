@@ -16,10 +16,14 @@ module Funicular
       ]
 
       # Props that must never be emitted as HTML attributes.
-      SKIP_PROPS = %i[ref key children_block]
+      SKIP_PROPS = %i[ref key]
 
-      def self.serialize(vnode)
-        new.render(vnode)
+      def self.serialize(vnode, runtime = nil)
+        new(runtime).render(vnode)
+      end
+
+      def initialize(runtime = nil)
+        @runtime = runtime
       end
 
       def render(vnode)
@@ -75,6 +79,8 @@ module Funicular
 
       def render_component(component_vnode)
         instance = component_vnode.component_class.new(component_vnode.props)
+        instance.runtime = component_vnode.runtime || @runtime || Funicular::Runtime.new
+        instance.children = component_vnode.children
         component_vnode.instance = instance
         render(instance.build_vdom)
       end

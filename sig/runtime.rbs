@@ -1,0 +1,13 @@
+module Funicular
+  class Runtime
+    attr_accessor router: Router?
+
+    def initialize: (?Router? router) -> void
+    def routes: () -> untyped
+  end
+
+  module EmptyRoutes
+    def self.method_missing: (Symbol name, *untyped args) -> untyped
+    def self.respond_to_missing?: (Symbol name, ?bool include_private) -> bool
+  end
+end

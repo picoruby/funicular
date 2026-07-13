@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    funicular (0.2.2)
+    funicular (0.3.0)
       rails (~> 8.0)
 
 GEM

@@ -117,9 +117,9 @@ module Funicular
 
       def default_runtime_dir
         ENV["FUNICULAR_TEST_PICORUBY_DIR"] ||
-          existing_path(File.join(gem_root, "lib", "funicular", "vendor", "picoruby-test-node")) ||
           existing_path(File.expand_path("../picoruby/build/picoruby-wasm-test/bin", gem_root)) ||
           existing_path(File.expand_path("../../build/picoruby-wasm-test/bin", gem_root)) ||
+          existing_path(File.join(gem_root, "lib", "funicular", "vendor", "picoruby-test-node")) ||
           File.join(gem_root, "lib", "funicular", "vendor", "picoruby-test-node")
       end
 

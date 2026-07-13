@@ -39,12 +39,12 @@
         }
       end
 
-      def render
-        nav do
-          a(href: '/login', onclick: go_to('/login')) { 'Login' }
-          a(href: '/home', onclick: go_to('/home')) { 'Home' }
-          a(href: '/settings', onclick: go_to('/settings')) { 'Settings' }
-          a(href: '/users', onclick: go_to('/users')) { 'Users' }
+      def render(h)
+        h.nav do |hh|
+          hh.a(href: '/login', onclick: go_to('/login')) { 'Login' }
+          hh.a(href: '/home', onclick: go_to('/home')) { 'Home' }
+          hh.a(href: '/settings', onclick: go_to('/settings')) { 'Settings' }
+          hh.a(href: '/users', onclick: go_to('/users')) { 'Users' }
         end
       end
     end
@@ -63,25 +63,25 @@
         Funicular.router.navigate('/home')
       end
 
-      def render
-        div(class: 'login-page') do
-          h2(class: 'page-title') { 'Login Page' }
+      def render(h)
+        h.div(class: 'login-page') do |hh|
+          hh.h2(class: 'page-title') { 'Login Page' }
 
-          div do
-            input(
+          hh.div do |hhh|
+            hhh.input(
               type: 'text',
               placeholder: 'Username',
-              value: state.username,
+              value: state[:username],
               oninput: :on_username_input
             )
           end
 
-          div do
-            button(onclick: :on_login_click) { 'Login' }
+          hh.div do |hhh|
+            hhh.button(onclick: :on_login_click) { 'Login' }
           end
 
-          div(class: 'status') do
-            "Username: #{state.username}"
+          hh.div(class: 'status') do
+            "Username: #{state[:username]}"
           end
         end
       end
@@ -94,7 +94,7 @@
 
       def increment(event)
         event.preventDefault
-        patch(count: state.count + 1)
+        patch(count: state[:count] + 1)
       end
 
       def go_to_settings(event)
@@ -102,20 +102,20 @@
         Funicular.router.navigate('/settings')
       end
 
-      def render
-        div(class: 'home-page') do
-          h2(class: 'page-title') { 'Home Page' }
+      def render(h)
+        h.div(class: 'home-page') do |hh|
+          hh.h2(class: 'page-title') { 'Home Page' }
 
-          div do
-            "Counter: #{state.count}"
+          hh.div do
+            "Counter: #{state[:count]}"
           end
 
-          div do
-            button(onclick: :increment) { 'Increment' }
-            button(onclick: :go_to_settings) { 'Go to Settings' }
+          hh.div do |hhh|
+            hhh.button(onclick: :increment) { 'Increment' }
+            hhh.button(onclick: :go_to_settings) { 'Go to Settings' }
           end
 
-          div(class: 'status') do
+          hh.div(class: 'status') do
             "You are on the home page. Click around to test routing!"
           end
         end
@@ -129,13 +129,13 @@
 
       def toggle_theme(event)
         event.preventDefault
-        new_theme = state.theme == 'light' ? 'dark' : 'light'
+        new_theme = state[:theme] == 'light' ? 'dark' : 'light'
         patch(theme: new_theme)
       end
 
       def toggle_notifications(event)
         event.preventDefault
-        patch(notifications: !state.notifications)
+        patch(notifications: !state[:notifications])
       end
 
       def go_to_home(event)
@@ -143,25 +143,25 @@
         Funicular.router.navigate('/home')
       end
 
-      def render
-        div(class: 'settings-page') do
-          h2(class: 'page-title') { 'Settings Page' }
+      def render(h)
+        h.div(class: 'settings-page') do |hh|
+          hh.h2(class: 'page-title') { 'Settings Page' }
 
-          div do
-            span { "Theme: #{state.theme}" }
-            button(onclick: :toggle_theme) { 'Toggle Theme' }
+          hh.div do |hhh|
+            hhh.span { "Theme: #{state[:theme]}" }
+            hhh.button(onclick: :toggle_theme) { 'Toggle Theme' }
           end
 
-          div do
-            span { "Notifications: #{state.notifications ? 'ON' : 'OFF'}" }
-            button(onclick: :toggle_notifications) { 'Toggle Notifications' }
+          hh.div do |hhh|
+            hhh.span { "Notifications: #{state[:notifications] ? 'ON' : 'OFF'}" }
+            hhh.button(onclick: :toggle_notifications) { 'Toggle Notifications' }
           end
 
-          div do
-            button(onclick: :go_to_home) { 'Back to Home' }
+          hh.div do |hhh|
+            hhh.button(onclick: :go_to_home) { 'Back to Home' }
           end
 
-          div(class: 'status') do
+          hh.div(class: 'status') do
             "Configure your settings here"
           end
         end
@@ -185,21 +185,21 @@
         }
       end
 
-      def render
-        div(class: 'users-page') do
-          h2(class: 'page-title') { 'Users List' }
+      def render(h)
+        h.div(class: 'users-page') do |hh|
+          hh.h2(class: 'page-title') { 'Users List' }
 
-          ul do
-            state.users.each do |user|
-              li do
-                a(href: "/users/#{user[:id]}", onclick: go_to_user(user[:id])) do
+          hh.ul do |hhh|
+            state[:users].each do |user|
+              hhh.li do |item|
+                item.a(href: "/users/#{user[:id]}", onclick: go_to_user(user[:id])) do
                   user[:name]
                 end
               end
             end
           end
 
-          div(class: 'status') do
+          hh.div(class: 'status') do
             "Click a user to see dynamic route with :id parameter"
           end
         end
@@ -216,20 +216,20 @@
         Funicular.router.navigate('/users')
       end
 
-      def render
-        div(class: 'user-detail-page') do
-          h2(class: 'page-title') { "User Detail" }
+      def render(h)
+        h.div(class: 'user-detail-page') do |hh|
+          hh.h2(class: 'page-title') { "User Detail" }
 
-          div do
-            "Viewing user ID: #{state.user_id}"
+          hh.div do
+            "Viewing user ID: #{state[:user_id]}"
           end
 
-          div do
-            button(onclick: :go_back) { 'Back to Users' }
+          hh.div do |hhh|
+            hhh.button(onclick: :go_back) { 'Back to Users' }
           end
 
-          div(class: 'status') do
-            "This page demonstrates dynamic routing with params[:id] = #{state.user_id}"
+          hh.div(class: 'status') do
+            "This page demonstrates dynamic routing with params[:id] = #{state[:user_id]}"
           end
         end
       end

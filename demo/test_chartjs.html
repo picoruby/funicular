@@ -44,7 +44,7 @@
           return
         end
 
-        current_data = state.data_sets[state.month_index]
+        current_data = state[:data_sets][state[:month_index]]
 
         config = {
           type: 'line',
@@ -69,7 +69,7 @@
       end
 
       def component_updated
-        puts "component_updated: Updating Chart.js with data index #{state.month_index}"
+        puts "component_updated: Updating Chart.js with data index #{state[:month_index]}"
         update_chart
       end
 
@@ -80,22 +80,22 @@
 
       def next_data_set(event)
         event.preventDefault if event
-        new_index = (state.month_index + 1) % state.data_sets.size
-        puts "next_data_set: Changing index from #{state.month_index} to #{new_index}"
+        new_index = (state[:month_index] + 1) % state[:data_sets].size
+        puts "next_data_set: Changing index from #{state[:month_index]} to #{new_index}"
         patch(month_index: new_index)
       end
 
       def prev_data_set(event)
         event.preventDefault if event
-        new_index = (state.month_index - 1) % state.data_sets.size
-        puts "prev_data_set: Changing index from #{state.month_index} to #{new_index}"
+        new_index = (state[:month_index] - 1) % state[:data_sets].size
+        puts "prev_data_set: Changing index from #{state[:month_index]} to #{new_index}"
         patch(month_index: new_index)
       end
 
       def update_chart
         return unless @chart
 
-        current_data = state.data_sets[state.month_index]
+        current_data = state[:data_sets][state[:month_index]]
         puts "update_chart: Setting data to #{current_data[:labels].join(', ')}"
 
         # Convert to JS objects
@@ -118,18 +118,18 @@
         puts "update_chart: Chart.js update('active') called"
       end
 
-      def render
-        div(id: "dashboard") do
-          h2 { "Sales Dashboard" }
-          div(id: "chart-container") do
-            canvas(ref: :chart_canvas, id: "chart")
+      def render(h)
+        h.div(id: "dashboard") do |hh|
+          hh.h2 { "Sales Dashboard" }
+          hh.div(id: "chart-container") do |hhh|
+            hhh.canvas(ref: :chart_canvas, id: "chart")
           end
-          div do
-            button(id: "prev-btn", onclick: :prev_data_set) { "Previous Quarter" }
-            button(id: "next-btn", onclick: :next_data_set) { "Next Quarter" }
+          hh.div do |hhh|
+            hhh.button(id: "prev-btn", onclick: :prev_data_set) { "Previous Quarter" }
+            hhh.button(id: "next-btn", onclick: :next_data_set) { "Next Quarter" }
           end
-          div(id: "info") do
-            current = state.data_sets[state.month_index]
+          hh.div(id: "info") do
+            current = state[:data_sets][state[:month_index]]
             "Current data: #{current[:labels].join(', ')}"
           end
         end

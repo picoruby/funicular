@@ -146,26 +146,29 @@ module Funicular
     end
 
     class Component < VNode
-      attr_reader :component_class, :props
-      attr_accessor :instance
+      attr_reader :component_class, :props, :children
+      attr_accessor :instance, :runtime
 
-      def initialize(component_class, props = {})
+      def initialize(component_class, props = {}, children = [])
         super(:component)
         @component_class = component_class
         @key = props.delete(:key)
         @props = props
+        @children = children || []
         @instance = nil
+        @runtime = nil
       end
 
       def ==(other)
         return false unless other.is_a?(Component)
-        @component_class == other.component_class && @props == other.props
+        @component_class == other.component_class && @props == other.props && @children == other.children
       end
     end
 
     class Renderer
-      def initialize(doc = nil)
+      def initialize(doc = nil, runtime = nil)
         @doc = doc || JS.document
+        @runtime = runtime
         @error_boundary_stack = []
       end
 
@@ -252,6 +255,8 @@ module Funicular
 
       def render_component(component_vnode, parent)
         instance = component_vnode.component_class.new(component_vnode.props)
+        instance.runtime = component_vnode.runtime || @runtime || Funicular::Runtime.new
+        instance.children = component_vnode.children
         component_vnode.instance = instance
 
         is_error_boundary = instance.is_a?(Funicular::ErrorBoundary)

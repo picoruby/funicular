@@ -39,7 +39,7 @@ module Funicular
     class Renderer
       @error_boundary_stack: Array[Funicular::ErrorBoundary]
 
-      def initialize: (?JS::Element? doc) -> void
+      def initialize: (?JS::Element? doc, ?Runtime? runtime) -> void
       def render: (VDOM::VNode | VDOM::Text | nil vnode, ?JS::Element? parent) -> JS::Element
 
       private def current_error_boundary: () -> ErrorBoundary?
@@ -57,9 +57,11 @@ module Funicular
     class Component < VNode
       attr_reader component_class: untyped
       attr_reader props: Hash[Symbol, untyped]
+      attr_reader children: Array[child_t]
       attr_accessor instance: untyped
+      attr_accessor runtime: Runtime?
 
-      def initialize: (untyped component_class, ?Hash[Symbol, untyped] props) -> void
+      def initialize: (untyped component_class, ?Hash[Symbol, untyped] props, ?Array[child_t] children) -> void
       def ==: (untyped other) -> bool
     end
   end

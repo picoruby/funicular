@@ -3,7 +3,7 @@ module Funicular
     BOOLEAN_ATTRIBUTES: Array[String]
 
     class Patcher
-      def initialize: (?JS::Element? doc) -> void
+      def initialize: (?JS::Element? doc, ?Runtime? runtime) -> void
       # `apply` accepts any DOM node so text-node patches (e.g. :replace)
       # can recurse into it; Element-only operations are narrowed inside.
       def apply: (JS::Object element, Array[patch_t] patches) -> JS::Object

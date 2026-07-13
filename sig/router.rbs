@@ -2,22 +2,12 @@ module Funicular
   type route_constraints_t = Hash[Symbol, Regexp]
   type route_definition_t = { method: Symbol, path: String, component: singleton(Component), name: String?, pattern_segments: Array[String], constraints: route_constraints_t }
 
-  # URL helper methods are dynamically generated based on route definitions
-  # Example: router.get('/users/:id', to: UserComponent, as: 'user')
-  # generates: user_path(id) -> String
-  module RouteHelpers
-    # Dynamic methods are generated at runtime by Router#generate_url_helper
-    # Method signatures depend on route parameters:
-    # - No parameters: def helper_name_path: () -> String
-    # - With parameters: def helper_name_path: (Integer | String | untyped) -> String
-    def method_missing: (Symbol method, *untyped args) -> String
-    def respond_to_missing?: (Symbol method, ?bool include_private) -> bool
-  end
-
   class Router
     attr_reader routes: Array[route_definition_t]
     attr_reader current_component: Component?
     attr_reader current_path: String?
+    attr_reader url_helpers: Module
+    attr_reader route_helpers: untyped
 
     def initialize: (JS::Element? container) -> void
     def get: (String path, to: singleton(Component), ?as: String?, ?constraints: route_constraints_t?) -> void
@@ -31,7 +21,6 @@ module Funicular
     def start: (?hydrate: bool) -> void
     def stop: () -> void
     def navigate: (String path) -> void
-    def current_hash_path: () -> String
     def current_location_path: () -> String
 
     private def add_route_with_method: (Symbol method, String path, singleton(Component) component_class, String? name, ?route_constraints_t? constraints) -> void

@@ -1,8 +1,9 @@
 module Funicular
   module VDOM
     class Patcher
-      def initialize(doc = nil)
+      def initialize(doc = nil, runtime = nil)
         @doc = doc || JS.document
+        @runtime = runtime
       end
 
       def apply(element, patches)
@@ -28,7 +29,7 @@ module Funicular
             old_dom_element = instance.dom_element
 
             # Apply internal patches and get the potentially new root element
-            new_dom_element = Patcher.new(@doc).apply(old_dom_element, internal_patches)
+            new_dom_element = Patcher.new(@doc, instance.runtime).apply(old_dom_element, internal_patches)
 
             # Update the instance's reference to its root DOM element if it changed
             if new_dom_element != old_dom_element && new_dom_element.is_a?(JS::Element)
@@ -265,7 +266,7 @@ module Funicular
           element
         when :component
           raise "Expected Component vnode" unless vnode.is_a?(Component)
-          Renderer.new(@doc).render(vnode, nil)
+          Renderer.new(@doc, vnode.runtime || @runtime).render(vnode, nil)
         else
           raise "Unknown vnode type: #{vnode.type}"
         end

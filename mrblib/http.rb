@@ -134,6 +134,17 @@ module Funicular
         block.call(Response.new(status, data)) if block
       end
 
+      def parse_response_body(text)
+        return nil if text.nil?
+
+        body = text.to_s
+        return nil if body.empty?
+
+        JSON.parse(body)
+      rescue
+        body
+      end
+
       def request(method, url, body, cache: nil, &block)
         if method == "GET" && cache.is_a?(Integer) && cache > 0
           entry = cache_lookup(url)
@@ -163,7 +174,7 @@ module Funicular
         JS.global.fetch(url, options) do |response|
           status = response.status.to_i
           json_text = response.to_binary
-          data = JSON.parse(json_text)
+          data = parse_response_body(json_text)
           # @type var status: Integer
           http_response = Response.new(status, data)
 

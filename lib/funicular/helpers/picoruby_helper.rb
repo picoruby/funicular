@@ -11,6 +11,11 @@ module Funicular
         local_dist:  "/picoruby/dist/init.iife.js"
       }.freeze
 
+      LOCAL_VARIANTS = {
+        local_debug: "debug",
+        local_dist:  "dist"
+      }.freeze
+
       # Minimal CSS the gem ships for class names it emits itself (e.g.
       # FormBuilder error states). Read once; see assets/funicular.css.
       BASE_CSS_PATH = File.expand_path("../assets/funicular.css", __dir__)
@@ -101,11 +106,29 @@ module Funicular
           end
           format(CDN_URL_TEMPLATE, version: version)
         elsif (path = LOCAL_PATHS[source])
-          path
+          local_picoruby_src(path, source)
         else
           raise ArgumentError,
                 "Unknown picoruby source: #{source.inspect}. Expected one of #{Funicular::Configuration::SOURCES.inspect}"
         end
+      end
+
+      def local_picoruby_src(path, source)
+        cache_key = local_picoruby_cache_key(source)
+        return path if cache_key.nil?
+
+        "#{path}?v=#{cache_key}"
+      end
+
+      def local_picoruby_cache_key(source)
+        variant = LOCAL_VARIANTS.fetch(source)
+        version = Funicular.vendored_wasm_version
+        wasm = File.join(Funicular::VENDOR_PICORUBY_DIR, variant, "picoruby.wasm")
+        mtime = File.mtime(wasm).to_i
+
+        [version, mtime].compact.join("-")
+      rescue Errno::ENOENT
+        Funicular.vendored_wasm_version
       end
     end
   end
