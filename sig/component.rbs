@@ -17,6 +17,8 @@ module Funicular
       def error: (Symbol key) -> untyped
     end
 
+    include Tags
+
     attr_accessor props: Hash[Symbol, untyped]
     attr_accessor vdom: VDOM::VNode | VDOM::Text | nil
     attr_accessor dom_element: JS::Element
@@ -29,8 +31,13 @@ module Funicular
     type suspense_definition = { loader: untyped, on_resolve: untyped, min_delay: Integer? }
 
     def initialize: (?Hash[Symbol, untyped] props) -> void
+    def self.allow_dsl_override: (*Symbol names) -> void
+    def self.dsl_overrides: () -> Array[Symbol]
+    def self.method_added: (Symbol name) -> void
+    def self.validate_dsl_conflicts!: () -> void
     def self.styles: () { (StyleBuilder) -> void } -> void
     def self.styles_definitions: () -> Hash[Symbol, Hash[Symbol, untyped]]
+    def self.style_accessor_class: () -> singleton(StyleAccessor)
     def self.use_suspense: (Symbol name, untyped loader, ?on_resolve: untyped, ?min_delay: Integer) -> void
     def self.suspense_definitions: () -> Hash[Symbol, suspense_definition]
 
@@ -46,22 +53,29 @@ module Funicular
     def suspense_loading?: (*Symbol names) -> bool
     def suspense_error?: (Symbol name) -> bool
     def suspense_error: (Symbol name) -> untyped
-    def render_suspense: (ViewContext h, Symbol name, fallback: untyped, ?error: untyped) { (ViewContext, ResourceAccessor) -> untyped } -> untyped
+    def render_suspense: (Symbol name, fallback: untyped, ?error: untyped) { (ResourceAccessor) -> untyped } -> untyped
 
     def patch: (Hash[Symbol, untyped] new_state) -> void
     def mount: (JS::Element container) -> void
     def hydrate: (JS::Element dom_element) -> void
     def unmount: () -> void
-    def render: (ViewContext h) -> (VDOM::VNode | String | Integer | Float | Array[untyped] | nil)
+    def render: () -> (VDOM::VNode | String | Integer | Float | Array[untyped] | nil)
     def build_vdom: () -> (VDOM::VNode | VDOM::Text | nil)
 
     def bind_events: (JS::Element dom_element, VDOM::VNode | VDOM::Text | nil vnode) -> void
     def collect_refs: (JS::Element dom_element, VDOM::VNode | VDOM::Text | nil vnode, ?Hash[Symbol, JS::Element] refs_map) -> Hash[Symbol, JS::Element]
     def normalize_vnode_for_view: (untyped value) -> (VDOM::Element | VDOM::Text | VDOM::Component | nil)
+    def __view__: () -> ViewContext
+    def routes: () -> untyped
+    def component: (singleton(Component) component_class, ?Hash[Symbol, untyped] props) ?{ () -> untyped } -> VDOM::Component
+    def form_for: (Symbol model_key, ?Hash[Symbol, untyped] options) { (FormBuilder) -> void } -> VDOM::Element
+    def link_to: (String path, **untyped options) ?{ -> untyped } -> VDOM::Element
+    def button_to: (String path, ?method: Symbol, **untyped options) ?{ -> untyped } -> VDOM::Element
+    def suspense: (Symbol name, fallback: untyped, ?error: untyped) { (ResourceAccessor) -> untyped } -> untyped
     def add_child_from_view: (untyped child) -> void
     def build_form_for: (ViewContext h, Symbol model_key, ?Hash[Symbol, untyped] options) { (FormBuilder) -> void } -> VDOM::Element
-    def build_link_to: (ViewContext h, String path, **untyped options) { (ViewContext) -> untyped } -> VDOM::Element
-    def build_button_to: (ViewContext h, String path, ?method: Symbol, **untyped options) { (ViewContext) -> untyped } -> VDOM::Element
+    def build_link_to: (ViewContext h, String path, **untyped options) ?{ () -> untyped } -> VDOM::Element
+    def build_button_to: (ViewContext h, String path, ?method: Symbol, **untyped options) ?{ () -> untyped } -> VDOM::Element
 
     def component_will_mount: () -> void
     def component_mounted: () -> void

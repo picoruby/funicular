@@ -65,10 +65,10 @@ module Funicular
       attrs[:class] = css_class unless css_class.empty?
 
       # Render field + error message
-      @view_context.div do |h|
-        h.input(attrs)
+      @view_context.div do
+        @view_context.input(attrs)
         if has_error
-          h.div(class: @error_class) { error_message }
+          @view_context.div(class: @error_class) { error_message }
         end
       end
     end
@@ -128,10 +128,10 @@ module Funicular
 
       attrs[:class] = css_class unless css_class.empty?
 
-      @view_context.div do |h|
-        h.textarea(attrs)
+      @view_context.div do
+        @view_context.textarea(attrs)
         if has_error
-          h.div(class: @error_class) { error_message }
+          @view_context.div(class: @error_class) { error_message }
         end
       end
     end
@@ -194,18 +194,18 @@ module Funicular
 
       attrs[:class] = css_class unless css_class.empty?
 
-      @view_context.div do |h|
-        h.select(attrs) do |hh|
+      @view_context.div do
+        @view_context.select(attrs) do
           choices.each do |choice|
             option_value, option_text = choice.is_a?(Array) ? choice : [choice, choice]
             selected = value.to_s == option_value.to_s
-            hh.option(value: option_value, selected: selected) do
+            @view_context.option(value: option_value, selected: selected) do
               option_text
             end
           end
         end
         if has_error
-          h.div(class: @error_class) { error_message }
+          @view_context.div(class: @error_class) { error_message }
         end
       end
     end

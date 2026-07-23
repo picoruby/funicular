@@ -91,7 +91,7 @@
   <script type="text/ruby">
     # A component that always throws an error during render
     class BrokenComponent < Funicular::Component
-      def render(h)
+      def render
         raise "BrokenComponent intentionally threw this error!"
       end
     end
@@ -107,80 +107,83 @@
         patch(count: state[:count] + 1)
       end
 
-      def render(h)
-        h.div(class: 'demo-card') do |hh|
-          hh.h3 { "Working Component" }
-          hh.p { "Count: #{state[:count]}" }
-          hh.button(onclick: :increment) { "Increment" }
+      def render
+        div(class: 'demo-card') do
+          h3 { "Working Component" }
+          p { "Count: #{state[:count]}" }
+          button(onclick: :increment) { "Increment" }
         end
       end
     end
 
     # Main demo application
     class ErrorBoundaryDemo < Funicular::Component
-      def render(h)
+      def render
         error_handler = ->(error, info) {
           puts "[Demo] Error caught by ErrorBoundary:"
           puts "  Error: #{error.message}"
           puts "  Component: #{info&.dig(:component_class)}"
         }
 
-        custom_fallback = ->(hh, error) {
-          hh.div(style: 'background: linear-gradient(135deg, #ff6b6b, #ee5a5a); color: white; padding: 20px; border-radius: 8px;') do |hhh|
-            hhh.h3(style: 'margin-top: 0;') { "Custom Error Handler" }
-            hhh.p { "Caught: #{error.message}" }
-            hhh.p(style: 'font-size: 12px; opacity: 0.8;') { "This is a custom fallback provided via props." }
+        # NOTE: an ErrorBoundary fallback runs during the BOUNDARY's render,
+        # not this component's, so it cannot use bareword tags. It receives
+        # the boundary's view context and builds elements through it.
+        custom_fallback = ->(h, error) {
+          h.div(style: 'background: linear-gradient(135deg, #ff6b6b, #ee5a5a); color: white; padding: 20px; border-radius: 8px;') do
+            h.h3(style: 'margin-top: 0;') { "Custom Error Handler" }
+            h.p { "Caught: #{error.message}" }
+            h.p(style: 'font-size: 12px; opacity: 0.8;') { "This is a custom fallback provided via props." }
           end
         }
 
-        h.div do |hh|
-          hh.h2 { "Error Boundary Demonstrations" }
+        div do
+          h2 { "Error Boundary Demonstrations" }
 
           # Demo 1: Default fallback
-          hh.div(class: 'demo-card') do |card|
-            card.h3 { "Demo 1: Default Fallback UI" }
-            card.p { "ErrorBoundary wraps a component that always throws. Default fallback is shown." }
-            card.component(Funicular::ErrorBoundary, on_error: error_handler) do |boundary|
-              boundary.component(BrokenComponent)
+          div(class: 'demo-card') do
+            h3 { "Demo 1: Default Fallback UI" }
+            p { "ErrorBoundary wraps a component that always throws. Default fallback is shown." }
+            component(Funicular::ErrorBoundary, on_error: error_handler) do
+              component(BrokenComponent)
             end
           end
 
           # Demo 2: Custom fallback
-          hh.div(class: 'demo-card') do |card|
-            card.h3 { "Demo 2: Custom Fallback UI" }
-            card.p { "ErrorBoundary with a custom fallback prop." }
-            card.component(Funicular::ErrorBoundary,
+          div(class: 'demo-card') do
+            h3 { "Demo 2: Custom Fallback UI" }
+            p { "ErrorBoundary with a custom fallback prop." }
+            component(Funicular::ErrorBoundary,
               fallback: custom_fallback,
               on_error: error_handler
-            ) do |boundary|
-              boundary.component(BrokenComponent)
+            ) do
+              component(BrokenComponent)
             end
           end
 
           # Demo 3: Mixed content - some work, some fail
-          hh.div(class: 'demo-card') do |card|
-            card.h3 { "Demo 3: Isolated Error Boundaries" }
-            card.p { "Each component has its own ErrorBoundary. One failure doesn't affect others." }
+          div(class: 'demo-card') do
+            h3 { "Demo 3: Isolated Error Boundaries" }
+            p { "Each component has its own ErrorBoundary. One failure doesn't affect others." }
 
-            card.div(style: 'display: flex; gap: 15px; flex-wrap: wrap;') do |row|
-              row.div(style: 'flex: 1; min-width: 200px;') do |col|
-                col.h4 { "Working:" }
-                col.component(Funicular::ErrorBoundary) do |boundary|
-                  boundary.component(WorkingComponent)
+            div(style: 'display: flex; gap: 15px; flex-wrap: wrap;') do
+              div(style: 'flex: 1; min-width: 200px;') do
+                h4 { "Working:" }
+                component(Funicular::ErrorBoundary) do
+                  component(WorkingComponent)
                 end
               end
 
-              row.div(style: 'flex: 1; min-width: 200px;') do |col|
-                col.h4 { "Broken:" }
-                col.component(Funicular::ErrorBoundary) do |boundary|
-                  boundary.component(BrokenComponent)
+              div(style: 'flex: 1; min-width: 200px;') do
+                h4 { "Broken:" }
+                component(Funicular::ErrorBoundary) do
+                  component(BrokenComponent)
                 end
               end
 
-              row.div(style: 'flex: 1; min-width: 200px;') do |col|
-                col.h4 { "Also Working:" }
-                col.component(Funicular::ErrorBoundary) do |boundary|
-                  boundary.component(WorkingComponent)
+              div(style: 'flex: 1; min-width: 200px;') do
+                h4 { "Also Working:" }
+                component(Funicular::ErrorBoundary) do
+                  component(WorkingComponent)
                 end
               end
             end

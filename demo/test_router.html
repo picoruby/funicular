@@ -39,12 +39,12 @@
         }
       end
 
-      def render(h)
-        h.nav do |hh|
-          hh.a(href: '/login', onclick: go_to('/login')) { 'Login' }
-          hh.a(href: '/home', onclick: go_to('/home')) { 'Home' }
-          hh.a(href: '/settings', onclick: go_to('/settings')) { 'Settings' }
-          hh.a(href: '/users', onclick: go_to('/users')) { 'Users' }
+      def render
+        nav do
+          a(href: '/login', onclick: go_to('/login')) { 'Login' }
+          a(href: '/home', onclick: go_to('/home')) { 'Home' }
+          a(href: '/settings', onclick: go_to('/settings')) { 'Settings' }
+          a(href: '/users', onclick: go_to('/users')) { 'Users' }
         end
       end
     end
@@ -63,12 +63,12 @@
         Funicular.router.navigate('/home')
       end
 
-      def render(h)
-        h.div(class: 'login-page') do |hh|
-          hh.h2(class: 'page-title') { 'Login Page' }
+      def render
+        div(class: 'login-page') do
+          h2(class: 'page-title') { 'Login Page' }
 
-          hh.div do |hhh|
-            hhh.input(
+          div do
+            input(
               type: 'text',
               placeholder: 'Username',
               value: state[:username],
@@ -76,11 +76,11 @@
             )
           end
 
-          hh.div do |hhh|
-            hhh.button(onclick: :on_login_click) { 'Login' }
+          div do
+            button(onclick: :on_login_click) { 'Login' }
           end
 
-          hh.div(class: 'status') do
+          div(class: 'status') do
             "Username: #{state[:username]}"
           end
         end
@@ -102,20 +102,20 @@
         Funicular.router.navigate('/settings')
       end
 
-      def render(h)
-        h.div(class: 'home-page') do |hh|
-          hh.h2(class: 'page-title') { 'Home Page' }
+      def render
+        div(class: 'home-page') do
+          h2(class: 'page-title') { 'Home Page' }
 
-          hh.div do
+          div do
             "Counter: #{state[:count]}"
           end
 
-          hh.div do |hhh|
-            hhh.button(onclick: :increment) { 'Increment' }
-            hhh.button(onclick: :go_to_settings) { 'Go to Settings' }
+          div do
+            button(onclick: :increment) { 'Increment' }
+            button(onclick: :go_to_settings) { 'Go to Settings' }
           end
 
-          hh.div(class: 'status') do
+          div(class: 'status') do
             "You are on the home page. Click around to test routing!"
           end
         end
@@ -143,25 +143,25 @@
         Funicular.router.navigate('/home')
       end
 
-      def render(h)
-        h.div(class: 'settings-page') do |hh|
-          hh.h2(class: 'page-title') { 'Settings Page' }
+      def render
+        div(class: 'settings-page') do
+          h2(class: 'page-title') { 'Settings Page' }
 
-          hh.div do |hhh|
-            hhh.span { "Theme: #{state[:theme]}" }
-            hhh.button(onclick: :toggle_theme) { 'Toggle Theme' }
+          div do
+            span { "Theme: #{state[:theme]}" }
+            button(onclick: :toggle_theme) { 'Toggle Theme' }
           end
 
-          hh.div do |hhh|
-            hhh.span { "Notifications: #{state[:notifications] ? 'ON' : 'OFF'}" }
-            hhh.button(onclick: :toggle_notifications) { 'Toggle Notifications' }
+          div do
+            span { "Notifications: #{state[:notifications] ? 'ON' : 'OFF'}" }
+            button(onclick: :toggle_notifications) { 'Toggle Notifications' }
           end
 
-          hh.div do |hhh|
-            hhh.button(onclick: :go_to_home) { 'Back to Home' }
+          div do
+            button(onclick: :go_to_home) { 'Back to Home' }
           end
 
-          hh.div(class: 'status') do
+          div(class: 'status') do
             "Configure your settings here"
           end
         end
@@ -185,21 +185,21 @@
         }
       end
 
-      def render(h)
-        h.div(class: 'users-page') do |hh|
-          hh.h2(class: 'page-title') { 'Users List' }
+      def render
+        div(class: 'users-page') do
+          h2(class: 'page-title') { 'Users List' }
 
-          hh.ul do |hhh|
+          ul do
             state[:users].each do |user|
-              hhh.li do |item|
-                item.a(href: "/users/#{user[:id]}", onclick: go_to_user(user[:id])) do
+              li do
+                a(href: "/users/#{user[:id]}", onclick: go_to_user(user[:id])) do
                   user[:name]
                 end
               end
             end
           end
 
-          hh.div(class: 'status') do
+          div(class: 'status') do
             "Click a user to see dynamic route with :id parameter"
           end
         end
@@ -216,19 +216,19 @@
         Funicular.router.navigate('/users')
       end
 
-      def render(h)
-        h.div(class: 'user-detail-page') do |hh|
-          hh.h2(class: 'page-title') { "User Detail" }
+      def render
+        div(class: 'user-detail-page') do
+          h2(class: 'page-title') { "User Detail" }
 
-          hh.div do
+          div do
             "Viewing user ID: #{state[:user_id]}"
           end
 
-          hh.div do |hhh|
-            hhh.button(onclick: :go_back) { 'Back to Users' }
+          div do
+            button(onclick: :go_back) { 'Back to Users' }
           end
 
-          hh.div(class: 'status') do
+          div(class: 'status') do
             "This page demonstrates dynamic routing with params[:id] = #{state[:user_id]}"
           end
         end

@@ -1,38 +1,9 @@
 module Funicular
   class ViewContext
-    HTML_TAGS = %w[
-      div span p a data
-      h1 h2 h3 h4 h5 h6
-      ul ol li
-      table thead tbody tr th td
-      form input textarea button select option label
-      header footer nav section article aside
-      img video audio canvas
-      br hr
-    ]
+    HTML_TAGS = Funicular::Tags::HTML_TAGS
 
     def initialize(component)
       @component = component
-    end
-
-    def state
-      @component.state
-    end
-
-    def props
-      @component.props
-    end
-
-    def resources
-      @component.resources
-    end
-
-    def styles
-      @component.styles
-    end
-
-    def routes
-      @component.runtime.routes
     end
 
     def tag(name, props = {}, &block)
@@ -66,7 +37,7 @@ module Funicular
     end
 
     def suspense(name, fallback:, error: nil, &block)
-      @component.render_suspense(self, name, fallback: fallback, error: error, &block)
+      @component.render_suspense(name, fallback: fallback, error: error, &block)
     end
 
     def link_to(path, **options, &block)
@@ -81,7 +52,7 @@ module Funicular
       children = [] #: Array[Funicular::VDOM::child_t]
       previous = @component.current_children
       @component.current_children = children
-      result = block.call(self)
+      result = block.call
       @component.current_children = previous
 
       if result && !result.equal?(children) && children.empty?

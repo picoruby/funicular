@@ -7,18 +7,31 @@ module Funicular
     def to_s: () -> String
   end
 
-  # StyleAccessor provides explicit access to defined styles.
-  class StyleAccessor
+  # Read-side accessor. A subclass is generated per component class with a
+  # real method per declared style name; those methods are app-defined and
+  # therefore untyped (use the [] form where static checking matters).
+  class StyleAccessor < BasicObject
+    @definitions: Hash[Symbol, Hash[Symbol, untyped]]
+
+    def self.accessor_for: (Hash[Symbol, Hash[Symbol, untyped]] definitions) -> singleton(StyleAccessor)
     def initialize: (Hash[Symbol, Hash[Symbol, untyped]] definitions) -> void
     def []: (Symbol name, ?(Symbol | bool) variant) -> StyleValue
+    def method_missing: (Symbol name, *untyped args) -> bot
+    def respond_to_missing?: (Symbol name, ?bool include_private) -> bool
   end
 
-  # StyleBuilder is used to define styles within the styles {} block
-  class StyleBuilder
+  # Definition-side cleanroom builder for the class-level styles block.
+  # Barewords resolve through method_missing and define styles.
+  class StyleBuilder < BasicObject
+    RESERVED_NAMES: Array[Symbol]
+
     @definitions: Hash[Symbol, Hash[Symbol, untyped]]
 
     def initialize: () -> void
-    def define: (Symbol name, ?(String | Hash[Symbol, untyped]) value, **untyped options) -> void
+    def define: (Symbol name, ?(String | Hash[Symbol, untyped])? value, **untyped options) -> self
+    def validate_options: (Symbol name, Hash[Symbol, untyped] options) -> Hash[Symbol, untyped]
     def to_definitions: () -> Hash[Symbol, Hash[Symbol, untyped]]
+    def method_missing: (Symbol name, ?untyped value, **untyped options) -> self
+    def respond_to_missing?: (Symbol name, ?bool include_private) -> bool
   end
 end

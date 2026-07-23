@@ -52,8 +52,59 @@ module Funicular
       end
     end
 
+    include Tags
+
     attr_accessor :props, :vdom, :dom_element, :mounted, :runtime, :children, :current_children
     attr_reader :refs
+
+    # Opt out of DSL collision detection for the given method names. The
+    # shadowed tag remains reachable through tag(:name, ...).
+    def self.allow_dsl_override(*names)
+      @dsl_overrides ||= [] #: Array[Symbol]
+      @dsl_overrides.concat(names)
+    end
+
+    def self.dsl_overrides
+      @dsl_overrides ||= [] #: Array[Symbol]
+    end
+
+    # Layer 1: catches `def`, `define_method`, and `alias` in subclasses at
+    # class-definition time. attr_* does not fire this hook on mruby, and
+    # included modules never do; validate_dsl_conflicts! covers those.
+    def self.method_added(name)
+      if self != Funicular::Component && Funicular::Tags::RESERVED_DSL[name] && !dsl_overrides.include?(name)
+        kind = Funicular::Tags::RESERVED_DSL[name] == :tag ? "<#{name}> tag helper" : "##{name} helper"
+        raise Funicular::DSLCollisionError,
+          "#{self}##{name} collides with the Funicular DSL (#{kind}). " \
+          "Rename it (e.g. `#{name}_value`), or declare `allow_dsl_override :#{name}` " \
+          "and use `tag(:#{name}, ...)` to emit the element."
+      end
+      super
+    end
+
+    # Layer 2: once per class, sweep methods the method_added hook cannot
+    # see (attr_* on mruby, user-included modules).
+    def self.validate_dsl_conflicts!
+      return if @dsl_validated
+      if instance_method(:render).arity != 0
+        raise Funicular::DSLCollisionError,
+          "#{self}#render must not take parameters as of Funicular 0.4.0: " \
+          "delete the parameter (`def render`) and drop the `h.` receivers " \
+          "inside; tags are bareword methods on the component now."
+      end
+      ancestors.each do |mod|
+        break if mod == Funicular::Component || mod == Funicular::Tags
+        next unless mod.is_a?(Module)
+        methods = mod.instance_methods(false) + mod.private_instance_methods(false)
+        offenders = methods.select { |m| Funicular::Tags::RESERVED_DSL[m] } - dsl_overrides
+        next if offenders.empty?
+        raise Funicular::DSLCollisionError,
+          "#{mod} defines methods that collide with the Funicular DSL: " \
+          "#{offenders.map { |m| m.to_s }.join(', ')}. Rename them, or declare " \
+          "`allow_dsl_override` and use `tag(...)` to emit the element."
+      end
+      @dsl_validated = true
+    end
 
     def initialize(props = {})
       @props = props
@@ -93,7 +144,7 @@ module Funicular
     end
 
     def styles
-      @style_accessor ||= StyleAccessor.new(self.class.styles_definitions)
+      @style_accessor ||= self.class.style_accessor_class.new(self.class.styles_definitions)
     end
 
     # Override this method in subclasses to define initial state
@@ -230,21 +281,21 @@ module Funicular
     #   ) do
     #     div { user.name }
     #   end
-    def render_suspense(h, name, fallback:, error: nil, &block)
+    def render_suspense(name, fallback:, error: nil, &block)
       current_children = @current_children
       child_count_before = current_children&.size
       result = nil
 
       if @suspense_states[name] == :rejected
         result = if error
-          error.call(h, @suspense_errors[name])
+          error.call(@suspense_errors[name])
         else
-          fallback.call(h)
+          fallback.call
         end
       elsif suspense_loading?(name)
-        result = fallback.call(h)
+        result = fallback.call
       else
-        result = block.call(h, resources)
+        result = block.call(resources)
       end
 
       if current_children && current_children.size == child_count_before
@@ -254,15 +305,23 @@ module Funicular
       result
     end
 
-    # Class methods for styles DSL
+    # Class methods for styles DSL. The block is instance_exec'd on a
+    # StyleBuilder cleanroom so barewords define styles; it also receives
+    # the builder for the explicit `styles { |css| css.define(...) }` form.
     def self.styles(&block)
       builder = StyleBuilder.new
-      block.call(builder)
+      builder.instance_exec(builder, &block) # steep:ignore
       @styles_definitions = builder.to_definitions
+      @style_accessor_class = nil
     end
 
     def self.styles_definitions
       @styles_definitions ||= {}
+    end
+
+    # Per-class accessor with one real method per declared style name.
+    def self.style_accessor_class
+      @style_accessor_class ||= StyleAccessor.accessor_for(styles_definitions)
     end
 
     # Suspense DSL - register async data loaders
@@ -447,19 +506,20 @@ module Funicular
     end
 
     # Override this method in subclasses to define render logic
-    def render(h)
-      raise "Subclasses must implement render(h)"
+    def render
+      raise "Subclasses must implement render"
     end
 
     # Build VDOM tree from render method
     # Called by VDOM::Renderer, Differ, and Patcher
     def build_vdom
+      self.class.validate_dsl_conflicts!
       previous_rendering = @rendering
       previous_children = @current_children
       @rendering = true
       @current_children = nil
       begin
-        result = render(ViewContext.new(self))
+        result = render
       ensure
         @rendering = previous_rendering
         @current_children = previous_children
@@ -622,9 +682,45 @@ module Funicular
       normalize_vnode(value)
     end
 
+    # Internal element factory shared by the Tags mixin, FormBuilder, and
+    # the framework helpers. One instance per component; ViewContext itself
+    # is stateless (the render cursor lives on the component).
+    def __view__
+      @__view__ ||= ViewContext.new(self)
+    end
+
+    def routes
+      @runtime.routes
+    end
+
+    # Bareword DSL helpers available inside render (self is the component).
+    def component(component_class, props = {}, &block)
+      __view__.component(component_class, props, &block)
+    end
+
+    def form_for(model_key, options = {}, &block)
+      build_form_for(__view__, model_key, options, &block)
+    end
+
+    def link_to(path, **options, &block)
+      build_link_to(__view__, path, **options, &block)
+    end
+
+    def button_to(path, method: :post, **options, &block)
+      build_button_to(__view__, path, method: method, **options, &block)
+    end
+
+    def suspense(name, fallback:, error: nil, &block)
+      render_suspense(name, fallback: fallback, error: error, &block)
+    end
+
     def add_child_from_view(child)
+      unless @rendering
+        raise Funicular::RenderContextError,
+          "view DSL called outside render (tags may only be used while the component is rendering)"
+      end
       current_children = @current_children
-      return unless @rendering && current_children
+      return unless current_children
 
       normalized = normalize_vnode(child)
       current_children << normalized if normalized
@@ -654,8 +750,8 @@ module Funicular
         ->(event) { event.preventDefault }
       end
 
-      h.form({ onsubmit: submit_handler, class: form_class }.merge(options)) do |hh|
-        builder = Funicular::FormBuilder.new(self, hh, model_key, options)
+      h.form({ onsubmit: submit_handler, class: form_class }.merge(options)) do
+        builder = Funicular::FormBuilder.new(self, h, model_key, options)
         block.call(builder)
       end
     end
@@ -881,15 +977,9 @@ module Funicular
     end
 
     def event_target(event)
-      target = nil
-      begin
-        target = event[:target]
-      rescue
-        target = nil
-      end
-      return target if target
-
-      event.target if event.respond_to?(:target)
+      event[:target]
+    rescue
+      nil
     end
 
     def add_form_field_value(data, field)

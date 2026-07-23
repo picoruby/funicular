@@ -2,6 +2,63 @@
 
 ### Added
 
+- 0.4.0 bareword component DSL: `render` (zero-arity) runs with `self` as
+  the component, so HTML tags, `component`, `form_for`, `link_to`,
+  `button_to`, `suspense`, `state`, `props`, `styles`, `resources`, and
+  `routes` are all called bareword, without the 0.3.0 `h.` receiver.
+- DSL collision detection: tag and helper names are reserved inside
+  component classes. Defining one raises `Funicular::DSLCollisionError` at
+  class-definition time (`method_added`) or at first mount
+  (`validate_dsl_conflicts!`, covering `attr_*` on mruby and included
+  modules). `allow_dsl_override :name` opts out per class; the shadowed
+  element stays reachable via `tag(:name, ...)`.
+- Bareword style definitions: the class-level `styles do ... end` block
+  runs on a `BasicObject` cleanroom builder, so any name (including
+  `display`, `hash`, ...) defines a style identically on mruby and CRuby.
+  The explicit `styles { |css| css.define(...) }` form remains for
+  computed values.
+- Generated style accessors: each declared style name becomes a real
+  method on a per-component accessor, e.g. `styles.button(:disabled)`;
+  the `styles[:name, variant]` form is kept.
+
+### Breaking Changes
+
+- **0.4.0 is a breaking DSL change against 0.3.0. Components written for
+  0.3.0 migrate mechanically: delete the `render(h)` parameter, drop the
+  `h.` receivers, convert `css.define :name, "..."` to bareword
+  `name "..."`, and `h.styles[:name, variant]` to
+  `styles.name(variant)`.**
+- `p` inside a component builds a `<p>` element. Debug with
+  `puts x.inspect`; a non-Hash argument to any tag raises `ArgumentError`
+  with a hint.
+- A local variable named after a tag shadows the zero-paren call form
+  (plain Ruby scoping); write `option()` or rename the local.
+- Tag and helper names (RESERVED_DSL) can no longer be defined as
+  component methods without `allow_dsl_override`.
+- Style lookups of unknown names raise (`NoMethodError` for
+  `styles.typo`, `ArgumentError` for `styles[:typo]`) instead of
+  silently returning an empty class string. Style definition values are
+  validated (String / Hash / keyword options; unknown option keys raise).
+- Tag helpers called while the component is not rendering raise
+  `Funicular::RenderContextError` instead of being silently dropped.
+- `ErrorBoundary` `fallback:`/`error:` procs keep an explicit view
+  context (`->(h, error) { h.div { ... } }`): they are created in the
+  parent's scope but run during the boundary's render, so barewords
+  cannot work there by design.
+- `Component#render_suspense` no longer takes a view context; suspense
+  `fallback:`/`error:`/content procs run bareword in their own component
+  (`fallback: -> { div { "Loading" } }`).
+
+### Changed
+
+- Requires picoruby-wasm with `JS::Object < BasicObject` (picoruby
+  9e69333f): Kernel names (`hash`, `send`, `open`, ...) no longer shadow
+  JS property access, and unknown `?`/`!` methods on JS values raise.
+
+## [0.3.0] - 2026-07-13
+
+### Added
+
 - 0.3.0 rendering architecture: `render(h)` now receives a `ViewContext`
   facade for elements, components, forms, styles, resources, and routes.
 - Per-app `Runtime` context for route helpers and renderer/serializer

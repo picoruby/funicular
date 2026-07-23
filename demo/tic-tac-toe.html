@@ -38,8 +38,8 @@
         on_click.call if on_click
       end
 
-      def render(h)
-        h.button(class: 'square', onclick: :handle_click) do
+      def render
+        button(class: 'square', onclick: :handle_click) do
           props[:value] || ''
         end
       end
@@ -55,7 +55,7 @@
         }
       end
 
-      def render(h)
+      def render
         squares = props[:squares]
         x_is_next = props[:x_is_next]
 
@@ -66,22 +66,22 @@
           "Next player: #{x_is_next ? 'X' : 'O'}"
         end
 
-        h.div do |hh|
-          hh.div(class: 'status') { status }
-          hh.div(class: 'board-row') do |hhh|
-            hhh.component(Square, value: squares[0], on_click: handle_click(0))
-            hhh.component(Square, value: squares[1], on_click: handle_click(1))
-            hhh.component(Square, value: squares[2], on_click: handle_click(2))
+        div do
+          div(class: 'status') { status }
+          div(class: 'board-row') do
+            component(Square, value: squares[0], on_click: handle_click(0))
+            component(Square, value: squares[1], on_click: handle_click(1))
+            component(Square, value: squares[2], on_click: handle_click(2))
           end
-          hh.div(class: 'board-row') do |hhh|
-            hhh.component(Square, value: squares[3], on_click: handle_click(3))
-            hhh.component(Square, value: squares[4], on_click: handle_click(4))
-            hhh.component(Square, value: squares[5], on_click: handle_click(5))
+          div(class: 'board-row') do
+            component(Square, value: squares[3], on_click: handle_click(3))
+            component(Square, value: squares[4], on_click: handle_click(4))
+            component(Square, value: squares[5], on_click: handle_click(5))
           end
-          hh.div(class: 'board-row') do |hhh|
-            hhh.component(Square, value: squares[6], on_click: handle_click(6))
-            hhh.component(Square, value: squares[7], on_click: handle_click(7))
-            hhh.component(Square, value: squares[8], on_click: handle_click(8))
+          div(class: 'board-row') do
+            component(Square, value: squares[6], on_click: handle_click(6))
+            component(Square, value: squares[7], on_click: handle_click(7))
+            component(Square, value: squares[8], on_click: handle_click(8))
           end
         end
       end
@@ -115,30 +115,30 @@
         }
       end
 
-      def render(h)
+      def render
         history = state[:history]
         current_move = state[:current_move]
         x_is_next = (current_move % 2 == 0)
         current_squares = history[current_move]
 
-        h.div(class: 'game') do |hh|
-          hh.div(class: 'game-board') do |hhh|
-            hhh.component(Board,
+        div(class: 'game') do
+          div(class: 'game-board') do
+            component(Board,
               x_is_next: x_is_next,
               squares: current_squares,
               on_play: ->(i) { handle_play(i) }
             )
           end
-          hh.div(class: 'game-info') do |hhh|
-            hhh.ol do |hhhh|
+          div(class: 'game-info') do
+            ol do
               history.each_with_index do |_squares, move|
                 description = if move > 0
                   "Go to move ##{move}"
                 else
                   'Go to game start'
                 end
-                hhhh.li(key: move) do |item|
-                  item.button(onclick: jump_to(move)) { description }
+                li(key: move) do
+                  button(onclick: jump_to(move)) { description }
                 end
               end
             end

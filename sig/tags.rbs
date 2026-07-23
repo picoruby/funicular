@@ -1,22 +1,16 @@
 module Funicular
-  # Internal element factory. Application code uses the bareword tag DSL
-  # on Component (see sig/tags.rbs); ViewContext is what FormBuilder, the
-  # framework helpers, and ErrorBoundary fallback procs build through.
-  class ViewContext
+  class DSLCollisionError < StandardError
+  end
+
+  class RenderContextError < StandardError
+  end
+
+  module Tags
     HTML_TAGS: Array[String]
+    HELPER_NAMES: Array[String]
+    RESERVED_DSL: Hash[Symbol, Symbol]
 
-    def initialize: (Component component) -> void
     def tag: (Symbol | String name, ?Hash[Symbol, untyped] props) ?{ () -> untyped } -> VDOM::Element
-    def component: (singleton(Component) component_class, ?Hash[Symbol, untyped] props) ?{ () -> untyped } -> VDOM::Component
-    def form_for: (Symbol model_key, ?Hash[Symbol, untyped] options) { (FormBuilder) -> void } -> VDOM::Element
-    def suspense: (Symbol name, fallback: untyped, ?error: untyped) { (Component::ResourceAccessor) -> untyped } -> untyped
-    def link_to: (String path, **untyped options) ?{ -> untyped } -> VDOM::Element
-    def button_to: (String path, ?method: Symbol, **untyped options) ?{ -> untyped } -> VDOM::Element
-    def capture: () { () -> untyped } -> Array[VDOM::child_t]
-    def add_child: (untyped child) -> void
-    private def build_element: (Symbol | String tag_name, ?Hash[Symbol, untyped] props) ?{ () -> untyped } -> VDOM::Element
-    private def normalize_props: (Hash[Symbol, untyped] props) -> Hash[Symbol, untyped]
-
     def div: (?Hash[Symbol, untyped] props) ?{ () -> untyped } -> VDOM::Element
     def span: (?Hash[Symbol, untyped] props) ?{ () -> untyped } -> VDOM::Element
     def p: (?Hash[Symbol, untyped] props) ?{ () -> untyped } -> VDOM::Element

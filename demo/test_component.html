@@ -48,17 +48,17 @@
         patch(count: state[:count] - 1)
       end
 
-      def render(h)
-        h.div(id: "counter-app") do |hh|
-          hh.h2 { "Counter: #{state[:count]}" }
-          hh.div(id: "status") do
+      def render
+        div(id: "counter-app") do
+          h2 { "Counter: #{state[:count]}" }
+          div(id: "status") do
             "Mounted: #{state[:mounted]}"
           end
-          hh.div do |hhh|
-            hhh.button(id: "increment-btn", onclick: :increment) { "+1" }
-            hhh.button(id: "decrement-btn", onclick: :decrement) { "-1" }
+          div do
+            button(id: "increment-btn", onclick: :increment) { "+1" }
+            button(id: "decrement-btn", onclick: :decrement) { "-1" }
           end
-          hh.div(ref: :display, id: "display") do
+          div(ref: :display, id: "display") do
             "Current value: #{state[:count]}"
           end
         end

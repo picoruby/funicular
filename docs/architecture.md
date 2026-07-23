@@ -30,7 +30,8 @@ stay free of browser-only calls on any server code path
 |---------------------------------------------------------|-------------------------------------------------------------------------------------------------|
 | `funicular.rb`                                          | Top-level module: `start`, `router`, `server?`, `debug_color` export                            |
 | `runtime.rb`                                            | Per-app runtime context propagated through render/SSR/hydration                                 |
-| `view_context.rb`                                       | Thin render facade passed as `render(h)`: elements, components, forms, routes, styles, suspense |
+| `0_tags.rb`                                             | Bareword tag DSL mixed into `Component`; reserved-name list and collision errors                |
+| `view_context.rb`                                       | Internal element factory shared by the tag DSL, FormBuilder, and framework helpers              |
 | `component.rb`                                          | `Funicular::Component` base: state, props, lifecycle, suspense loading, refs                    |
 | `vdom.rb`                                               | Virtual DOM nodes, including component vnodes with ordinary `children`                          |
 | `differ.rb`                                             | `Differ.diff(old, new)` -- minimal patch set, key-based list reconciliation                     |
@@ -41,24 +42,43 @@ stay free of browser-only calls on any server code path
 | `http.rb`                                               | Low-level fetch wrapper, CSRF, IndexedDB response cache                                         |
 | `cable.rb`                                              | ActionCable-compatible consumer/subscription client                                             |
 | `store.rb`, `store_singleton.rb`, `store_collection.rb` | IndexedDB-backed stores, scope API, `subscribes_to`, event dispatch                             |
-| `form_builder.rb`                                       | `h.form_for` field helpers with inline error rendering                                          |
+| `form_builder.rb`                                       | `form_for` field helpers with inline error rendering                                            |
 | `0_validations.rb`, `1_validators.rb`                   | ActiveModel-style validators and `errors`                                                       |
-| `styles.rb`                                             | CSS-in-Ruby `styles { |css| css.define ... }` and `h.styles[...]` access                        |
+| `styles.rb`                                             | CSS-in-Ruby bareword `styles do ... end` builder and generated `styles.name` accessors          |
 | `error_boundary.rb`                                     | `ErrorBoundary` component                                                                       |
 | `file_upload.rb`                                        | File / FormData upload helper                                                                   |
 | `debug.rb`                                              | Development-only component/error registry for the DevTools extension                            |
 | `environment_inquirer.rb`                               | Environment detection (`server?`, `development?`)                                               |
 
 The render cycle: a state change calls `patch()`, which rebuilds the component's
-VDOM by calling `render(h)`, diffs it against the previous VDOM with `Differ`,
+VDOM by calling `render`, diffs it against the previous VDOM with `Differ`,
 and applies the result with `Patcher`. Event handlers are native DOM listeners,
 re-bound on each render.
 
-Application code receives all render helpers through `h`. HTML is authored as
-`h.div`, custom elements as `h.tag(:custom_element)`, child components as
-`h.component`, forms as `h.form_for`, styles as `h.styles[:name]`, resources as
-`h.resources[:name]`, and routes as `h.routes.user_path(id)`. Component state is
+Inside `render` (zero-arity as of 0.4.0), `self` is the component, so the
+DSL is bareword: HTML is authored as `div`, custom elements as
+`tag(:custom_element)`, child components as `component`, forms as `form_for`,
+styles as `styles.name(variant)` or `styles[:name]`, resources as
+`resources[:name]`, and routes as `routes.user_path(id)`. Component state is
 explicitly read with `state[:name]` or `state.fetch(:name)`.
+
+Tag and helper names (~46 words) are reserved inside component classes:
+defining one raises `DSLCollisionError` at class-definition time
+(`method_added`) or at first mount (`validate_dsl_conflicts!`, which also
+covers `attr_*` on mruby and included modules). `allow_dsl_override :name`
+opts out per class; the shadowed element stays reachable via `tag(:name)`.
+Two caveats are inherent to barewords: `p` builds a `<p>` element (use
+`puts x.inspect` for debugging; non-Hash arguments raise with a hint), and
+a local variable named after a tag shadows the zero-paren call form (write
+`option()` or rename the local). Procs handed to ANOTHER component --
+ErrorBoundary's `fallback:` -- run under that component's cursor and
+therefore receive an explicit view context instead of barewords.
+
+Style definitions are bareword too: the class-level `styles do ... end`
+block runs on a BasicObject cleanroom builder, so any name (including
+`display`, `hash`, ...) defines a style identically on mruby and CRuby.
+Computed values need the explicit form `styles { |css| css.define(...) }`.
+Unknown style lookups raise instead of returning an empty class string.
 
 Component children are ordinary VDOM children stored on
 `VDOM::Component#children`; there is no delayed `children_block` prop. This keeps
@@ -96,6 +116,23 @@ SSR, diffing, ErrorBoundary rendering, and hydration on the same data model.
 Because `copy_wasm` reads sibling directories inside the picoruby repository, it
 only works from within that checkout -- see Development below.
 
+## JavaScript interop contract
+
+As of picoruby commit 9e69333f, `JS::Object` inherits `BasicObject` instead of
+`Object`. Consequences for framework code:
+
+- Dot access on JS values is reliable for names Kernel used to shadow
+  (`hash`, `send`, `open`, `class`, `method`, ...): they now reach the JS side
+  via `method_missing`.
+- The Ruby protocol predicates `nil?`, `is_a?`, `kind_of?`, `instance_of?`, and
+  `respond_to?` are defined in C on `JS::Object` (a `?` suffix is illegal in a
+  JS identifier, so they can never shadow a JS property). `respond_to?` does a
+  real method-table lookup only; it does not report JS properties.
+- Any other name ending in `?` or `!` raises `NoMethodError` instead of being
+  forwarded to JS, so typos fail loudly rather than silently returning nil.
+- `==`, `to_s`, `inspect`, `[]`, `[]=`, `to_a`, and `typeof` are defined
+  directly on `JS::Object` and behave as before.
+
 ## Server-side rendering, briefly
 
 For SSR the `mrblib/` framework is loaded into the Rails process under CRuby.
@@ -103,7 +140,7 @@ For SSR the `mrblib/` framework is loaded into the Rails process under CRuby.
 `app/funicular/initializer.rb`, builds a `Runtime` around that router, builds the
 component's VDOM, and serializes it with `HTMLSerializer`. The state is also
 embedded as `window.__FUNICULAR_STATE__` so the browser can hydrate the markup
-rather than rebuild it. Keep `render(h)` deterministic and free of browser-only
+rather than rebuild it. Keep `render` deterministic and free of browser-only
 calls so the same code is safe on both sides.
 
 ## Development

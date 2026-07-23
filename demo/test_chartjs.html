@@ -118,17 +118,17 @@
         puts "update_chart: Chart.js update('active') called"
       end
 
-      def render(h)
-        h.div(id: "dashboard") do |hh|
-          hh.h2 { "Sales Dashboard" }
-          hh.div(id: "chart-container") do |hhh|
-            hhh.canvas(ref: :chart_canvas, id: "chart")
+      def render
+        div(id: "dashboard") do
+          h2 { "Sales Dashboard" }
+          div(id: "chart-container") do
+            canvas(ref: :chart_canvas, id: "chart")
           end
-          hh.div do |hhh|
-            hhh.button(id: "prev-btn", onclick: :prev_data_set) { "Previous Quarter" }
-            hhh.button(id: "next-btn", onclick: :next_data_set) { "Next Quarter" }
+          div do
+            button(id: "prev-btn", onclick: :prev_data_set) { "Previous Quarter" }
+            button(id: "next-btn", onclick: :next_data_set) { "Next Quarter" }
           end
-          hh.div(id: "info") do
+          div(id: "info") do
             current = state[:data_sets][state[:month_index]]
             "Current data: #{current[:labels].join(', ')}"
           end

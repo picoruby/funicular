@@ -19,8 +19,8 @@ class FormForTest < Minitest::Test
         @submitted = data
       end
 
-      def render(h)
-        h.form_for(:comment, on_submit: :handle_submit) do |f|
+      def render
+        form_for(:comment, on_submit: :handle_submit) do |f|
           f.textarea(:body)
           f.submit("Post")
         end

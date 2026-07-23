@@ -3,17 +3,23 @@ module Funicular
   # a fallback UI instead of crashing the entire application.
   #
   # Usage:
-  #   h.component(ErrorBoundary) do |hh|
-  #     hh.component(RiskyComponent)
+  #   component(ErrorBoundary) do
+  #     component(RiskyComponent)
   #   end
   #
   # With custom fallback:
-  #   h.component(ErrorBoundary, fallback: ->(h, error) { h.div { "Error: #{error.message}" } }) do |hh|
-  #     hh.component(RiskyComponent)
+  #   component(ErrorBoundary, fallback: ->(h, error) { h.div { "Error: #{error.message}" } }) do
+  #     component(RiskyComponent)
   #   end
   #
   # Props:
-  #   - fallback: Proc or Method that receives the error and returns VDOM
+  #   - fallback: Proc or Method that receives (view_context, error) and
+  #     returns VDOM. NOTE: unlike everywhere else, the fallback cannot use
+  #     bareword tags. The proc is created in the parent component's scope
+  #     but runs during the boundary's render, where only the boundary's
+  #     cursor is active; a bareword tag would dispatch against the parent
+  #     and raise RenderContextError. Build elements through the view
+  #     context argument (`h.div { ... }`) instead.
   #   - on_error: Optional callback when error is caught (for logging, reporting)
   #
   class ErrorBoundary < Component
@@ -60,47 +66,47 @@ module Funicular
       end
     end
 
-    def render(h)
+    def render
       if state[:has_error]
-        render_fallback(h)
+        render_fallback
       else
-        render_children(h)
+        render_children
       end
     end
 
     private
 
-    def render_fallback(h)
+    def render_fallback
       if props[:fallback]
-        result = props[:fallback].call(h, state[:error])
+        result = props[:fallback].call(__view__, state[:error])
         if result.is_a?(VDOM::VNode)
           result
         else
-          h.div { result.to_s }
+          div { result.to_s }
         end
       else
-        default_fallback(h)
+        default_fallback
       end
     end
 
-    def default_fallback(h)
-      h.div(class: 'error-boundary-fallback', style: 'padding: 20px; background: #fee; border: 1px solid #f00; border-radius: 4px;') do |hh|
-        hh.h3(style: 'color: #c00; margin: 0 0 10px 0;') { "Something went wrong" }
+    def default_fallback
+      div(class: 'error-boundary-fallback', style: 'padding: 20px; background: #fee; border: 1px solid #f00; border-radius: 4px;') do
+        h3(style: 'color: #c00; margin: 0 0 10px 0;') { "Something went wrong" }
         if state[:error]
-          hh.div(style: 'font-family: monospace; white-space: pre-wrap; font-size: 12px; color: #600;') do
+          div(style: 'font-family: monospace; white-space: pre-wrap; font-size: 12px; color: #600;') do
             "#{state[:error].class}: #{state[:error].message}"
           end
         end
         if Funicular.env.development? && state[:error_info]
-          hh.div(style: 'margin-top: 10px; font-size: 11px; color: #666;') do
+          div(style: 'margin-top: 10px; font-size: 11px; color: #666;') do
             "Component: #{state[:error_info][:component_class]}"
           end
         end
       end
     end
 
-    def render_children(h)
-      h.div(class: 'error-boundary-content') do
+    def render_children
+      div(class: 'error-boundary-content') do
         children
       end
     end

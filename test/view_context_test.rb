@@ -1,5 +1,5 @@
 class ViewContextTest < Picotest::Test
-  def test_explicit_state_styles_and_resources_do_not_collide_with_html_methods
+  def test_state_styles_and_resources_are_reachable_alongside_tags
     klass = Class.new(Funicular::Component) do
       styles { |css| css.define :hash, "hash-class" }
 
@@ -9,9 +9,9 @@ class ViewContextTest < Picotest::Test
         { class: "state-class", hash: "state-hash" }
       end
 
-      def render(h)
-        h.data(class: h.styles[:hash]) do
-          "#{state[:class]} #{state[:hash]} #{h.resources[:data]}"
+      def render
+        data(class: styles[:hash]) do
+          "#{state[:class]} #{state[:hash]} #{resources[:data]}"
         end
       end
     end
@@ -29,15 +29,15 @@ class ViewContextTest < Picotest::Test
 
   def test_component_children_are_vdom_children_not_props
     child = Class.new(Funicular::Component) do
-      def render(h)
-        h.div { children }
+      def render
+        div { children }
       end
     end
 
     parent = Class.new(Funicular::Component) do
-      define_method(:render) do |h|
-        h.component(child, title: "x") do |hh|
-          hh.span { "inside" }
+      define_method(:render) do
+        component(child, title: "x") do
+          span { "inside" }
         end
       end
     end
@@ -62,16 +62,16 @@ class ViewContextTest < Picotest::Test
     component_a.runtime = Funicular::Runtime.new(router_a)
     component_b.runtime = Funicular::Runtime.new(router_b)
 
-    assert_equal("/users/7", Funicular::ViewContext.new(component_a).routes.user_path(7))
-    assert_equal("/accounts/7", Funicular::ViewContext.new(component_b).routes.user_path(7))
+    assert_equal("/users/7", component_a.routes.user_path(7))
+    assert_equal("/accounts/7", component_b.routes.user_path(7))
   end
 
   def test_link_to_get_uses_router_navigation
     klass = Class.new(Funicular::Component) do
       attr_reader :clicked
 
-      def render(h)
-        h.link_to("/posts") { "Posts" }
+      def render
+        link_to("/posts") { "Posts" }
       end
 
       def handle_link_click(path)
@@ -91,8 +91,8 @@ class ViewContextTest < Picotest::Test
     klass = Class.new(Funicular::Component) do
       attr_reader :action
 
-      def render(h)
-        h.link_to("/messages/1", method: :delete) { "Delete" }
+      def render
+        link_to("/messages/1", method: :delete) { "Delete" }
       end
 
       def handle_link_with_method(path, method)

@@ -21,6 +21,7 @@ module Funicular
       # few real dependencies exist (vdom before html_serializer; styles and
       # vdom before component; component before error_boundary).
       LOAD_ORDER = %w[
+        0_tags
         environment_inquirer
         vdom
         html_serializer

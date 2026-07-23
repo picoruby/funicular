@@ -1,25 +1,24 @@
 class FunicularChatComponent < Funicular::Component
-  styles do |css|
-    css.define :shell, "funicular-chat"
-    css.define :panel, "funicular-chat__panel"
-    css.define :header, "funicular-chat__header"
-    css.define :title, "funicular-chat__title"
-    css.define :subtitle, "funicular-chat__subtitle"
-    css.define :messages, "funicular-chat__messages"
-    css.define :empty, "funicular-chat__empty"
-    css.define :message, "funicular-chat__message"
-    css.define :name, "funicular-chat__message-name"
-    css.define :body, "funicular-chat__message-body"
-    css.define :form, "funicular-chat__form"
-    css.define :row, "funicular-chat__form-row"
-    css.define :input, "funicular-chat__input"
-    css.define :button,
-               base: "funicular-chat__button",
-               variants: {
-                 enabled: "funicular-chat__button--enabled",
-                 disabled: "funicular-chat__button--disabled"
-               }
-    css.define :error, "funicular-chat__error"
+  styles do
+    shell "funicular-chat"
+    panel "funicular-chat__panel"
+    header "funicular-chat__header"
+    title "funicular-chat__title"
+    subtitle "funicular-chat__subtitle"
+    messages "funicular-chat__messages"
+    empty "funicular-chat__empty"
+    message "funicular-chat__message"
+    name "funicular-chat__message-name"
+    body "funicular-chat__message-body"
+    form "funicular-chat__form"
+    row "funicular-chat__form-row"
+    input "funicular-chat__input"
+    button base: "funicular-chat__button",
+           variants: {
+             enabled: "funicular-chat__button--enabled",
+             disabled: "funicular-chat__button--disabled"
+           }
+    error "funicular-chat__error"
   end
 
   def initialize_state
@@ -95,37 +94,37 @@ class FunicularChatComponent < Funicular::Component
     end
   end
 
-  def render(h)
-    h.div(class: h.styles[:shell]) do |hh|
-      hh.div(class: h.styles[:panel]) do |panel|
-        panel.div(class: h.styles[:header]) do |header|
-          header.h1(class: h.styles[:title]) { "Funicular Chat" }
-          header.p(class: h.styles[:subtitle]) do
+  def render
+    div(class: styles.shell) do
+      div(class: styles.panel) do
+        div(class: styles.header) do
+          h1(class: styles.title) { "Funicular Chat" }
+          p(class: styles.subtitle) do
             state[:connected] ? "Realtime Ruby chat over ActionCable" : "Connecting..."
           end
         end
 
-        panel.div(class: h.styles[:messages]) do |messages|
+        div(class: styles.messages) do
           if state[:messages].empty?
-            messages.p(class: h.styles[:empty]) { "No messages yet." }
+            p(class: styles.empty) { "No messages yet." }
           else
             state[:messages].each do |message|
-              messages.div(class: h.styles[:message], key: message["id"]) do |item|
-                item.div(class: h.styles[:name]) { message["name"] }
-                item.div(class: h.styles[:body]) { message["body"] }
+              div(class: styles.message, key: message["id"]) do
+                div(class: styles.name) { message["name"] }
+                div(class: styles.body) { message["body"] }
               end
             end
           end
         end
 
-        panel.form(onsubmit: :send_message, class: h.styles[:form]) do |form|
+        form(onsubmit: :send_message, class: styles.form) do
           if state[:error]
-            form.div(class: h.styles[:error]) { state[:error] }
+            div(class: styles.error) { state[:error] }
           end
-          form.div(class: h.styles[:row]) do |row|
-            row.input(type: "text", value: state[:name], placeholder: "Name", oninput: :update_name, class: h.styles[:input])
-            row.input(type: "text", value: state[:body], placeholder: "Message", oninput: :update_body, class: h.styles[:input])
-            row.button(type: "submit", class: h.styles[:button, state[:sending] ? :disabled : :enabled], disabled: state[:sending]) do
+          div(class: styles.row) do
+            input(type: "text", value: state[:name], placeholder: "Name", oninput: :update_name, class: styles.input)
+            input(type: "text", value: state[:body], placeholder: "Message", oninput: :update_body, class: styles.input)
+            button(type: "submit", class: styles.button(state[:sending] ? :disabled : :enabled), disabled: state[:sending]) do
               state[:sending] ? "Sending..." : "Send"
             end
           end

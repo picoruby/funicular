@@ -25,8 +25,8 @@ class HydrationMatchTest < Minitest::Test
   # invoked here (we feed vnodes directly); it only satisfies the abstract API.
   def probe
     klass = Class.new(Funicular::Component) do
-      def render(h)
-        h.div { "x" }
+      def render
+        div { "x" }
       end
 
       def match?(vnode, dom)

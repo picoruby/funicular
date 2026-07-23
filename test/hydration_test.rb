@@ -13,8 +13,8 @@
 class HydrationTest < Picotest::Test
   def probe
     klass = Class.new(Funicular::Component) do
-      def render(h)
-        h.div { "x" }
+      def render
+        div { "x" }
       end
 
       def match?(vnode, dom)
