@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-23
+
 ### Added
 
 - 0.4.0 bareword component DSL: `render` (zero-arity) runs with `self` as
