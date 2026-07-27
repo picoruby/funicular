@@ -52,7 +52,16 @@ module Funicular
           return 0 if value == false
           value
         elsif type == :datetime
-          value.is_a?(Time) ? time_to_iso(value) : value
+          if value.is_a?(Time)
+            time_to_iso(value)
+          elsif value.is_a?(String)
+            # Strings are re-normalized (offsets folded into UTC, fractions
+            # truncated) so stored TEXT always sorts chronologically;
+            # malformed input raises ArgumentError here, not at query time.
+            time_to_iso(iso_to_time(value))
+          else
+            value
+          end
         else
           value
         end

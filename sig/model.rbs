@@ -43,6 +43,7 @@ module Funicular
     def self.local_columns: () -> Hash[String, Symbol]
     def self.local_db: () -> untyped
     def self.build_from_local: (Hash[untyped, untyped] attrs) -> Model
+    def self.local_table_changed: () -> void
 
     # Unified callback contract (0.5.0): every REST callback is
     # (result, error). On success `result` is the payload and `error` is

@@ -421,9 +421,16 @@ Edge semantics are pinned down, ActiveRecord-style:
   shared codec (`true`/`false` <-> 1/0, `Time` <-> ISO 8601 TEXT normalized
   to UTC at fixed precision -- arbitrary ISO 8601 offsets would not sort
   chronologically as strings) used identically by writes, reads, and
-  condition binding. The SAME codec is applied when REST responses
-  initialize model instances, so `Post.all` and `Post.local.find` return
-  the same Ruby types for the same attribute.
+  condition binding. Datetime STRINGS handed to the typed side (a
+  `datetime` column in a hash condition or a local write) are parsed and
+  re-normalized to the same UTC fixed-precision form; malformed ones raise
+  `ArgumentError` at bind time, not at query time. The SAME codec is
+  applied when REST responses initialize model instances, so `Post.all`
+  and `Post.local.find` return the same Ruby types for the same attribute.
+  One boundary: binds on a RAW SQL fragment carry no column type, so they
+  are encoded by value (`true`/`false` and `Time` instances converted;
+  strings pass through untouched) -- format datetime strings there as UTC
+  ISO 8601 yourself, as the examples do.
 
 Multiple `where` calls AND together. `OR`, `JOIN`, `GROUP BY`, and anything
 else SQL can do remain available through the raw-fragment form or, for full

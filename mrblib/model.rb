@@ -280,6 +280,13 @@ module Funicular
       new(attrs)
     end
 
+    # Called by Relation#delete_all (and, later, the local CRUD writers)
+    # after a framework-managed local write. Once Funicular::DB.boot lands
+    # this delegates to the change-event bus and snapshot scheduling;
+    # until then there is nobody to notify.
+    def self.local_table_changed
+    end
+
     def initialize(attributes = {})
       @changed_attributes = {}
       # Set attributes based on schema. Key-presence lookups, not `||`:

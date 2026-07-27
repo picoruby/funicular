@@ -5,11 +5,14 @@
 # The `model` handed to the constructor is the query's metadata + row
 # factory. Relation calls exactly these methods on it:
 #
-#   table_name       -> String
-#   local_columns    -> Hash[String => Symbol]  (column name -> declared type)
-#   local_db         -> handle responding to execute(sql, binds) -> rows
-#   replica?         -> bool (delete_all guard)
-#   build_from_local -> (Hash) -> model instance (attrs already decoded)
+#   table_name          -> String
+#   local_columns       -> Hash[String => Symbol]  (column name -> declared type)
+#   local_db            -> handle responding to execute(sql, binds) -> rows
+#   replica?            -> bool (delete_all guard)
+#   build_from_local    -> (Hash) -> model instance (attrs already decoded)
+#   local_table_changed -> void; called after a framework-managed write
+#                          (delete_all here) so the model can fire change
+#                          events and schedule snapshot persistence
 #
 # Identifiers in hash conditions and order() are validated against
 # local_columns and double-quoted; values cross into SQL through
@@ -180,7 +183,11 @@ module Funicular
       db = @model.local_db
       db.execute("DELETE FROM #{quoted_table}#{where_clause}", @where_binds)
       row = db.execute("SELECT changes()")[0]
-      row.is_a?(Hash) ? row.values[0] : row[0]
+      count = row.is_a?(Hash) ? row.values[0] : row[0]
+      # Framework-managed writes must notify (docs, "Querying"); a delete
+      # that removed nothing changed nothing.
+      @model.local_table_changed if 0 < count
+      count
     end
 
     # The SELECT this relation will run (debugging aid; binds not inlined).

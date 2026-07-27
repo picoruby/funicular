@@ -13,11 +13,14 @@ class RelationStubRecord
 end
 
 class RelationStubModel
+  attr_reader :notified
+
   def initialize(db, table, columns, replica)
     @db = db
     @table = table
     @columns = columns
     @replica = replica
+    @notified = 0
   end
 
   def table_name
@@ -38,6 +41,10 @@ class RelationStubModel
 
   def build_from_local(attrs)
     RelationStubRecord.new(attrs)
+  end
+
+  def local_table_changed
+    @notified += 1
   end
 end
 
@@ -68,8 +75,14 @@ class CodecTest < Picotest::Test
     assert_equal("2023-11-14T22:13:20Z", codec.encode(:datetime, Time.at(1700000000)))
   end
 
-  def test_datetime_encode_passes_strings_through
+  def test_datetime_encode_normalizes_strings_to_utc
     assert_equal("2020-01-01T00:00:00Z", codec.encode(:datetime, "2020-01-01T00:00:00Z"))
+    assert_equal("2020-01-01T00:00:00Z", codec.encode(:datetime, "2020-01-01T09:00:00+09:00"))
+    assert_equal("2020-01-01T00:00:00Z", codec.encode(:datetime, "2020-01-01T00:00:00.500Z"))
+  end
+
+  def test_datetime_encode_rejects_malformed_strings
+    assert_raise(ArgumentError) { codec.encode(:datetime, "yesterday") }
   end
 
   def test_datetime_roundtrip
@@ -334,5 +347,34 @@ class RelationTest < Picotest::Test
     replica = Funicular::Relation.new(RelationStubModel.new(@db, "posts", COLUMNS, true))
     assert_raise(Funicular::DB::ReplicaWriteError) { replica.delete_all }
     assert_equal(5, rel.count)
+  end
+
+  # ---- change notification (local_table_changed) ----
+
+  def test_delete_all_notifies_the_model
+    rel.where(done: true).delete_all
+    assert_equal(1, @model.notified)
+  end
+
+  def test_delete_all_removing_nothing_does_not_notify
+    rel.where(id: 99).delete_all
+    assert_equal(0, @model.notified)
+  end
+
+  def test_failed_delete_all_does_not_notify
+    replica = RelationStubModel.new(@db, "posts", COLUMNS, true)
+    assert_raise(Funicular::DB::ReplicaWriteError) do
+      Funicular::Relation.new(replica).delete_all
+    end
+    assert_raise(ArgumentError) { rel.limit(1).delete_all }
+    assert_equal(0, replica.notified)
+    assert_equal(0, @model.notified)
+  end
+
+  def test_reads_do_not_notify
+    rel.to_a
+    rel.count
+    rel.exists?
+    assert_equal(0, @model.notified)
   end
 end
