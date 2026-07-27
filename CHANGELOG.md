@@ -12,6 +12,10 @@ of truth. Entries below accumulate as the feature lands.
   Relations, `watch`, persistence/durability, namespaces and tabs, session
   epoch, SSR constraints); `docs/architecture.md` gains the
   contributor-facing invariants.
+- `Model.all(params)` now forwards `params` as a percent-encoded query
+  string (`Post.all(page: 2)` -> `GET /posts?page=2`) via the new
+  picoruby-uri gem's CRuby-compatible `URI.encode_www_form`. The argument
+  existed before but was silently ignored.
 
 ### Changed (BREAKING)
 

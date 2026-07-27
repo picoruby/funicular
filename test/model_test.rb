@@ -93,6 +93,18 @@ class ModelCallbackTest < Picotest::Test
     assert_nil(error)
   end
 
+  def test_all_forwards_params_as_query_string
+    $http_response = ok_response([])
+    CallbackPost.all(page: 2, q: "hello world") { |r, e| }
+    assert_equal([["GET", "/posts?page=2&q=hello+world", nil]], $http_calls)
+  end
+
+  def test_all_without_params_has_no_query_string
+    $http_response = ok_response([])
+    CallbackPost.all { |r, e| }
+    assert_equal([["GET", "/posts", nil]], $http_calls)
+  end
+
   def test_all_failure_yields_nil_result
     $http_response = error_response("boom")
     result = :untouched

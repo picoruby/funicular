@@ -1,3 +1,7 @@
+# On the browser this is picoruby-uri; under CRuby SSR it is the stdlib URI.
+# Both encode_www_form the same way (space -> "+", byte-wise %XX).
+require 'uri'
+
 module Funicular
   class Model
     include Validations
@@ -82,7 +86,12 @@ module Funicular
       endpoint = @endpoints["all"]
       return unless endpoint
 
-      HTTP.get(endpoint["path"]) do |response|
+      path = endpoint["path"]
+      if params && !params.empty?
+        path = "#{path}?#{URI.encode_www_form(params)}"
+      end
+
+      HTTP.get(path) do |response|
         if response.error?
           block.call(nil, response.error_message) if block
         else
