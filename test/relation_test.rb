@@ -101,8 +101,17 @@ class CodecTest < Picotest::Test
   def test_datetime_decode_malformed_raises
     assert_raise(ArgumentError) { codec.iso_to_time("garbage") }
     assert_raise(ArgumentError) { codec.iso_to_time("2020-13-01T00:00:00Z") }
+    assert_raise(ArgumentError) { codec.iso_to_time("2023-02-29T00:00:00Z") }
+    assert_raise(ArgumentError) { codec.iso_to_time("2024-04-31T00:00:00Z") }
+    assert_raise(ArgumentError) { codec.iso_to_time("2020-01-01T00:00:00+24:00") }
+    assert_raise(ArgumentError) { codec.iso_to_time("2020-01-01T00:00:00+09:60") }
     assert_raise(ArgumentError) { codec.iso_to_time("2020-01-01T00:00:00X") }
     assert_raise(ArgumentError) { codec.iso_to_time("2020-01-01T00:00:00Ztrailing") }
+  end
+
+  def test_datetime_decode_accepts_leap_day_and_offset_boundaries
+    assert_equal(codec.iso_to_time("2024-02-29T00:00:00Z").to_i,
+                 codec.iso_to_time("2024-02-29T23:59:00+23:59").to_i)
   end
 
   def test_other_types_pass_through

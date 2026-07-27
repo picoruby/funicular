@@ -115,7 +115,7 @@ module Funicular
         min = digits_at(str, 14, 2)
         sep_at(str, 16, 58)  # ':'
         sec = digits_at(str, 17, 2)
-        if mon < 1 || 12 < mon || day < 1 || 31 < day ||
+        if mon < 1 || 12 < mon || day < 1 || days_in_month(year, mon) < day ||
            23 < hour || 59 < min || 60 < sec
           raise ArgumentError, "invalid datetime: #{str.inspect}"
         end
@@ -183,12 +183,22 @@ module Funicular
         era * 146097 + doe - 719468
       end
 
+      def self.days_in_month(year, mon)
+        return 31 if mon == 1 || mon == 3 || mon == 5 || mon == 7 ||
+                     mon == 8 || mon == 10 || mon == 12
+        return 30 unless mon == 2
+        (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)) ? 29 : 28
+      end
+
       # Parse the "HH:MM" part of a "+HH:MM" zone tail starting at `pos`
       # (the sign byte) and return it in seconds, always positive.
       def self.zone_offset(str, pos)
         oh = digits_at(str, pos + 1, 2)
         sep_at(str, pos + 3, 58) # ':'
         om = digits_at(str, pos + 4, 2)
+        if 23 < oh || 59 < om
+          raise ArgumentError, "invalid datetime: #{str.inspect}"
+        end
         oh * 3600 + om * 60
       end
 
