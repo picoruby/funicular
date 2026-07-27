@@ -36,6 +36,8 @@ module Funicular
         router
         0_validations
         1_validators
+        db
+        relation
         model
         store
         store_singleton

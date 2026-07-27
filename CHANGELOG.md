@@ -16,6 +16,14 @@ of truth. Entries below accumulate as the feature lands.
   string (`Post.all(page: 2)` -> `GET /posts?page=2`) via the new
   picoruby-uri gem's CRuby-compatible `URI.encode_www_form`. The argument
   existed before but was silently ignored.
+- The local-query foundation (`mrblib/db.rb`, `mrblib/relation.rb`):
+  `Funicular::Relation`, the lazy chainable query builder behind `.local`
+  (where/order/limit/offset; hash, IN, BETWEEN, IS NULL, and raw-fragment
+  conditions; each/to_a/first/count/exists?/find/find_by/delete_all), the
+  `Funicular::DB` error vocabulary, and the shared boolean/datetime codec
+  (`true`/`false` <-> 1/0, `Time` <-> UTC ISO 8601 TEXT) used on both the
+  SQLite and REST boundaries. The model-layer wiring (`storage`, `.local`)
+  arrives in a following change; the gem now depends on picoruby-sqlite3.
 
 ### Changed (BREAKING)
 

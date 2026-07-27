@@ -7,6 +7,7 @@ MRuby::Gem::Specification.new('picoruby-funicular') do |spec|
     spec.add_dependency 'picoruby-wasm'
   end
   spec.add_dependency 'picoruby-indexeddb'
+  spec.add_dependency 'picoruby-sqlite3'
   spec.add_dependency 'picoruby-json'
   spec.add_dependency 'picoruby-uri'
   spec.add_dependency 'mruby-object-ext', gemdir: "#{MRUBY_ROOT}/mrbgems/picoruby-mruby/lib/mruby/mrbgems/mruby-object-ext"

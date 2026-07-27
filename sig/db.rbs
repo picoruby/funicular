@@ -1,0 +1,38 @@
+module Funicular
+  class RecordNotFound < StandardError
+  end
+
+  module DB
+    class Error < StandardError
+    end
+
+    class NoTableError < Error
+    end
+
+    class ReadOnlyTabError < Error
+    end
+
+    class ReplicaWriteError < Error
+    end
+
+    class SchemaTooNewError < Error
+    end
+
+    class UnavailableError < Error
+    end
+
+    module Codec
+      def self.encode: (Symbol? `type`, untyped value) -> untyped
+      def self.decode: (Symbol? `type`, untyped value) -> untyped
+      def self.encode_bind: (untyped value) -> untyped
+      def self.time_to_iso: (Time time) -> String
+      def self.iso_to_time: (String str) -> Time
+      def self.civil_from_days: (Integer days) -> Array[Integer]
+      def self.days_from_civil: (Integer y, Integer m, Integer d) -> Integer
+      def self.zone_offset: (String str, Integer pos) -> Integer
+      def self.digits_at: (String str, Integer pos, Integer len) -> Integer
+      def self.sep_at: (String str, Integer pos, Integer code) -> void
+      def self.zpad: (Integer n, Integer width) -> String
+    end
+  end
+end
