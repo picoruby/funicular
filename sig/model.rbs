@@ -6,6 +6,13 @@ module Funicular
     attr_reader id: untyped
     @changed_attributes: Hash[String, untyped]
 
+    self.@storage_kind: Symbol?
+    self.@local_migrations: Array[Hash[Symbol, untyped]]?
+    self.@collecting_migrations: bool?
+    self.@refresh_mode: Symbol?
+    self.@table_name: String?
+    self.@local_columns: Hash[String, Symbol]?
+
     def self.schema: () -> Hash[String, Hash[String, untyped]]
     def self.schema=: (Hash[String, Hash[String, untyped]] schema) -> Hash[String, Hash[String, untyped]]
     def self.endpoints: () -> Hash[String, Hash[String, String]]
@@ -15,6 +22,27 @@ module Funicular
     def self.load_schema: (Hash[String, untyped] schema_data) -> void
     def self.register_schema_validations: (untyped validations) -> void
     def self.normalize_validation_options: (Symbol | String kind, untyped opts) -> untyped
+
+    # Local-database declaration DSL (docs/local_database.md). Migrate
+    # blocks are recorded at class eval and executed at DB boot.
+    def self.storage: (Symbol kind) ?{ () -> void } -> Symbol
+    def self.storage_kind: () -> Symbol
+    def self.replica?: () -> bool
+    def self.ephemeral?: () -> bool
+    def self.local?: () -> bool
+    def self.migrate: (Integer version, ?reset: bool) { (untyped t) -> void } -> void
+    def self.local_migrations: () -> Array[Hash[Symbol, untyped]]?
+    def self.validate_local_migrations: () -> void
+    def self.refresh: (Symbol mode) -> Symbol
+    def self.refresh_mode: () -> Symbol
+    def self.table_name: (?(String | Symbol)? explicit) -> String
+    def self.derive_table_name: () -> String
+    def self.local: () -> Relation
+
+    # Relation protocol (mrblib/relation.rb)
+    def self.local_columns: () -> Hash[String, Symbol]
+    def self.local_db: () -> untyped
+    def self.build_from_local: (Hash[untyped, untyped] attrs) -> Model
 
     # Unified callback contract (0.5.0): every REST callback is
     # (result, error). On success `result` is the payload and `error` is

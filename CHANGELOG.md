@@ -24,6 +24,16 @@ of truth. Entries below accumulate as the feature lands.
   (`true`/`false` <-> 1/0, `Time` <-> UTC ISO 8601 TEXT) used on both the
   SQLite and REST boundaries. The model-layer wiring (`storage`, `.local`)
   arrives in a following change; the gem now depends on picoruby-sqlite3.
+- The model declaration DSL: `storage :replica (default) | :ephemeral |
+  :local do ... end` (with `migrate N [, reset: true] do |t| ... end`
+  blocks recorded at class eval and version rules -- baseline and
+  contiguity -- validated there), `refresh :manual` (`:auto`/`:live`
+  raise "not yet supported"), `table_name` (naive pluralization +
+  override), and the `.local` entry point returning a whole-table
+  `Funicular::Relation` (NoTableError on ephemeral models). Replica
+  column metadata derives from the server schema (binary attributes
+  excluded); materializing a query before `Funicular::DB.boot` (a later
+  change) raises `Funicular::DB::UnavailableError`.
 
 ### Changed (BREAKING)
 
