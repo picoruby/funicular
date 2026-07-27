@@ -13,6 +13,14 @@ of truth. Entries below accumulate as the feature lands.
   epoch, SSR constraints); `docs/architecture.md` gains the
   contributor-facing invariants.
 
+### Removed
+
+- The IndexedDB-backed HTTP response cache (`Funicular::HTTP` `cache:`
+  option, `cache_purge`, `cache_clear`). It was dead code -- no caller
+  anywhere passed `cache:` -- and the local database layer is this
+  release's answer to caching. Structured data belongs in replica tables,
+  not keyed response bodies.
+
 ## [0.4.0] - 2026-07-23
 
 ### Added
