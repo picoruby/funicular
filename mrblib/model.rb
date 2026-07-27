@@ -64,9 +64,16 @@ module Funicular
 
     def initialize(attributes = {})
       @changed_attributes = {}
-      # Set attributes based on schema
+      # Set attributes based on schema. Key-presence lookups, not `||`:
+      # a string-keyed false (boolean columns) must not fall through to the
+      # symbol key and come back nil.
       self.class.schema.each do |name, config|
-        value = attributes[name] || attributes[name.to_sym]
+        value = if attributes.has_key?(name)
+          attributes[name]
+        else
+          sym = name.to_sym
+          attributes.has_key?(sym) ? attributes[sym] : nil
+        end
         instance_variable_set("@#{name}", value)
       end
     end
@@ -133,9 +140,9 @@ module Funicular
 
       HTTP.delete(path) do |response|
         if response.error?
-          block.call(false, response.error_message) if block
+          block.call(nil, response.error_message) if block
         else
-          block.call(true, response.data) if block
+          block.call(true, nil) if block
         end
       end
     end
@@ -147,32 +154,36 @@ module Funicular
 
       # Validate on the client before the request (mirrors ActiveRecord#save).
       unless valid?
-        block.call(false, errors) if block
+        block.call(nil, errors) if block
         return
       end
-
-      return if @changed_attributes.empty?
 
       json_attrs = @changed_attributes.reject do |name, value|
         schema = self.class.schema[name]
         schema && schema["type"] == "binary"
       end
 
-      return if json_attrs.empty?
+      # Nothing to send (no changes, or binary-only changes that travel via
+      # FileUpload): a successful no-op, reported like any success.
+      if json_attrs.empty?
+        block.call(self, nil) if block
+        return
+      end
 
       endpoint = self.class.endpoints["update"]
       path = endpoint["path"].gsub(":id", @id.to_s)
 
       HTTP.patch(path, json_attrs) do |response|
         if response.error?
-          block.call(false, response.error_message) if block
+          block.call(nil, response.error_message) if block
         else
-          # Update attributes with response data
+          # Apply the server's authoritative row (defaults, callbacks and
+          # normalizations included) before reporting success.
           response.data.each do |key, value|
             instance_variable_set("@#{key}", value)
           end
           @changed_attributes = {}
-          block.call(true, response.data) if block
+          block.call(self, nil) if block
         end
       end
     end

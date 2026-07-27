@@ -13,6 +13,22 @@ of truth. Entries below accumulate as the feature lands.
   epoch, SSR constraints); `docs/architecture.md` gains the
   contributor-facing invariants.
 
+### Changed (BREAKING)
+
+- Every `Funicular::Model` REST callback is now uniformly
+  `(result, error)`: on success `result` is the payload (`all` -> array,
+  `find`/`create` -> instance, `update` -> the applied instance, `destroy`
+  -> `true`) and `error` is nil; on failure `result` is nil. `update` and
+  `destroy` used to yield boolean-first `(true/false, data_or_error)`;
+  callsites reading the first argument as a boolean must be updated.
+  `update` with nothing to send (no changes, or binary-only changes) now
+  reports a successful no-op instead of silently not calling the block.
+
+### Fixed
+
+- `Model#initialize` uses key-presence lookups instead of `||`, so a
+  string-keyed `false` (boolean columns) no longer collapses to nil.
+
 ### Removed
 
 - The IndexedDB-backed HTTP response cache (`Funicular::HTTP` `cache:`
