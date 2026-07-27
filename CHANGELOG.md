@@ -1,4 +1,17 @@
-## [Unreleased]
+## [0.5.0] - Unreleased
+
+The local database release: an ActiveRecord-like, reactive local store on
+in-browser SQLite (picoruby-sqlite3), with the Rails server as the source
+of truth. Entries below accumulate as the feature lands.
+
+### Added
+
+- Design documentation for the local database layer:
+  `docs/local_database.md` is the user-facing API contract (source-of-truth
+  contract, `storage`/`refresh` declarations, `migrate` blocks, `.local`
+  Relations, `watch`, persistence/durability, namespaces and tabs, session
+  epoch, SSR constraints); `docs/architecture.md` gains the
+  contributor-facing invariants.
 
 ## [0.4.0] - 2026-07-23
 
