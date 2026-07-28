@@ -48,6 +48,8 @@ module Funicular
     def self.replica_db: () -> untyped
     def self.build_from_local: (Hash[untyped, untyped] attrs) -> Model
     def self.local_table_changed: () -> void
+    def self.on_change: () { (Symbol role, String table) -> void } -> Integer
+    def self.off_change: (Integer subscription) -> nil
     def self.rest_attribute_type: (String name) -> Symbol?
     def self.__write_through_upsert: (untyped attrs) -> void
     def self.__write_through_upsert_all: (untyped rows) -> void

@@ -171,6 +171,72 @@ module Funicular
       self
     end
 
+    # Bind a state key to a local-database Relation (docs decision 10):
+    # the block runs once now, and again after every change event on the
+    # relation's table. Each evaluation re-subscribes (a branchy block
+    # may return a different model's relation this time) and patches
+    # state[key], triggering a re-render. Subscriptions die with the
+    # component (see unmount), even when a lifecycle hook raises.
+    def watch(key, &block)
+      unless block
+        raise ArgumentError, "watch requires a block returning a Relation"
+      end
+      evaluate_watch(key, block)
+      nil
+    end
+
+    # Framework use (the subscription re-enters here on every event).
+    def evaluate_watch(key, block)
+      relation = block.call
+      unless relation.is_a?(Funicular::Relation)
+        raise ArgumentError,
+          "the watch(:#{key}) block must return a Funicular::Relation, " \
+          "got #{relation.class}; for hashes, counts, or raw SQL, " \
+          "subscribe with Model.on_change and patch state yourself"
+      end
+      # Materialize BEFORE touching subscriptions: if the query raises,
+      # neither a fresh subscription leaks (initial watch) nor the
+      # previous healthy one is lost (re-evaluation). Next-tick delivery
+      # guarantees no change event interleaves with this evaluation.
+      records = relation.to_a
+      source = relation.__event_source
+      watches = (@__watches ||= {}) # steep:ignore UnannotatedEmptyCollection
+      old = watches[key]
+      Funicular::DB.unsubscribe(old) if old
+      component = self
+      watches[key] = Funicular::DB.subscribe(source[0], source[1]) do |r, t|
+        component.evaluate_watch(key, block)
+      end
+      if @mounted
+        # The normal update contract: patch runs the update lifecycle
+        # (component_will_update/component_updated/component_raised),
+        # normalizes values, and re-renders. The bus's next-tick
+        # delivery guarantees we are never inside another update here.
+        patch(key => records)
+      else
+        # Before mount there is no update lifecycle to honor yet: land
+        # the initial data directly so state is ready for the first
+        # render.
+        @state = @state.merge({ key => records })
+        @state_accessor = nil
+      end
+      nil
+    end
+
+    def cleanup_watches
+      watches = @__watches
+      return nil unless watches
+      keys = watches.keys
+      keys_size = keys.size
+      i = 0
+      while i < keys_size
+        Funicular::DB.unsubscribe(watches[keys[i]])
+        i += 1
+      end
+      @__watches = {}
+      nil
+    end
+
     # Load all registered suspense data
     # Called automatically in component_mounted if suspense definitions exist
     def load_suspense_data
@@ -408,6 +474,10 @@ module Funicular
 
         component_mounted if respond_to?(:component_mounted)
       rescue => e
+        # A failed mount never reaches unmount (@mounted is still
+        # false), so watch subscriptions taken before/during the mount
+        # must be released here or they would pin the dead component.
+        cleanup_watches
         component_raised(e) if respond_to?(:component_raised)
         raise e
       end
@@ -423,9 +493,12 @@ module Funicular
     # window.__FUNICULAR_STATE__ before calling this.
     def hydrate(dom_element)
       return if @mounted
-      raise "hydrate: missing server DOM element" unless dom_element
 
       begin
+        # Inside the begin so a nil element takes the same cleanup path
+        # (releasing watch subscriptions) as every other hydrate failure.
+        raise "hydrate: missing server DOM element" unless dom_element
+
         component_will_mount if respond_to?(:component_will_mount)
 
         # The router/start sets the container; without it, unmount could not
@@ -467,6 +540,9 @@ module Funicular
 
         component_mounted if respond_to?(:component_mounted)
       rescue => e
+        # Same as mount: a failed hydrate cannot be unmounted, so the
+        # watch subscriptions must not outlive it.
+        cleanup_watches
         component_raised(e) if respond_to?(:component_raised)
         raise e
       end
@@ -502,6 +578,11 @@ module Funicular
       rescue => e
         component_raised(e) if respond_to?(:component_raised)
         raise e
+      ensure
+        # Watch subscriptions die with the component NO MATTER WHAT: a
+        # raising lifecycle hook must not leave a zombie watcher
+        # patching an unmounted component (docs decision 10).
+        cleanup_watches
       end
     end
 

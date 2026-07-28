@@ -198,6 +198,13 @@ module Funicular
       select_sql
     end
 
+    # Internal (Component#watch): where change events for this
+    # relation's rows come from, as [role, table].
+    def __event_source
+      m = @model
+      [m.replica? ? :replica : :local, m.table_name]
+    end
+
     # ---- internal --------------------------------------------------------
 
     private

@@ -742,6 +742,213 @@ module Funicular
       "index_#{table}_on_#{columns.join("_")}"
     end
 
+    # ---- change-event bus (docs decision 10) ----------------------------
+    #
+    # Framework writes announce themselves per [database role, table];
+    # watch and Model.on_change ride these events. They fire POST-COMMIT
+    # only: inside a guarded transaction block they coalesce (one event
+    # per [role, table]) and flush after COMMIT -- or vanish with the
+    # rollback. Delivery drains a queue iteratively, so an event raised
+    # BY a subscriber never nests delivery inside delivery, and a
+    # raising subscriber is isolated from the rest.
+
+    def self.subscribe(role, table, &handler)
+      unless handler
+        raise ArgumentError, "subscribe requires a block"
+      end
+      validate_role(role)
+      subs = (@subscriptions ||= {}) # steep:ignore UnannotatedEmptyCollection
+      serial = (@subscription_serial || 0) + 1
+      @subscription_serial = serial
+      subs[serial] = [role, table.to_s, handler]
+      serial
+    end
+
+    def self.unsubscribe(id)
+      subs = @subscriptions
+      subs.delete(id) if subs
+      nil
+    end
+
+    # The raw-SQL protocol (docs, "Querying"): after writing through a
+    # guarded handle yourself, tell the framework. Preferred form is the
+    # model class -- it knows both its database role and its table; the
+    # explicit (role, table) pair exists because a bare table name would
+    # be ambiguous between the two databases.
+    def self.notify_changed(target, table = nil)
+      if table.nil?
+        model = target
+        if model.ephemeral?
+          raise NoTableError,
+            "#{model.to_s} is storage :ephemeral; there is no table to " \
+            "notify about"
+        end
+        return notify_changed(model.local? ? :local : :replica,
+                              model.table_name)
+      end
+      role = validate_role(target)
+      name = table.to_s
+      # Defer only under an open transaction on the SAME database: local
+      # and replica are separate SQLite databases with independent
+      # transactions, so their pending events never mix.
+      if 0 < deferral_depth(role)
+        seen = pending_seen(role)
+        key = "#{role}:#{name}"
+        unless seen.has_key?(key)
+          seen[key] = true
+          pending_order(role) << [role, name]
+        end
+      else
+        enqueue_delivery(role, name)
+      end
+      nil
+    end
+
+    def self.validate_role(role)
+      return role if role == :local
+      return role if role == :replica
+      raise ArgumentError,
+        "role must be :local or :replica, got #{role.inspect}"
+    end
+
+    def self.deferral_depth(role)
+      depths = @deferral_depths
+      value = depths ? depths[role] : nil
+      value || 0
+    end
+
+    def self.pending_seen(role)
+      all = (@pending_seen ||= {}) # steep:ignore UnannotatedEmptyCollection
+      all[role] ||= {}
+    end
+
+    def self.pending_order(role)
+      all = (@pending_orders ||= {}) # steep:ignore UnannotatedEmptyCollection
+      all[role] ||= []
+    end
+
+    # Transaction hooks (GuardedDatabase), tracked PER ROLE: the local
+    # and replica databases transact independently. Only the outermost
+    # commit of a role flushes its pending events; a rollback at depth
+    # zero discards them.
+    def self.__begin_deferral(role)
+      depths = (@deferral_depths ||= {}) # steep:ignore UnannotatedEmptyCollection
+      depths[role] = deferral_depth(role) + 1
+    end
+
+    def self.__commit_deferral(role)
+      depths = (@deferral_depths ||= {}) # steep:ignore UnannotatedEmptyCollection
+      depth = deferral_depth(role)
+      depths[role] = depth - 1 if 0 < depth
+      return unless deferral_depth(role) == 0
+      order = pending_order(role)
+      clear_pending(role)
+      order_size = order.size
+      i = 0
+      while i < order_size
+        event = order[i]
+        enqueue_delivery(event[0], event[1])
+        i += 1
+      end
+    end
+
+    def self.__rollback_deferral(role)
+      depths = (@deferral_depths ||= {}) # steep:ignore UnannotatedEmptyCollection
+      depth = deferral_depth(role)
+      depths[role] = depth - 1 if 0 < depth
+      clear_pending(role) if deferral_depth(role) == 0
+    end
+
+    def self.clear_pending(role)
+      seen_all = @pending_seen
+      seen_all.delete(role) if seen_all
+      order_all = @pending_orders
+      order_all.delete(role) if order_all
+      nil
+    end
+
+    # Delivery belongs to the NEXT tick (docs decision 10): a write that
+    # happens during a component update must never patch watchers
+    # synchronously into that update. Until the scheduled drain runs,
+    # events collapse per [role, table]; the first event of a tick
+    # schedules exactly one drain.
+    def self.enqueue_delivery(role, table)
+      pending = (@tick_events ||= {}) # steep:ignore UnannotatedEmptyCollection
+      key = "#{role}:#{table}"
+      unless pending.has_key?(key)
+        pending[key] = true
+        order = (@tick_order ||= []) # steep:ignore UnannotatedEmptyCollection
+        order << [role, table]
+      end
+      return nil if @drain_scheduled
+      @drain_scheduled = true
+      schedule_drain
+      nil
+    end
+
+    # Boot/tests may install their own scheduler (it must eventually
+    # call __drain_events once). The default rides JS setTimeout(0); on
+    # CRuby (SSR, native tests) there is no JS event loop AND no
+    # component can be mid-update, so draining immediately is safe.
+    def self.__set_tick_scheduler(scheduler)
+      @tick_scheduler = scheduler
+    end
+
+    def self.schedule_drain
+      scheduler = @tick_scheduler
+      if scheduler
+        scheduler.call
+      elsif Object.const_defined?(:JS)
+        JS.global.setTimeout(0) do
+          __drain_events
+        end
+      else
+        __drain_events
+      end
+      nil
+    end
+
+    def self.__drain_events
+      # Un-schedule FIRST: events raised by the subscribers below belong
+      # to the next tick and must get a drain of their own.
+      @drain_scheduled = false
+      order = @tick_order
+      @tick_order = []
+      @tick_events = {}
+      return nil unless order
+      order_size = order.size
+      i = 0
+      while i < order_size
+        event = order[i]
+        deliver_event(event[0], event[1])
+        i += 1
+      end
+      nil
+    end
+
+    def self.deliver_event(role, table)
+      subs = @subscriptions
+      return unless subs
+      # Snapshot the ids: a handler may (un)subscribe during delivery.
+      ids = subs.keys
+      ids_size = ids.size
+      i = 0
+      while i < ids_size
+        entry = subs[ids[i]]
+        if entry && entry[0] == role && entry[1] == table
+          begin
+            entry[2].call(role, table)
+          rescue => e
+            # Subscriber isolation: one broken watcher must not starve
+            # the others (docs decision 10).
+            puts "[Funicular] change subscriber raised: " \
+                 "#{e.class}: #{e.message}"
+          end
+        end
+        i += 1
+      end
+    end
+
     # ---- guarded database handles (docs decision 15) --------------------
     #
     # Funicular::DB.local/.replica hand out these proxies, never raw
@@ -991,9 +1198,16 @@ module Funicular
     end
 
     class GuardedDatabase
-      def initialize(db, read_only = false)
+      def initialize(db, role = :local, read_only = false)
         @db = db
+        @role = DB.validate_role(role)
         @read_only = read_only
+      end
+
+      # Which database this handle fronts (:local or :replica); event
+      # deferral is tracked per role.
+      def role
+        @role
       end
 
       def read_only?
@@ -1072,6 +1286,13 @@ module Funicular
           raise ArgumentError, "invalid transaction mode #{mode.inspect}"
         end
         execute("BEGIN #{mode_sql} TRANSACTION")
+        # Deferral starts with the transaction ITSELF, block or not:
+        # change events raised before COMMIT coalesce and fire only
+        # after it -- or vanish with the rollback (docs decision 10).
+        # commit/rollback below settle it, so the raw blockless form
+        # (transaction / execute / notify_changed / rollback) honors the
+        # same contract.
+        DB.__begin_deferral(@role)
         return true unless block_given?
         aborting = false
         begin
@@ -1088,11 +1309,13 @@ module Funicular
 
       def commit
         execute("COMMIT TRANSACTION")
+        DB.__commit_deferral(@role)
         true
       end
 
       def rollback
         execute("ROLLBACK TRANSACTION")
+        DB.__rollback_deferral(@role)
         true
       end
     end

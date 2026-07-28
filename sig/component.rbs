@@ -47,6 +47,11 @@ module Funicular
     def initialize_state: () -> Hash[Symbol, untyped]
     def seed_state: (Hash[untyped, untyped]? state_hash) -> self
 
+    @__watches: Hash[Symbol, Integer]?
+    def watch: (Symbol key) { () -> untyped } -> nil
+    def evaluate_watch: (Symbol key, untyped block) -> nil
+    def cleanup_watches: () -> nil
+
     def load_suspense_data: () -> void
     def load_single_suspense: (Symbol name, ?suspense_definition? definition) -> void
     def reload_suspense: (Symbol name) -> void

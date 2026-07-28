@@ -302,11 +302,32 @@ module Funicular
       record
     end
 
-    # Called by Relation#delete_all and the local CRUD writers after a
-    # framework-managed local write. Once Funicular::DB.boot lands this
-    # delegates to the change-event bus and snapshot scheduling; until
-    # then there is nobody to notify.
+    # Called by Relation#delete_all, the local CRUD writers, and the
+    # replica apply path after a framework-managed write: the change-
+    # event bus takes it from here (snapshot scheduling joins in at
+    # boot).
     def self.local_table_changed
+      Funicular::DB.notify_changed(self)
+    end
+
+    # The public change-subscription primitive (docs decision 10):
+    # watch's Relation-only contract covers lists; for hashes, counts,
+    # or raw-SQL-derived state, subscribe here and patch state in the
+    # handler. Returns a subscription for off_change.
+    def self.on_change(&block)
+      unless block
+        raise ArgumentError, "on_change requires a block"
+      end
+      if ephemeral?
+        raise Funicular::DB::NoTableError,
+          "#{to_s} is storage :ephemeral; it has no local table to watch"
+      end
+      Funicular::DB.subscribe(replica? ? :replica : :local,
+                              table_name, &block)
+    end
+
+    def self.off_change(subscription)
+      Funicular::DB.unsubscribe(subscription)
     end
 
     # ---- write-through (docs decision 5) --------------------------------

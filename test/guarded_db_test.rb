@@ -8,7 +8,7 @@ class GuardedDbTest < Picotest::Test
     @raw.execute("CREATE TABLE gk (id INTEGER PRIMARY KEY, name TEXT)")
     @raw.execute("INSERT INTO gk (name) VALUES ('seed')")
     @writer = Funicular::DB::GuardedDatabase.new(@raw)
-    @reader = Funicular::DB::GuardedDatabase.new(@raw, true)
+    @reader = Funicular::DB::GuardedDatabase.new(@raw, :local, true)
   end
 
   def teardown

@@ -25,6 +25,7 @@ module Funicular
     def find_by: (Hash[untyped, untyped] conditions) -> untyped
     def delete_all: () -> Integer
     def to_sql: () -> String
+    def __event_source: () -> [Symbol, String]
 
     private def append_condition: (Array[String] w, Array[untyped] b, untyped col, untyped value) -> void
     private def order_term: (untyped col, untyped dir) -> String

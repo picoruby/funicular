@@ -24,6 +24,33 @@ module Funicular
     class ConfigError < Error
     end
 
+    self.@subscriptions: Hash[Integer, [Symbol, String, Proc]]?
+    self.@subscription_serial: Integer?
+    self.@deferral_depths: Hash[Symbol, Integer]?
+    self.@pending_seen: Hash[Symbol, Hash[String, bool]]?
+    self.@pending_orders: Hash[Symbol, Array[[Symbol, String]]]?
+    self.@tick_events: Hash[String, bool]?
+    self.@tick_order: Array[[Symbol, String]]?
+    self.@drain_scheduled: bool?
+    self.@tick_scheduler: Proc?
+
+    def self.subscribe: (Symbol role, untyped table) { (Symbol role, String table) -> void } -> Integer
+    def self.unsubscribe: (Integer id) -> nil
+    def self.notify_changed: (untyped target, ?untyped table) -> nil
+    def self.validate_role: (untyped role) -> Symbol
+    def self.deferral_depth: (Symbol role) -> Integer
+    def self.pending_seen: (Symbol role) -> Hash[String, bool]
+    def self.pending_order: (Symbol role) -> Array[[Symbol, String]]
+    def self.__begin_deferral: (Symbol role) -> void
+    def self.__commit_deferral: (Symbol role) -> void
+    def self.__rollback_deferral: (Symbol role) -> void
+    def self.clear_pending: (Symbol role) -> nil
+    def self.enqueue_delivery: (Symbol role, String table) -> nil
+    def self.__set_tick_scheduler: (Proc? scheduler) -> Proc?
+    def self.schedule_drain: () -> nil
+    def self.__drain_events: () -> nil
+    def self.deliver_event: (Symbol role, String table) -> void
+
     class GuardedStatement
       @stmt: untyped
       @guard: GuardedDatabase
@@ -63,9 +90,11 @@ module Funicular
 
     class GuardedDatabase
       @db: untyped
+      @role: Symbol
       @read_only: bool
 
-      def initialize: (untyped db, ?bool read_only) -> void
+      def initialize: (untyped db, ?Symbol role, ?bool read_only) -> void
+      def role: () -> Symbol
       def read_only?: () -> bool
       def __become_read_only: () -> void
       def execute: (String sql, ?Array[untyped] bind_vars) ?{ (untyped row) -> void } -> untyped

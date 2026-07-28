@@ -52,6 +52,28 @@ of truth. Entries below accumulate as the feature lands.
   models' `local_columns` now fold their migrate blocks (implicit
   `id INTEGER PRIMARY KEY` included), replacing the interim
   UnavailableError.
+- The change-event bus (`mrblib/db.rb`): `Funicular::DB.subscribe`/
+  `unsubscribe` per [database role, table], and the raw-SQL protocol
+  `Funicular::DB.notify_changed(Model)` (or `(:local | :replica,
+  table)`; ephemeral models raise NoTableError). Events fire
+  post-commit only: inside a guarded transaction block they coalesce to
+  one event per [role, table] and flush after COMMIT, or vanish with
+  the rollback. Delivery is deferred to the NEXT tick (JS
+  `setTimeout(0)` by default; the scheduler is pluggable and CRuby
+  drains immediately, where no component can be mid-update), coalescing
+  per [role, table] within the tick; an event raised by a subscriber
+  belongs to the following tick -- never nested, never dropped -- and a
+  raising subscriber is isolated. `Model.local_table_changed` now feeds
+  this bus, so every framework write (local CRUD, delete_all, replica
+  write-through) announces itself.
+- The reactivity layer on top of the bus: `Component#watch(:key)` binds
+  a state key to a `storage :local`/`.local` Relation -- the block runs
+  once, materializes into `state[:key]`, and re-runs (re-subscribing,
+  so branchy blocks may switch relations) after every change event on
+  the relation's table; anything that is not a Relation raises, pointing
+  at `Model.on_change`/`off_change`, the public primitive for hashes,
+  counts, and raw-SQL-derived state. Watch subscriptions die with the
+  component even when a lifecycle hook raises.
 - The guarded database handles (`mrblib/db.rb`,
   `Funicular::DB::GuardedDatabase`/`GuardedStatement`/
   `GuardedResultSet`): the proxies `Funicular::DB.local`/`.replica`
