@@ -130,6 +130,21 @@ of truth. Entries below accumulate as the feature lands.
   declared set passes again -- and the lift is provisional: a reset
   that fails mid-rebuild puts SQLite's own write refusal
   (`query_only`) back up before re-raising.
+- The schema boot barrier and the start gate (docs decision 19,
+  wiring half). `Funicular.load_schemas` is now a real barrier: every
+  request settles its slot exactly once -- success, HTTP error, or a
+  schema that arrived but cannot be applied -- so it always
+  completes. All green boots the local database (declared models come
+  from a new Model registry filled at subclass definition; namespace,
+  epoch, and user-key metadata come from the include tag's
+  HTML-escaped `data-funicular-*` attributes) and only then runs the
+  completion block; any failure never invokes the block, reports
+  through the console and `config.on_boot_error`, and marks the boot
+  failed. `Funicular.start` gates on the boot before touching the
+  DOM: replica apps boot inside the barrier, local-only apps boot
+  right in start, and nothing mounts on top of a failed boot. An
+  empty schema set with a schema-less replica model declared fails
+  the boot loud instead of running on missing tables.
 - `Funicular::DB.wipe` and the mutation generation (docs decision 17):
   one call drops every table in both databases of the current
   namespace, deletes its two snapshot keys, rebuilds the replica DDL +

@@ -97,11 +97,17 @@ module Funicular
     child.is_a?(JS::Element) ? child : nil
   end
 
-  # Load schemas for models
+  # The schema boot barrier (docs decisions 6/19).
   # Usage:
   #   Funicular.load_schemas({ User => "user", Session => "session" }) do
   #     Funicular.start(container: 'app') { |router| ... }
   #   end
+  # EVERY request settles its slot exactly once -- success, HTTP
+  # error, or a schema that fails to apply -- so the barrier always
+  # completes. All green: the local database boots, and only then the
+  # completion block runs. Any failure: the block is NEVER invoked,
+  # the errors reach the console and config.on_boot_error, and the
+  # boot is marked failed so nothing can mount later.
   def self.load_schemas(models, &block)
     # On the server there is no fetch and no need for client-side schemas:
     # SSR injects plain data into component state directly. Just run the
@@ -111,28 +117,88 @@ module Funicular
       return
     end
 
-    schemas_loaded = 0
-    total_schemas = models.size
+    total = models.size
+    settled = 0
+    # @type var errors: Array[untyped]
+    errors = []
+    completed = false
 
-    check_completion = -> {
-      if schemas_loaded >= total_schemas
-        puts "[Funicular] All schemas loaded (#{schemas_loaded}/#{total_schemas})"
-        block.call if block
-      end
+    settle = -> {
+      settled += 1
+      # Exactly once, and only with every slot settled.
+      next if completed
+      next if settled < total
+      completed = true
+      __settle_boot_barrier(errors, &block)
     }
 
-    models.each do |model_class, schema_name|
-      HTTP.get("/api/schema/#{schema_name}") do |response|
-        if response.error?
-          puts "[Schema] Failed to load #{schema_name} schema: #{response.error_message}"
-        else
+    if total == 0
+      __settle_boot_barrier(errors, &block)
+      return
+    end
+
+    entries = models.to_a
+    entries_size = entries.size
+    i = 0
+    while i < entries_size
+      entry = entries[i]
+      # One request per method call: the response block must capture
+      # ITS model and name, and a while loop's shared locals would all
+      # resolve to the last pair by response time.
+      __request_schema(entry[0], entry[1], errors, settle)
+      i += 1
+    end
+  end
+
+  def self.__request_schema(model_class, schema_name, errors, settle)
+    HTTP.get("/api/schema/#{schema_name}") do |response|
+      if response.error?
+        # Status and model always; the body's message only when the
+        # server actually sent one (an empty or HTML error body has
+        # no error_message).
+        message = "schema #{schema_name} (#{model_class.to_s}): " \
+                  "HTTP #{response.status}"
+        detail = response.error_message
+        message = "#{message}: #{detail}" if detail
+        errors << Funicular::DB::Error.new(message)
+      else
+        begin
           model_class.load_schema(response.data)
           puts "[Schema] #{schema_name} model initialized"
-          schemas_loaded += 1
-          check_completion.call
+        rescue => e
+          # A schema that arrived but cannot be applied settles as a
+          # failure -- the barrier must never hang on it. Wrapped so
+          # on_boot_error can tell WHICH model broke among several.
+          errors << Funicular::DB::Error.new(
+            "schema #{schema_name} (#{model_class.to_s}): " \
+            "#{e.class}: #{e.message}")
         end
       end
+      settle.call
     end
+    nil
+  end
+
+  # The barrier settled: boot on all-green (the completion block runs
+  # only when the boot itself succeeded too), fail loud otherwise.
+  def self.__settle_boot_barrier(errors, &block)
+    if errors.empty?
+      block.call if Funicular::DB.boot && block
+    else
+      Funicular::DB.__fail_boot(errors)
+    end
+    nil
+  end
+
+  # Funicular.start's client-side gate (docs decision 19): apps with
+  # replica models boot inside the schema barrier above; local-only
+  # apps (no load_schemas call) boot right here. Either way nothing
+  # mounts unless the database came up.
+  def self.__boot_for_start
+    state = Funicular::DB.boot_state
+    return true if state == :ready
+    return false unless state == :unbooted
+    Funicular::DB.boot
   end
 
   # Start Funicular application
@@ -150,6 +216,14 @@ module Funicular
         block.call(router)
         return router
       end
+      return nil
+    end
+
+    # The local database comes up before anything mounts (docs
+    # decision 19); a failed boot already reported itself, so start
+    # quietly refuses to mount on top of it.
+    unless __boot_for_start
+      puts "[Funicular] start aborted: the local database did not boot"
       return nil
     end
 

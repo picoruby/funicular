@@ -2207,11 +2207,12 @@ module Funicular
       @session_epoch
     end
 
-    # metadata comes from the page (picoruby_include_tag data
-    # attributes, read in a later change); tests and embedders pass it
-    # directly. Absent keys fall back to a replica-only anonymous
-    # default.
-    def self.boot(models:, metadata: {})
+    # metadata comes from the page (the picoruby_include_tag data
+    # attributes); tests and embedders may pass both arguments
+    # directly. Absent metadata falls back to a replica-only anonymous
+    # default; absent models fall back to every declared Model
+    # subclass.
+    def self.boot(models: nil, metadata: nil)
       if Funicular.server?
         raise UnavailableError,
           "Funicular::DB.boot does not run on the server (SSR renders " \
@@ -2222,23 +2223,66 @@ module Funicular
       end
       @boot_state = :booting
       begin
-        __boot_steps(models, metadata)
+        __boot_steps(models || Funicular::Model.__registered_models,
+                     metadata || read_page_metadata)
         @boot_state = :ready
         true
       rescue => e
-        @boot_state = :failed
-        # No partial boot: whatever was already wired up is torn back
-        # out of reach (the getters below also gate on :ready).
-        @local_handle = nil
-        @replica_handle = nil
-        report_boot_error([e])
-        # The hook above had its recovery chance (a wipe from it runs
-        # as the writer). A page that stays failed can do nothing with
-        # the writer slot except deny it to every other tab -- release
-        # it (no-op when the election never ran or was lost).
-        release_writer_lock
-        false
+        __fail_boot([e])
       end
+    end
+
+    # The one failure funnel (docs decision 16): boot's own rescue and
+    # the schema barrier (funicular.rb) land here. Fails loud, tears
+    # the partial boot out of reach, and -- once the hook had its
+    # recovery chance (a wipe from it runs as the writer) -- releases
+    # the writer slot: a page that stays failed must not deny it to
+    # every other tab. Always returns false.
+    def self.__fail_boot(errors)
+      @boot_state = :failed
+      @local_handle = nil
+      @replica_handle = nil
+      report_boot_error(errors)
+      release_writer_lock
+      false
+    end
+
+    # The picoruby_include_tag embeds the namespace identity and the
+    # session epoch as HTML-escaped data attributes (docs decision 12);
+    # the Rails side emits them in a later change, and this is the
+    # client half of that contract. No tag (or no document -- tests,
+    # exotic embedders) means the replica-only anonymous default.
+    PAGE_METADATA_JS = <<~'FUNICULAR_META_JS'
+      (() => {
+        if (typeof document === "undefined") return "null";
+        const el = document.querySelector("[data-funicular-application-id]");
+        if (!el) return "null";
+        const d = el.dataset;
+        return JSON.stringify({
+          application_id: d.funicularApplicationId,
+          user_key:
+            (d.funicularUserKey === undefined) ? null : d.funicularUserKey,
+          user_key_configured: d.funicularUserKeyConfigured === "true",
+          anonymous_only: d.funicularAnonymousOnly === "true",
+          epoch: (d.funicularEpoch === undefined) ? null : d.funicularEpoch,
+        });
+      })()
+    FUNICULAR_META_JS
+
+    def self.read_page_metadata
+      return {} unless Object.const_defined?(:JS)
+      # @type var global: untyped
+      global = JS.global
+      raw = global.eval(PAGE_METADATA_JS).to_s
+      return {} if raw == "null" || raw.empty?
+      data = JSON.parse(raw)
+      {
+        application_id: data["application_id"],
+        user_key: data["user_key"],
+        user_key_configured: !!data["user_key_configured"],
+        anonymous_only: !!data["anonymous_only"],
+        epoch: data["epoch"],
+      }
     end
 
     class << self

@@ -12,6 +12,25 @@ module Funicular
       attr_accessor :schema, :endpoints
     end
 
+    # Every Model subclass registers itself at definition time: the
+    # boot (docs decision 19) needs the full declared set -- local
+    # models for migrations, replica models for the schema-derived
+    # DDL -- without asking the app to enumerate it.
+    def self.inherited(subclass)
+      Funicular::Model.__register_model(subclass)
+    end
+
+    def self.__register_model(subclass)
+      registry = (@registered_models ||= []) # steep:ignore UnannotatedEmptyCollection
+      registry << subclass
+      nil
+    end
+
+    def self.__registered_models
+      models = Funicular::Model.instance_variable_get(:@registered_models)
+      models || []
+    end
+
     def self.load_schema(schema_data)
       @schema = schema_data["attributes"]
       @endpoints = schema_data["endpoints"]

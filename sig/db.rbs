@@ -193,7 +193,11 @@ module Funicular
     def self.boot_state: () -> Symbol
     def self.__set_boot_state: (Symbol state) -> Symbol
     def self.session_epoch: () -> untyped
-    def self.boot: (models: Array[untyped], ?metadata: Hash[Symbol, untyped]) -> bool
+    PAGE_METADATA_JS: String
+
+    def self.boot: (?models: Array[untyped]?, ?metadata: Hash[Symbol, untyped]?) -> bool
+    def self.__fail_boot: (Array[untyped] errors) -> bool
+    def self.read_page_metadata: () -> Hash[Symbol, untyped]
     private def self.__boot_steps: (Array[untyped] models, Hash[Symbol, untyped] metadata) -> nil
     private def self.metadata_value: (Hash[Symbol, untyped]? metadata, Symbol key, untyped default) -> untyped
     private def self.report_boot_error: (Array[untyped] errors) -> nil
