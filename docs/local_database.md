@@ -334,7 +334,10 @@ How migrations run:
   baseline definition and then receives the later blocks; a database at or
   above the baseline receives only its missing later blocks. Application is
   per table, inside one transaction; failure rolls back and raises -- user
-  data is never left half-migrated.
+  data is never left half-migrated. Each `migrate` block is evaluated
+  exactly once per migration run (the framework validates and applies the
+  same recorded operations); it also runs when column metadata is first
+  needed, so keep blocks deterministic and free of side effects.
 - If any table's stored version is NEWER than the declared maximum (a
   rolled-back deploy), the WHOLE local database fails loud: every
   local-model operation -- read or write, any table -- raises

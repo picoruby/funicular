@@ -367,6 +367,26 @@ class MigrationTest < Picotest::Test
     assert_equal("intact", @db.execute("SELECT title FROM mig_docs")[0][0])
   end
 
+  def test_migrate_blocks_are_evaluated_once_per_run
+    $mig_block_runs = 0
+    counted = Class.new(Funicular::Model)
+    counted.class_eval do
+      table_name "mig_counts"
+      storage :local do
+        migrate 1 do |t|
+          $mig_block_runs += 1
+          t.string :name
+        end
+      end
+    end
+    # Fresh apply: validation and DDL share ONE evaluation of the block.
+    Funicular::DB.apply_local_migrations(@db, counted)
+    assert_equal(1, $mig_block_runs)
+    # A no-op re-application still validates, so exactly one more.
+    Funicular::DB.apply_local_migrations(@db, counted)
+    assert_equal(2, $mig_block_runs)
+  end
+
   # ---- failure handling ----
 
   def test_failed_upgrade_rolls_back_in_production

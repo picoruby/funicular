@@ -390,10 +390,15 @@ module Funicular
     # usable before boot. Folding starts at the baseline, so a reset block
     # may redefine columns that also appear in the superseded history.
     def self.fold_local_columns(model)
+      fold_builders(collect_builders(model), model.local_migrations, model)
+    end
+
+    # The fold over ALREADY-collected builders: the migration runner
+    # evaluates each migrate block exactly once per run and feeds the same
+    # recorded operations to this validation and to the DDL.
+    def self.fold_builders(builders, migrations, model)
       # @type var columns: Hash[String, Symbol]
       columns = { "id" => :integer }
-      builders = collect_builders(model)
-      migrations = model.local_migrations
       i = migrations ? baseline_index(migrations) : 0
       while i < builders.size
         fold_ops(columns, builders[i].ops, model)
@@ -417,12 +422,15 @@ module Funicular
         raise ArgumentError,
           "#{model} has no migrate blocks (is it storage :local?)"
       end
-      # Validate the whole retained chain before any SQL runs: the fold
-      # catches errors SQLite itself would accept as plain DDL (renaming
-      # or removing the implicit id, most notably). Fold errors are
+      # Evaluate every migrate block exactly ONCE for this run, then
+      # validate the retained chain before any SQL: the fold catches
+      # errors SQLite itself would accept as plain DDL (renaming or
+      # removing the implicit id, most notably), and the very same
+      # recorded operations feed the DDL below. Fold errors are
       # ArgumentError, so the development auto-reset below never eats
       # them -- a broken declaration fails the same way everywhere.
-      fold_local_columns(model)
+      builders = collect_builders(model)
+      fold_builders(builders, migrations, model)
       table = validate_identifier(model.table_name)
       baseline = migrations[baseline_index(migrations)][:version]
       max = migrations[migrations.size - 1][:version]
@@ -435,11 +443,11 @@ module Funicular
       end
       return max if stored == max
       if stored < baseline
-        rebuild_local_table(db, model)
+        rebuild_local_table(db, model, builders)
       else
         begin
           db.transaction do
-            apply_blocks(db, model, stored)
+            apply_blocks(db, model, stored, builders)
             store_table_version(db, table, max)
           end
         rescue SQLite3::Exception => e
@@ -447,7 +455,7 @@ module Funicular
           # mruby VM (it raises a fresh empty RuntimeError).
           raise e unless Funicular.env.development?
           # Dev auto-reset: a dirty development table beats hand-repair.
-          rebuild_local_table(db, model)
+          rebuild_local_table(db, model, builders)
         end
       end
       max
@@ -456,20 +464,24 @@ module Funicular
     # Drop and rebuild from the baseline, in one transaction: the fresh
     # path, the below-baseline path, reset_local, and the dev auto-reset
     # all land here. Returns the resulting version.
-    def self.rebuild_local_table(db, model)
+    def self.rebuild_local_table(db, model, builders = nil)
       migrations = model.local_migrations
       unless migrations
         raise ArgumentError,
           "#{model} has no migrate blocks (is it storage :local?)"
       end
-      # Same before-any-SQL fold validation as apply_local_migrations:
-      # rebuild is also entered directly (dev auto-reset, reset_local).
-      fold_local_columns(model)
+      # When entered directly (reset_local; apply passes its builders in)
+      # evaluate the blocks once and validate before any SQL, exactly
+      # like apply_local_migrations.
+      unless builders
+        builders = collect_builders(model)
+        fold_builders(builders, migrations, model)
+      end
       table = validate_identifier(model.table_name)
       max = migrations[migrations.size - 1][:version]
       db.transaction do
         db.execute("DROP TABLE IF EXISTS \"#{table}\"")
-        apply_blocks(db, model, 0)
+        apply_blocks(db, model, 0, builders)
         store_table_version(db, table, max)
       end
       max
@@ -496,7 +508,9 @@ module Funicular
     end
 
     # Run every migrate block against a fresh TableBuilder, returning the
-    # recorded operations in declaration order.
+    # recorded operations in declaration order. The runner calls this
+    # exactly once per migration run; local_columns is the only other
+    # caller. Blocks should stay deterministic and side-effect free.
     def self.collect_builders(model)
       migrations = model.local_migrations
       unless migrations
@@ -568,12 +582,12 @@ module Funicular
     end
 
     # Apply every block at or after the baseline with version >
-    # from_version (pre-baseline history is never applied). The first
+    # from_version (pre-baseline history is never applied), using the
+    # builders the caller already collected and validated. The first
     # block applied onto a dropped/absent table runs in create mode (its
     # column ops become the CREATE TABLE); everything later alters.
-    def self.apply_blocks(db, model, from_version)
+    def self.apply_blocks(db, model, from_version, builders)
       migrations = model.local_migrations
-      builders = collect_builders(model)
       table = validate_identifier(model.table_name)
       i = baseline_index(migrations)
       creating = from_version < migrations[i][:version]
