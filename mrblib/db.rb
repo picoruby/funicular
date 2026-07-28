@@ -241,5 +241,416 @@ module Funicular
         s
       end
     end
+
+    # ---- client-only tables: the migrate blocks -------------------------
+    #
+    # `storage :local do migrate N do |t| ... end end` blocks are recorded
+    # by the model DSL and executed here, per table, at boot. The `t`
+    # yielded to a block is a TableBuilder: a pure recorder whose
+    # operations the runner below renders into DDL, and whose column
+    # operations fold into the model's local_columns metadata.
+    class TableBuilder
+      attr_reader :ops
+
+      def initialize
+        @ops = []
+      end
+
+      def string(name, default: nil, null: true)
+        add_column(:string, name, default, null)
+      end
+
+      def text(name, default: nil, null: true)
+        add_column(:text, name, default, null)
+      end
+
+      def integer(name, default: nil, null: true)
+        add_column(:integer, name, default, null)
+      end
+
+      def float(name, default: nil, null: true)
+        add_column(:float, name, default, null)
+      end
+
+      def boolean(name, default: nil, null: true)
+        add_column(:boolean, name, default, null)
+      end
+
+      def datetime(name, default: nil, null: true)
+        add_column(:datetime, name, default, null)
+      end
+
+      # created_at/updated_at, maintained automatically by the local CRUD.
+      def timestamps
+        add_column(:datetime, :created_at, nil, true)
+        add_column(:datetime, :updated_at, nil, true)
+      end
+
+      def index(*columns)
+        @ops << [:index, identifier_list(columns)]
+      end
+
+      def remove_index(*columns)
+        @ops << [:remove_index, identifier_list(columns)]
+      end
+
+      def rename(old_name, new_name)
+        @ops << [:rename, DB.validate_identifier(old_name),
+                 DB.validate_identifier(new_name)]
+      end
+
+      def remove(name)
+        @ops << [:remove, DB.validate_identifier(name)]
+      end
+
+      # Raw-SQL escape hatch; runs as-is and does not affect the column
+      # fold (whatever it does is invisible to local_columns).
+      def execute(sql)
+        @ops << [:execute, sql]
+      end
+
+      private
+
+      def add_column(type, name, default, null)
+        n = DB.validate_identifier(name)
+        if n == "id"
+          raise ArgumentError,
+            "the id column is implicit (INTEGER PRIMARY KEY); do not declare it"
+        end
+        @ops << [:add_column, n, type, default, null]
+      end
+
+      def identifier_list(columns)
+        if columns.empty?
+          raise ArgumentError, "at least one column is required"
+        end
+        # @type var names: Array[String]
+        names = []
+        i = 0
+        while i < columns.size
+          names << DB.validate_identifier(columns[i])
+          i += 1
+        end
+        names
+      end
+    end
+
+    SQL_TYPES = {
+      string: "TEXT",
+      text: "TEXT",
+      integer: "INTEGER",
+      float: "REAL",
+      boolean: "INTEGER",
+      datetime: "TEXT",
+    }
+
+    # One key/value metadata table in the local database holds the applied
+    # migration version per table (and, later, the replica fingerprint).
+    META_TABLE = "funicular_meta"
+
+    # SQL identifiers this layer interpolates (table and column names) must
+    # be plain: ASCII letter or underscore first, then letters, digits,
+    # underscores. Returns the name as a String.
+    def self.validate_identifier(name)
+      s = name.to_s
+      i = 0
+      while i < s.length
+        c = s.getbyte(i)
+        ok = c && (c == 95 || # '_'
+                   (97 <= c && c <= 122) || # a-z
+                   (65 <= c && c <= 90) ||  # A-Z
+                   (0 < i && 48 <= c && c <= 57)) # 0-9, not first
+        unless ok
+          raise ArgumentError, "invalid SQL identifier: #{name.inspect}"
+        end
+        i += 1
+      end
+      if s.empty?
+        raise ArgumentError, "invalid SQL identifier: #{name.inspect}"
+      end
+      s
+    end
+
+    # Fold a model's migrate blocks into column metadata (column name ->
+    # declared type), the implicit id included. Pure: no database touched,
+    # usable before boot.
+    def self.fold_local_columns(model)
+      # @type var columns: Hash[String, Symbol]
+      columns = { "id" => :integer }
+      builders = collect_builders(model)
+      i = 0
+      while i < builders.size
+        fold_ops(columns, builders[i].ops, model)
+        i += 1
+      end
+      columns
+    end
+
+    # Bring one model's local table to its declared schema. Fresh and
+    # below-baseline tables are rebuilt from the first retained block;
+    # tables between baseline and max get exactly the missing blocks; a
+    # table NEWER than the declarations raises SchemaTooNewError (deploy
+    # rollback; the whole-DB lockdown is wired at boot). All applied work
+    # runs in one transaction. When an incremental upgrade fails in
+    # development the table is rebuilt from scratch instead (never in
+    # production). Returns the version the table is at afterwards.
+    def self.apply_local_migrations(db, model)
+      migrations = model.local_migrations
+      unless migrations
+        raise ArgumentError,
+          "#{model} has no migrate blocks (is it storage :local?)"
+      end
+      table = validate_identifier(model.table_name)
+      baseline = migrations[0][:version]
+      max = migrations[migrations.size - 1][:version]
+      stored = stored_table_version(db, table)
+      if max < stored
+        raise SchemaTooNewError,
+          "\"#{table}\" is at migration #{stored} but the code only " \
+          "declares up to #{max} (deploy rollback?); the local database " \
+          "refuses to run backwards"
+      end
+      return max if stored == max
+      if stored < baseline
+        rebuild_local_table(db, model)
+      else
+        begin
+          db.transaction do
+            apply_blocks(db, model, stored)
+            store_table_version(db, table, max)
+          end
+        rescue SQLite3::Exception => e
+          # Explicit re-raise: a bare `raise` would not re-raise on the
+          # mruby VM (it raises a fresh empty RuntimeError).
+          raise e unless Funicular.env.development?
+          # Dev auto-reset: a dirty development table beats hand-repair.
+          rebuild_local_table(db, model)
+        end
+      end
+      max
+    end
+
+    # Drop and rebuild from the baseline, in one transaction: the fresh
+    # path, the below-baseline path, reset_local, and the dev auto-reset
+    # all land here. Returns the resulting version.
+    def self.rebuild_local_table(db, model)
+      migrations = model.local_migrations
+      unless migrations
+        raise ArgumentError,
+          "#{model} has no migrate blocks (is it storage :local?)"
+      end
+      table = validate_identifier(model.table_name)
+      max = migrations[migrations.size - 1][:version]
+      db.transaction do
+        db.execute("DROP TABLE IF EXISTS \"#{table}\"")
+        apply_blocks(db, model, 0)
+        store_table_version(db, table, max)
+      end
+      max
+    end
+
+    def self.stored_table_version(db, table)
+      ensure_meta_table(db)
+      rows = db.execute("SELECT value FROM \"#{META_TABLE}\" WHERE key = ?",
+                        ["table_version:#{table}"])
+      row = rows[0]
+      return 0 unless row
+      (row.is_a?(Hash) ? row.values[0] : row[0]).to_i
+    end
+
+    def self.store_table_version(db, table, version)
+      ensure_meta_table(db)
+      db.execute("INSERT OR REPLACE INTO \"#{META_TABLE}\" (key, value) " \
+                 "VALUES (?, ?)", ["table_version:#{table}", version.to_s])
+    end
+
+    def self.ensure_meta_table(db)
+      db.execute("CREATE TABLE IF NOT EXISTS \"#{META_TABLE}\" " \
+                 "(key TEXT PRIMARY KEY, value TEXT)")
+    end
+
+    # Run every migrate block against a fresh TableBuilder, returning the
+    # recorded operations in declaration order.
+    def self.collect_builders(model)
+      migrations = model.local_migrations
+      unless migrations
+        raise ArgumentError,
+          "#{model} has no migrate blocks (is it storage :local?)"
+      end
+      # @type var builders: Array[TableBuilder]
+      builders = []
+      i = 0
+      while i < migrations.size
+        t = TableBuilder.new
+        migrations[i][:block].call(t)
+        builders << t
+        i += 1
+      end
+      builders
+    end
+
+    # Apply one block's column effects to the running fold. Unknown or
+    # duplicate names fail here, before any SQL runs.
+    def self.fold_ops(columns, ops, model)
+      i = 0
+      while i < ops.size
+        op = ops[i]
+        kind = op[0]
+        if kind == :add_column
+          name = op[1]
+          if columns.has_key?(name)
+            raise ArgumentError,
+              "duplicate column #{name.inspect} in #{model.table_name} migrations"
+          end
+          columns[name] = op[2]
+        elsif kind == :rename
+          old_name = op[1]
+          guard_id(old_name, model)
+          type = columns[old_name]
+          unless type
+            raise ArgumentError,
+              "rename of unknown column #{old_name.inspect} in " \
+              "#{model.table_name} migrations"
+          end
+          if columns.has_key?(op[2])
+            raise ArgumentError,
+              "duplicate column #{op[2].inspect} in #{model.table_name} migrations"
+          end
+          columns.delete(old_name)
+          columns[op[2]] = type
+        elsif kind == :remove
+          name = op[1]
+          guard_id(name, model)
+          unless columns.has_key?(name)
+            raise ArgumentError,
+              "remove of unknown column #{name.inspect} in " \
+              "#{model.table_name} migrations"
+          end
+          columns.delete(name)
+        end
+        # index/remove_index/execute do not affect the fold
+        i += 1
+      end
+    end
+
+    def self.guard_id(name, model)
+      if name == "id"
+        raise ArgumentError,
+          "the id column is implicit and cannot be renamed or removed " \
+          "(#{model.table_name} migrations)"
+      end
+    end
+
+    # Apply every block with version > from_version. The first block
+    # applied onto a dropped/absent table runs in create mode (its column
+    # ops become the CREATE TABLE); everything later alters.
+    def self.apply_blocks(db, model, from_version)
+      migrations = model.local_migrations
+      builders = collect_builders(model)
+      table = validate_identifier(model.table_name)
+      creating = from_version < migrations[0][:version]
+      i = 0
+      while i < migrations.size
+        if from_version < migrations[i][:version]
+          run_block(db, table, builders[i], creating)
+          creating = false
+        end
+        i += 1
+      end
+    end
+
+    def self.run_block(db, table, builder, create_mode)
+      ops = builder.ops
+      if create_mode
+        # @type var defs: Array[String]
+        defs = ["\"id\" INTEGER PRIMARY KEY"]
+        i = 0
+        while i < ops.size
+          op = ops[i]
+          defs << column_ddl(op) if op[0] == :add_column
+          i += 1
+        end
+        db.execute("CREATE TABLE \"#{table}\" (#{defs.join(", ")})")
+        i = 0
+        while i < ops.size
+          op = ops[i]
+          kind = op[0]
+          if kind == :add_column
+            # already part of the CREATE TABLE
+          elsif kind == :index || kind == :remove_index || kind == :execute
+            run_alter_op(db, table, op)
+          else
+            raise ArgumentError,
+              "#{kind} needs an existing table; not allowed in the block " \
+              "that creates \"#{table}\""
+          end
+          i += 1
+        end
+      else
+        i = 0
+        while i < ops.size
+          run_alter_op(db, table, ops[i])
+          i += 1
+        end
+      end
+    end
+
+    def self.run_alter_op(db, table, op)
+      kind = op[0]
+      if kind == :add_column
+        db.execute("ALTER TABLE \"#{table}\" ADD COLUMN #{column_ddl(op)}")
+      elsif kind == :rename
+        db.execute("ALTER TABLE \"#{table}\" RENAME COLUMN \"#{op[1]}\" " \
+                   "TO \"#{op[2]}\"")
+      elsif kind == :remove
+        db.execute("ALTER TABLE \"#{table}\" DROP COLUMN \"#{op[1]}\"")
+      elsif kind == :index
+        db.execute("CREATE INDEX \"#{index_name(table, op[1])}\" " \
+                   "ON \"#{table}\" (#{quoted_list(op[1])})")
+      elsif kind == :remove_index
+        db.execute("DROP INDEX \"#{index_name(table, op[1])}\"")
+      elsif kind == :execute
+        db.execute(op[1])
+      else
+        raise ArgumentError, "unknown migration op #{kind.inspect}"
+      end
+    end
+
+    # op: [:add_column, name, type, default, null]
+    def self.column_ddl(op)
+      sql = "\"#{op[1]}\" #{SQL_TYPES[op[2]]}"
+      default = op[3]
+      unless default.nil?
+        sql += " DEFAULT #{default_literal(op[2], default)}"
+      end
+      sql += " NOT NULL" unless op[4]
+      sql
+    end
+
+    # Defaults go through the shared codec, so `default: false` stores 0
+    # and a Time default stores the canonical UTC string.
+    def self.default_literal(type, value)
+      encoded = Codec.encode(type, value)
+      if encoded.is_a?(String)
+        "'#{encoded.gsub("'", "''")}'"
+      else
+        encoded.to_s
+      end
+    end
+
+    def self.index_name(table, columns)
+      "index_#{table}_on_#{columns.join("_")}"
+    end
+
+    def self.quoted_list(columns)
+      # @type var quoted: Array[String]
+      quoted = []
+      i = 0
+      while i < columns.size
+        quoted << "\"#{columns[i]}\""
+        i += 1
+      end
+      quoted.join(", ")
+    end
   end
 end

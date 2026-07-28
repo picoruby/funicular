@@ -34,6 +34,19 @@ of truth. Entries below accumulate as the feature lands.
   column metadata derives from the server schema (binary attributes
   excluded); materializing a query before `Funicular::DB.boot` (a later
   change) raises `Funicular::DB::UnavailableError`.
+- The client-only-table migration machinery: `Funicular::DB::TableBuilder`
+  (the `t` in migrate blocks -- string/text/integer/float/boolean/datetime
+  columns with `default:`/`null:`, `timestamps`, `index`/`remove_index`,
+  `rename`, `remove`, raw `execute`) and the per-table runner
+  (`Funicular::DB.apply_local_migrations`): fresh and below-baseline
+  tables rebuild from the first retained block, upgrades apply exactly
+  the missing blocks in one transaction (rolled back on failure; in
+  development a failed upgrade auto-resets the table instead), applied
+  versions live in the `funicular_meta` table, and a table newer than
+  the declarations raises `Funicular::DB::SchemaTooNewError`. Local
+  models' `local_columns` now fold their migrate blocks (implicit
+  `id INTEGER PRIMARY KEY` included), replacing the interim
+  UnavailableError.
 
 ### Changed (BREAKING)
 

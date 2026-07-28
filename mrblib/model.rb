@@ -79,6 +79,8 @@ module Funicular
     # boot, in the migration runner.
 
     def self.storage(kind, &block)
+      # A storage change invalidates cached column metadata.
+      @local_columns = nil
       if kind == :local
         unless block
           raise ArgumentError,
@@ -237,19 +239,20 @@ module Funicular
 
     # Column name -> declared type. For replica models this derives from
     # the server schema: binary attributes never reach the replica and the
-    # id type follows the server. Local models get their columns from the
-    # migrate fold once the migration runner lands.
+    # id type follows the server. Local models fold their migrate blocks
+    # (pure metadata; works before boot).
     def self.local_columns
       if ephemeral?
         raise Funicular::DB::NoTableError,
           "#{to_s} is storage :ephemeral; it has no local table"
       end
-      if local?
-        raise Funicular::DB::UnavailableError,
-          "#{to_s}: local tables are not built yet (migrations run at DB boot)"
-      end
       cols = @local_columns
       return cols if cols
+      @local_columns = local? ? Funicular::DB.fold_local_columns(self)
+                              : derive_replica_columns
+    end
+
+    def self.derive_replica_columns
       sch = @schema
       unless sch
         raise Funicular::DB::UnavailableError,
@@ -266,7 +269,7 @@ module Funicular
         derived[attr_name] = type unless type == :binary
         i += 1
       end
-      @local_columns = derived
+      derived
     end
 
     # The handle local queries run against. Arrives with Funicular::DB.boot

@@ -41,6 +41,7 @@ module Funicular
 
     # Relation protocol (mrblib/relation.rb)
     def self.local_columns: () -> Hash[String, Symbol]
+    def self.derive_replica_columns: () -> Hash[String, Symbol]
     def self.local_db: () -> untyped
     def self.build_from_local: (Hash[untyped, untyped] attrs) -> Model
     def self.local_table_changed: () -> void

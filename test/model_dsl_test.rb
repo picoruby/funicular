@@ -259,8 +259,9 @@ class ModelDslTest < Picotest::Test
     assert_raise(Funicular::DB::UnavailableError) { DslCategory.local_columns }
   end
 
-  def test_local_columns_on_local_model_not_available_before_runner
-    assert_raise(Funicular::DB::UnavailableError) { DslDraft.local_columns }
+  def test_local_columns_on_local_model_fold_the_migrate_blocks
+    expected = { "id" => :integer, "title" => :string, "done" => :boolean }
+    assert_equal(expected, DslDraft.local_columns)
   end
 
   def test_local_columns_on_ephemeral_raises_no_table_error
