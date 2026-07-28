@@ -417,6 +417,12 @@ module Funicular
         raise ArgumentError,
           "#{model} has no migrate blocks (is it storage :local?)"
       end
+      # Validate the whole retained chain before any SQL runs: the fold
+      # catches errors SQLite itself would accept as plain DDL (renaming
+      # or removing the implicit id, most notably). Fold errors are
+      # ArgumentError, so the development auto-reset below never eats
+      # them -- a broken declaration fails the same way everywhere.
+      fold_local_columns(model)
       table = validate_identifier(model.table_name)
       baseline = migrations[baseline_index(migrations)][:version]
       max = migrations[migrations.size - 1][:version]
@@ -456,6 +462,9 @@ module Funicular
         raise ArgumentError,
           "#{model} has no migrate blocks (is it storage :local?)"
       end
+      # Same before-any-SQL fold validation as apply_local_migrations:
+      # rebuild is also entered directly (dev auto-reset, reset_local).
+      fold_local_columns(model)
       table = validate_identifier(model.table_name)
       max = migrations[migrations.size - 1][:version]
       db.transaction do

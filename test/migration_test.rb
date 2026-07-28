@@ -324,6 +324,49 @@ class MigrationTest < Picotest::Test
     assert_equal("kept", @db.execute("SELECT title FROM mig_resets")[0][0])
   end
 
+  def test_incremental_id_rename_or_remove_is_rejected_before_any_sql
+    Funicular::DB.apply_local_migrations(@db, MigDocV1)
+    @db.execute("INSERT INTO mig_docs (title) VALUES ('intact')")
+    renamer = Class.new(Funicular::Model)
+    renamer.class_eval do
+      table_name "mig_docs"
+      storage :local do
+        migrate 1 do |t|
+          t.string :title, null: false
+          t.text :body
+        end
+        migrate 2 do |t|
+          t.rename :id, :legacy_id
+        end
+      end
+    end
+    remover = Class.new(Funicular::Model)
+    remover.class_eval do
+      table_name "mig_docs"
+      storage :local do
+        migrate 1 do |t|
+          t.string :title, null: false
+          t.text :body
+        end
+        migrate 2 do |t|
+          t.remove :id
+        end
+      end
+    end
+    # SQLite itself would happily rename the PRIMARY KEY column, so the
+    # fold must reject this before any DDL runs -- and it must do so even
+    # in development (fold errors never trigger the dev auto-reset).
+    assert_raise(ArgumentError) do
+      Funicular::DB.apply_local_migrations(@db, renamer)
+    end
+    assert_raise(ArgumentError) do
+      Funicular::DB.apply_local_migrations(@db, remover)
+    end
+    assert_equal(1, Funicular::DB.stored_table_version(@db, "mig_docs"))
+    assert_equal(["id", "title", "body"], table_columns("mig_docs"))
+    assert_equal("intact", @db.execute("SELECT title FROM mig_docs")[0][0])
+  end
+
   # ---- failure handling ----
 
   def test_failed_upgrade_rolls_back_in_production

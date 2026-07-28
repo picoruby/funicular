@@ -45,7 +45,10 @@ of truth. Entries below accumulate as the feature lands.
   the missing blocks in one transaction (rolled back on failure; in
   development a failed upgrade auto-resets the table instead), applied
   versions live in the `funicular_meta` table, and a table newer than
-  the declarations raises `Funicular::DB::SchemaTooNewError`. Local
+  the declarations raises `Funicular::DB::SchemaTooNewError`. The column
+  fold is validated before any DDL runs, so declarations SQLite would
+  accept as plain DDL (renaming or removing the implicit `id`) are
+  rejected while the database is still intact. Local
   models' `local_columns` now fold their migrate blocks (implicit
   `id INTEGER PRIMARY KEY` included), replacing the interim
   UnavailableError.
