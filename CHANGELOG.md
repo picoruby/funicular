@@ -52,6 +52,16 @@ of truth. Entries below accumulate as the feature lands.
   models' `local_columns` now fold their migrate blocks (implicit
   `id INTEGER PRIMARY KEY` included), replacing the interim
   UnavailableError.
+- The namespace identity (`mrblib/db.rb`): a typed, versioned tuple
+  (`["v1", app, "anonymous"]` / `["v1", app, "user", key]`) encoded as
+  canonical JSON, which every durable name -- the two snapshot keys and
+  the Web Lock name -- derives from. Structure, not delimiters,
+  separates the fields, so a user_key of "anonymous" or one containing
+  separators cannot collide. `resolve_namespace` enforces the
+  declaration rules client-side (`Funicular::DB::ConfigError`):
+  user_key and anonymous_only are mutually exclusive, and
+  `storage :local` models require a user_key unless anonymous_only
+  explicitly accepts one shared anonymous namespace.
 - REST is wired to the local database layer: response values decode
   through the shared codec when instances initialize and when `update`
   applies the server row (ISO 8601 strings become `Time`, 1/0 become

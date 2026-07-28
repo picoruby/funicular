@@ -32,6 +32,10 @@ module Funicular
     # (SSR) or before boot completed.
     class UnavailableError < Error; end
 
+    # The user_key/anonymous_only/application_id declaration is invalid
+    # (docs decision 12); startup must not proceed.
+    class ConfigError < Error; end
+
     # One shared codec for values crossing the Ruby/SQLite boundary.
     # Applied identically to local writes, reads, condition binds, and REST
     # response initialization, so both sides of a model return the same
@@ -736,6 +740,77 @@ module Funicular
 
     def self.index_name(table, columns)
       "index_#{table}_on_#{columns.join("_")}"
+    end
+
+    # ---- namespace identity (docs decisions 12/13) ----------------------
+    #
+    # One browser profile can hold data for several apps and several
+    # users, so everything durable -- the two snapshot keys, the Web
+    # Lock name, the identity the Rails session tracks for epoch
+    # rotation -- hangs off ONE identity: a typed, versioned tuple
+    # encoded as canonical JSON. STRUCTURE separates the fields, not a
+    # delimiter, so a user_key of "anonymous" (or one containing any
+    # separator) can never collide with the anonymous identity or with
+    # another application's.
+
+    # ["v1", app, "anonymous"] or ["v1", app, "user", key] as a JSON
+    # string. Empty application_id/user_key fail loud: they would fold
+    # distinct namespaces into one.
+    def self.namespace_identity(application_id, user_key, anonymous)
+      app = application_id.to_s
+      if app.empty?
+        raise ConfigError,
+          "application_id must be configured (Funicular.configure)"
+      end
+      return JSON.generate(["v1", app, "anonymous"]) if anonymous
+      key = user_key.to_s
+      if key.empty?
+        raise ConfigError, "user_key must not be empty"
+      end
+      JSON.generate(["v1", app, "user", key])
+    end
+
+    # The declaration rules, checked authoritatively on the CLIENT (docs
+    # decision 12: only the client knows whether storage :local models
+    # are declared). user_key_configured says whether a user_key SOURCE
+    # is declared at all; user_key is the value it resolved to for THIS
+    # page load -- nil while signed out. Configuration errors key off
+    # the flag, the anonymous/user choice keys off the value: a
+    # signed-out visit to an app with local models boots into the
+    # anonymous namespace instead of failing.
+    def self.resolve_namespace(application_id:, user_key:,
+                               user_key_configured:, anonymous_only:,
+                               local_models:)
+      if user_key_configured && anonymous_only
+        raise ConfigError,
+          "user_key and anonymous_only are mutually exclusive; " \
+          "configure exactly one"
+      end
+      if !user_key_configured && !anonymous_only && local_models
+        raise ConfigError,
+          "storage :local models are declared but no user_key is " \
+          "configured; set config.user_key, or anonymous_only = true " \
+          "to accept one shared anonymous namespace"
+      end
+      # nil is the legitimate signed-out state. An EMPTY string is a
+      # broken user_key source: it falls through to namespace_identity's
+      # ConfigError, because silently folding it into the shared
+      # anonymous namespace would mix distinct users' data.
+      namespace_identity(application_id, user_key, user_key.nil?)
+    end
+
+    # Everything durable derives its name from the identity string.
+
+    def self.snapshot_key(identity, role)
+      unless role == :replica || role == :local
+        raise ArgumentError,
+          "role must be :replica or :local, got #{role.inspect}"
+      end
+      "funicular:snapshot:#{role}:#{identity}"
+    end
+
+    def self.lock_name(identity)
+      "funicular:lock:#{identity}"
     end
 
     # ---- replica tables: schema-derived DDL + fingerprint ---------------

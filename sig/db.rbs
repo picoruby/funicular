@@ -21,6 +21,14 @@ module Funicular
     class UnavailableError < Error
     end
 
+    class ConfigError < Error
+    end
+
+    def self.namespace_identity: (untyped application_id, untyped user_key, bool anonymous) -> String
+    def self.resolve_namespace: (application_id: untyped, user_key: untyped, user_key_configured: bool, anonymous_only: bool, local_models: bool) -> String
+    def self.snapshot_key: (String identity, Symbol role) -> String
+    def self.lock_name: (String identity) -> String
+
     module Codec
       def self.encode: (Symbol? `type`, untyped value) -> untyped
       def self.decode: (Symbol? `type`, untyped value) -> untyped
