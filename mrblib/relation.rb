@@ -180,10 +180,13 @@ module Funicular
         raise ArgumentError,
           "delete_all does not support order/limit/offset"
       end
-      db = @model.local_db
-      db.execute("DELETE FROM #{quoted_table}#{where_clause}", @where_binds)
-      row = db.execute("SELECT changes()")[0]
-      count = row.is_a?(Hash) ? row.values[0] : row[0]
+      # RETURNING counts the deletions inside the one statement; reading
+      # SELECT changes() afterwards would race other Tasks writing on the
+      # same connection between the two calls.
+      rows = @model.local_db.execute(
+        "DELETE FROM #{quoted_table}#{where_clause} RETURNING \"id\"",
+        @where_binds)
+      count = rows.size
       # Framework-managed writes must notify (docs, "Querying"); a delete
       # that removed nothing changed nothing.
       @model.local_table_changed if 0 < count

@@ -61,6 +61,7 @@ module Funicular
 
     SQL_TYPES: Hash[Symbol, String]
     META_TABLE: String
+    self.@reserved_column_names: Array[Symbol]?
 
     def self.validate_identifier: (untyped name) -> String
     def self.baseline_index: (untyped migrations) -> Integer
@@ -74,6 +75,7 @@ module Funicular
     def self.collect_builders: (untyped model) -> Array[TableBuilder]
     def self.fold_ops: (Hash[String, Symbol] columns, Array[untyped] ops, untyped model) -> void
     def self.guard_id: (String name, untyped model) -> void
+    def self.guard_reserved_column: (String name, untyped model) -> void
     def self.apply_blocks: (untyped db, untyped model, Integer from_version, Array[TableBuilder] builders) -> void
     def self.run_block: (untyped db, String table, TableBuilder builder, bool create_mode) -> void
     def self.run_alter_op: (untyped db, String table, Array[untyped] op) -> void

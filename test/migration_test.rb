@@ -367,6 +367,43 @@ class MigrationTest < Picotest::Test
     assert_equal("intact", @db.execute("SELECT title FROM mig_docs")[0][0])
   end
 
+  def test_reserved_column_names_are_rejected
+    # The generated reader would clobber the model API (or Object's);
+    # __-prefixed names would clobber framework internals (the
+    # __custom_* stash that wraps hand-written writers, notably).
+    bad_names = ["destroy", "class", "errors", "initialize", "__custom_title"]
+    bad_names_size = bad_names.size
+    i = 0
+    while i < bad_names_size
+      bad_name = bad_names[i]
+      suffix = i
+      bad = Class.new(Funicular::Model)
+      bad.class_eval do
+        table_name "mig_reserved#{suffix}"
+        storage :local do
+          migrate 1 do |t|
+            t.string bad_name
+          end
+        end
+      end
+      assert_raise(ArgumentError) { Funicular::DB.fold_local_columns(bad) }
+      i += 1
+    end
+    renamer = Class.new(Funicular::Model)
+    renamer.class_eval do
+      table_name "mig_reserved_rename"
+      storage :local do
+        migrate 1 do |t|
+          t.string :title
+        end
+        migrate 2 do |t|
+          t.rename :title, :reload
+        end
+      end
+    end
+    assert_raise(ArgumentError) { Funicular::DB.fold_local_columns(renamer) }
+  end
+
   def test_migrate_blocks_are_evaluated_once_per_run
     $mig_block_runs = 0
     counted = Class.new(Funicular::Model)

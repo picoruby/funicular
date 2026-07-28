@@ -542,6 +542,7 @@ module Funicular
             raise ArgumentError,
               "duplicate column #{name.inspect} in #{model.table_name} migrations"
           end
+          guard_reserved_column(name, model)
           columns[name] = op[2]
         elsif kind == :rename
           old_name = op[1]
@@ -556,6 +557,7 @@ module Funicular
             raise ArgumentError,
               "duplicate column #{op[2].inspect} in #{model.table_name} migrations"
           end
+          guard_reserved_column(op[2], model)
           columns.delete(old_name)
           columns[op[2]] = type
         elsif kind == :remove
@@ -578,6 +580,38 @@ module Funicular
         raise ArgumentError,
           "the id column is implicit and cannot be renamed or removed " \
           "(#{model.table_name} migrations)"
+      end
+    end
+
+    # A column name must not shadow the model API: the generated reader
+    # would clobber anything the BASE Funicular::Model instance already
+    # responds to (destroy, reload, update, valid?, errors, class, hash,
+    # ...). Checking against the base class -- never the subclass -- keeps
+    # a model's own generated accessors from tripping the guard when its
+    # blocks are folded again.
+    def self.guard_reserved_column(name, model)
+      # The __ prefix is the framework-internal namespace (__custom_*
+      # writer stashes, __local_* helpers): a column named __custom_title
+      # would clobber the alias that wraps a hand-written title= writer.
+      if name.start_with?("__")
+        raise ArgumentError,
+          "column names starting with __ are reserved for framework " \
+          "internals (#{model.table_name} migrations); rename " \
+          "#{name.inspect}"
+      end
+      reserved = @reserved_column_names
+      unless reserved
+        # Both lists: instance_methods alone omits private methods, and a
+        # column named "initialize" or "method_missing" must be rejected
+        # just as hard as "destroy".
+        reserved = Funicular::Model.instance_methods +
+                   Funicular::Model.private_instance_methods
+        @reserved_column_names = reserved
+      end
+      if reserved.include?(name.to_sym)
+        raise ArgumentError,
+          "column name #{name.inspect} collides with a Funicular::Model " \
+          "method (#{model.table_name} migrations); rename the column"
       end
     end
 

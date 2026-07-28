@@ -52,6 +52,21 @@ of truth. Entries below accumulate as the feature lands.
   models' `local_columns` now fold their migrate blocks (implicit
   `id INTEGER PRIMARY KEY` included), replacing the interim
   UnavailableError.
+- Local CRUD and the bare-class alias on `storage :local` models:
+  synchronous, validated `create` (id from the inserted row; omitted
+  attributes take the SQL DEFAULT while an explicit nil binds NULL; the
+  row is read back, so defaults and codec normalization land in the
+  instance; auto `created_at`/`updated_at`), `#update`
+  (true/false; an update with no actual changes is a no-op that does
+  not touch `updated_at`), `#destroy`, `#reload`, `#new_record?`;
+  `Draft.all` is the whole-table Relation (blocks and params raise --
+  there is no REST side), and `where`/`order`/`limit`/`offset`/`count`/
+  `first`/`exists?`/`find_by`/`delete_all` hang off the bare class,
+  which on other storage kinds points you at `.local`. All local writes
+  fire the `local_table_changed` hook and let SQLite constraint
+  violations escape as `SQLite3::Exception`. `Model.create` now also
+  accepts bare keywords (`Draft.create(title: "x")`) on every storage
+  kind.
 
 ### Changed (BREAKING)
 

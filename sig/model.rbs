@@ -5,6 +5,8 @@ module Funicular
 
     attr_reader id: untyped
     @changed_attributes: Hash[String, untyped]
+    @local_baseline: Hash[String, untyped]?
+    @provided_attributes: Hash[String, bool]?
 
     self.@storage_kind: Symbol?
     self.@local_migrations: Array[Hash[Symbol, untyped]]?
@@ -49,13 +51,40 @@ module Funicular
     # Unified callback contract (0.5.0): every REST callback is
     # (result, error). On success `result` is the payload and `error` is
     # nil; on failure `result` is nil. destroy's success payload is `true`.
-    def self.all: (?Hash[untyped, untyped] params) ?{ (Array[Model]? instances, String? error) -> void } -> void
-    def self.find: (?untyped id, ?endpoint_name: String, ?model_class: singleton(Model)) ?{ (Model? instance, String? error) -> void } -> void
-    def self.create: (Hash[untyped, untyped] attrs, ?model_class: singleton(Model)) ?{ (Model? instance, untyped error) -> void } -> void
-    def self.destroy: (?untyped id) ?{ (bool? success, untyped error) -> void } -> void
+    # On storage :local models these methods are synchronous instead
+    # (bare-class alias): no blocks, direct return values.
+    def self.all: (?Hash[untyped, untyped] params) ?{ (Array[Model]? instances, String? error) -> void } -> untyped
+    def self.find: (?untyped id, ?endpoint_name: String, ?model_class: singleton(Model)) ?{ (Model? instance, String? error) -> void } -> untyped
+    def self.create: (?Hash[untyped, untyped] attrs, **untyped kw) ?{ (Model? instance, untyped error) -> void } -> untyped
+    def self.destroy: (?untyped id) ?{ (bool? success, untyped error) -> void } -> untyped
 
-    def update: (?Hash[untyped, untyped]? attrs) ?{ (Model? instance, untyped error) -> void } -> void
-    def destroy: () ?{ (bool? success, untyped error) -> void } -> void
-    def reload: () ?{ (Model? instance, String? error) -> void } -> void
+    def update: (?Hash[untyped, untyped]? attrs) ?{ (Model? instance, untyped error) -> void } -> untyped
+    def destroy: () ?{ (bool? success, untyped error) -> void } -> untyped
+    def reload: () ?{ (Model? instance, String? error) -> void } -> untyped
+
+    # storage :local CRUD and the bare-class alias
+    def self.define_local_accessors: (Hash[String, Symbol] columns) -> void
+    def self.define_local_accessor: (String name, Array[Symbol] existing) -> void
+    def self.merge_keyword_attrs: (Hash[untyped, untyped] attrs, Hash[Symbol, untyped] kw) -> Hash[untyped, untyped]
+    def self.local_create: (?Hash[untyped, untyped] attrs) -> Model
+    def self.local_query: (String method_name) -> Relation
+    def self.where: (?Hash[untyped, untyped] | String | nil conditions, *untyped binds) -> Relation
+    def self.order: (*untyped args) -> Relation
+    def self.limit: (Integer? n) -> Relation
+    def self.offset: (Integer? n) -> Relation
+    def self.count: () -> Integer
+    def self.first: () -> untyped
+    def self.exists?: () -> bool
+    def self.find_by: (Hash[untyped, untyped] conditions) -> untyped
+    def self.delete_all: () -> Integer
+
+    def new_record?: () -> bool
+    def __track_local_change: (String name, untyped value, untyped old) -> void
+    def __local_insert: () -> Model
+    def __local_update: (Hash[untyped, untyped]? attrs) -> bool
+    def __local_destroy: () -> bool
+    def __sync_from_row: () -> void
+    def __hydrate_local: (Hash[untyped, untyped] attrs) -> void
+    def __set_local_baseline: (Hash[untyped, untyped] attrs) -> void
   end
 end
