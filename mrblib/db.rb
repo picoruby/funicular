@@ -850,13 +850,32 @@ module Funicular
         enqueue_delivery(event[0], event[1])
         i += 1
       end
+      resume_deferred_persist(role)
     end
 
     def self.__rollback_deferral(role)
       depths = (@deferral_depths ||= {}) # steep:ignore UnannotatedEmptyCollection
       depth = deferral_depth(role)
       depths[role] = depth - 1 if 0 < depth
-      clear_pending(role) if deferral_depth(role) == 0
+      return unless deferral_depth(role) == 0
+      clear_pending(role)
+      # A persist refused mid-transaction re-arms even here: the
+      # refusal may have consumed a debounce owed to EARLIER committed
+      # writes, and snapshotting the rolled-back (= committed) state is
+      # correct.
+      resume_deferred_persist(role)
+    end
+
+    # A persist that found its database mid-transaction parked itself
+    # in @persist_deferred (see persist_snapshot); the settle turns the
+    # park into a fresh debounce arm.
+    def self.resume_deferred_persist(role)
+      deferred = @persist_deferred
+      return nil unless deferred
+      return nil unless deferred[role]
+      deferred.delete(role)
+      schedule_persist(role)
+      nil
     end
 
     def self.clear_pending(role)
@@ -873,6 +892,10 @@ module Funicular
     # events collapse per [role, table]; the first event of a tick
     # schedules exactly one drain.
     def self.enqueue_delivery(role, table)
+      # Auto-persist rides the same post-commit funnel (docs decision
+      # 11): every event (re)arms the role's debounce timer, and a
+      # rollback -- which never reaches here -- schedules nothing.
+      schedule_persist(role)
       pending = (@tick_events ||= {}) # steep:ignore UnannotatedEmptyCollection
       key = "#{role}:#{table}"
       unless pending.has_key?(key)
@@ -1524,6 +1547,417 @@ module Funicular
 
     def self.lock_name(identity)
       "funicular:lock:#{identity}"
+    end
+
+    # ---- configuration (docs decision 20: the DB-side knobs) ------------
+    #
+    #   Funicular::DB.configure do
+    #     config.local_debounce_ms = 200
+    #   end
+    #
+    # The block runs with DB as self, so the bareword `config` resolves
+    # here. Identity (application_id/user_key) is NOT configured here --
+    # it arrives from the page, configured on the Rails side (docs
+    # decision 12).
+
+    class Config
+      attr_accessor :replica_debounce_ms
+      attr_accessor :local_debounce_ms
+      attr_accessor :request_persistent_storage
+      attr_accessor :on_persist_error
+      attr_accessor :on_boot_error
+      attr_accessor :on_session_change
+
+      def initialize
+        @replica_debounce_ms = 5000
+        @local_debounce_ms = 500
+        @request_persistent_storage = true
+        @on_persist_error = nil
+        @on_boot_error = nil
+        @on_session_change = nil
+      end
+    end
+
+    def self.config
+      @config ||= Config.new
+    end
+
+    def self.configure(&block)
+      raise ArgumentError, "configure requires a block" unless block
+      instance_exec(&block) # steep:ignore
+      nil
+    end
+
+    # Test seam: configuration is process-global, so per-file test VMs
+    # restore the defaults between tests.
+    def self.__reset_config
+      @config = nil
+    end
+
+    # ---- persistence (docs decisions 11/16) -----------------------------
+    #
+    # Durability = whole-database snapshots (serialize -> Base64) in
+    # Funicular's OWN IndexedDB store, opened with the in-memory
+    # fallback DISABLED: a silently substituted empty store must never
+    # masquerade as persistence. Availability errors mean the browser
+    # context has no storage BY DESIGN -> the volatile state; every
+    # other storage error re-raises, for the boot to fail loud on
+    # (docs decision 16).
+
+    SNAPSHOT_DB_NAME = "funicular"
+
+    # The boot wires the two databases in here. flush/wipe/persist need
+    # the RAW handle (serialize lives outside the guarded allowlist),
+    # which is exactly why this registry has no public getter.
+    def self.__register_database(role, raw_db, models)
+      validate_role(role)
+      registry = (@databases ||= {}) # steep:ignore UnannotatedEmptyCollection
+      registry[role] = [raw_db, models]
+      nil
+    end
+
+    def self.__registered_database(role)
+      registry = @databases
+      entry = registry ? registry[role] : nil
+      entry ? entry[0] : nil
+    end
+
+    # Every snapshot key derives from the namespace identity, resolved
+    # by the boot (docs decision 12).
+    def self.__set_snapshot_identity(identity)
+      @snapshot_identity = identity
+    end
+
+    def self.__set_snapshot_store(store)
+      # Installing a store (or resetting to nil in tests) also clears
+      # the sticky availability-failure mark below.
+      @snapshot_store_unavailable = false
+      @snapshot_store = store
+    end
+
+    def self.snapshot_store
+      @snapshot_store
+    end
+
+    # Open Funicular's snapshot store once. nil (after dropping to
+    # volatile) when the context has no storage BY DESIGN; anything
+    # else -- quota, version, blocked timeouts -- re-raises: storage
+    # exists but could not be used, and snapshots (including
+    # unrecoverable local data) may well be sitting in it.
+    def self.open_snapshot_store
+      store = @snapshot_store
+      return store if store
+      # An availability failure is sticky: nil alone cannot distinguish
+      # "not tried yet" from "classified volatile", and re-trying would
+      # log and fire on_persist_error again -- the announcement happens
+      # ONCE (docs decision 14).
+      return nil if @snapshot_store_unavailable
+      unless Object.const_defined?(:IndexedDB)
+        raise UnavailableError,
+          "IndexedDB does not exist in this environment; " \
+          "snapshots are wasm-only"
+      end
+      begin
+        @snapshot_store = IndexedDB::KVS.open(SNAPSHOT_DB_NAME,
+                                              fallback: false)
+      rescue IndexedDB::NotSupportedError,
+             IndexedDB::SecurityError,
+             IndexedDB::InvalidStateError => e
+        @snapshot_store_unavailable = true
+        __become_volatile(e)
+        nil
+      end
+    end
+
+    # Private mode or an exotic embedder: everything works, nothing
+    # persists. A held writer lock is released first -- release also
+    # steps @durability down, so volatile is claimed after.
+    def self.__become_volatile(error)
+      release_writer_lock
+      @durability = :volatile
+      puts "[Funicular] persistent storage is unavailable; this page " \
+           "runs volatile (everything works, nothing persists): " \
+           "#{error.class}: #{error.message}"
+      invoke_persist_error_hook(error)
+      nil
+    end
+
+    # Persistence failures are never silent (docs decision 11): always
+    # the log, plus the app's hook when registered.
+    def self.report_persist_error(error)
+      puts "[Funicular] snapshot persistence failed: " \
+           "#{error.class}: #{error.message}"
+      invoke_persist_error_hook(error)
+      nil
+    end
+
+    def self.invoke_persist_error_hook(error)
+      hook = config.on_persist_error
+      return nil unless hook
+      begin
+        hook.call(error)
+      rescue => e
+        puts "[Funicular] on_persist_error hook raised: " \
+             "#{e.class}: #{e.message}"
+      end
+      nil
+    end
+
+    # Advanced by wipe (docs decision 17): a snapshot captured under an
+    # older generation refuses to land.
+    def self.mutation_generation
+      @mutation_generation || 0
+    end
+
+    # Serialize one database into its namespaced snapshot key. Only the
+    # persistent_writer persists (docs decision 14); on any other state
+    # this is a quiet false. Returns true when the snapshot was
+    # written.
+    def self.persist_snapshot(role)
+      validate_role(role)
+      return false unless durability == :persistent_writer
+      db = __registered_database(role)
+      return false unless db
+      store = @snapshot_store
+      return false unless store
+      identity = @snapshot_identity
+      unless identity
+        raise Error,
+          "cannot persist: the namespace identity is not resolved"
+      end
+      # serialize copies the pager's CURRENT pages, uncommitted changes
+      # included -- and a transaction awaiting inside its block lets
+      # other Tasks run, so a debounce timer, the visibilitychange
+      # backstop, or an in-block flush CAN land here mid-transaction.
+      # A snapshot taken now could outlive a rollback and resurrect the
+      # rolled-back rows at the next boot. Defer instead: the
+      # commit/rollback settle re-arms the debounce (docs decision 11).
+      if db.transaction_active?
+        deferred = (@persist_deferred ||= {}) # steep:ignore UnannotatedEmptyCollection
+        deferred[role] = true
+        return false
+      end
+      generation = mutation_generation
+      begin
+        encoded = Base64.encode64(db.serialize)
+        # The store put suspends this Task; a wipe that advanced the
+        # generation since this image was captured must win over it.
+        return false unless mutation_generation == generation
+        store[snapshot_key(identity, role)] = encoded
+        true
+      rescue => e
+        report_persist_error(e)
+        false
+      end
+    end
+
+    # Deserialize a stored snapshot into the registered database.
+    # false when no snapshot exists (a first visit). Read errors
+    # propagate: the boot fails loud on top of unreadable storage
+    # (docs decision 16).
+    def self.restore_snapshot(role)
+      validate_role(role)
+      db = __registered_database(role)
+      unless db
+        raise Error, "no #{role} database is registered"
+      end
+      store = @snapshot_store
+      return false unless store
+      identity = @snapshot_identity
+      unless identity
+        raise Error,
+          "cannot restore: the namespace identity is not resolved"
+      end
+      encoded = store[snapshot_key(identity, role)]
+      return false if encoded.nil?
+      db.deserialize(Base64.decode64(encoded.to_s))
+      true
+    end
+
+    # ---- debounced auto-persist (docs decision 11) ----------------------
+    #
+    # Every post-commit change event also (re)arms that role's persist
+    # timer, so writes during the quiet window keep pushing the
+    # snapshot back and a burst costs one serialize. Riding the
+    # enqueue_delivery funnel means transactional writes schedule at
+    # COMMIT and a rollback schedules nothing.
+
+    def self.schedule_persist(role)
+      return nil unless durability == :persistent_writer
+      return nil unless @snapshot_store
+      return nil unless Object.const_defined?(:JS)
+      timers = (@persist_timers ||= {}) # steep:ignore UnannotatedEmptyCollection
+      existing = timers[role]
+      # @type var global: untyped
+      global = JS.global
+      global.clearTimeout(existing) if existing
+      # The clear can come too late: a timer whose JS deadline already
+      # passed has its callback QUEUED on the Ruby side, beyond
+      # clearTimeout's reach. Every (re)arm therefore bumps the role's
+      # token, and only the callback holding the current token acts.
+      tokens = (@persist_timer_tokens ||= {}) # steep:ignore UnannotatedEmptyCollection
+      token = (tokens[role] || 0) + 1
+      tokens[role] = token
+      cfg = config
+      ms = role == :local ? cfg.local_debounce_ms : cfg.replica_debounce_ms
+      timers[role] = global.setTimeout(ms) do
+        __persist_timer_fired(role, token)
+      end
+      nil
+    end
+
+    # The armed timer's landing point. A stale callback (its timer was
+    # re-armed or cancelled after the JS deadline passed) must neither
+    # drop the replacement timer's bookkeeping nor snapshot: it would
+    # cut the quiet window short and leave the replacement uncancelable.
+    def self.__persist_timer_fired(role, token)
+      tokens = @persist_timer_tokens
+      return nil unless tokens
+      return nil unless tokens[role] == token
+      timers = @persist_timers
+      timers.delete(role) if timers
+      persist_snapshot(role)
+      nil
+    end
+
+    # Test seam for the staleness protocol above.
+    def self.__persist_timer_token(role)
+      tokens = @persist_timer_tokens
+      tokens ? tokens[role] : nil
+    end
+
+    def self.cancel_persist_timers
+      # Cancelling covers parked persists too (a caller about to
+      # persist NOW, or wipe, wants no leftover re-arm at settle).
+      @persist_deferred = nil
+      # Invalidate the tokens IN PLACE first: a fired-but-not-yet-run
+      # callback already sits in the queue holding the current token,
+      # and clearTimeout cannot recall it.
+      tokens = @persist_timer_tokens
+      if tokens
+        keys = tokens.keys
+        keys_size = keys.size
+        i = 0
+        while i < keys_size
+          key = keys[i]
+          tokens[key] = tokens[key] + 1
+          i += 1
+        end
+      end
+      timers = @persist_timers
+      return nil unless timers
+      @persist_timers = {}
+      return nil unless Object.const_defined?(:JS)
+      # @type var global: untyped
+      global = JS.global
+      roles = timers.keys
+      roles_size = roles.size
+      i = 0
+      while i < roles_size
+        handle = timers[roles[i]]
+        global.clearTimeout(handle) if handle
+        i += 1
+      end
+      nil
+    end
+
+    # Immediate snapshot of both databases (docs decision 11). On a
+    # persistent_reader every persisting operation raises; volatile has
+    # no store to write, so flush is an honest no-op -- everything
+    # works, nothing persists. Inside an open transaction a database
+    # cannot be serialized (see persist_snapshot); its snapshot defers
+    # to the commit/rollback settle and flush reports false.
+    def self.flush
+      state = durability
+      if state == :persistent_reader
+        raise ReadOnlyTabError,
+          "flush requires the writer tab " \
+          "(this tab is a persistent_reader)"
+      end
+      return false unless state == :persistent_writer
+      cancel_persist_timers
+      wrote_replica = persist_snapshot(:replica)
+      wrote_local = persist_snapshot(:local)
+      wrote_replica || wrote_local
+    end
+
+    # The tab-hidden backstop (docs decision 11): debounce alone would
+    # lose the quiet-window tail when the user switches away and the
+    # browser freezes the page. Installed by the boot; false where no
+    # document exists (Node, SSR).
+    def self.__install_visibility_hook
+      return false if @visibility_hook_installed
+      return false unless Object.const_defined?(:JS)
+      # @type var global: untyped
+      global = JS.global
+      present = global.eval(
+        "typeof document === 'undefined' ? 'no' : 'yes'").to_s
+      return false unless present == "yes"
+      @visibility_hook_installed = true
+      # Not JS.document: it insists on a real DOM Element, and this
+      # hook only needs addEventListener (tests fake the document).
+      global[:document].addEventListener("visibilitychange") do
+        __visibility_flush
+      end
+      true
+    end
+
+    # Hidden -> persist NOW: the page may never come back.
+    def self.__visibility_flush
+      return nil unless durability == :persistent_writer
+      return nil unless Object.const_defined?(:JS)
+      # @type var global: untyped
+      global = JS.global
+      state = global.eval(
+        "typeof document === 'undefined' ? '' : " \
+        "String(document.visibilityState)").to_s
+      return nil unless state == "hidden"
+      cancel_persist_timers
+      persist_snapshot(:replica)
+      persist_snapshot(:local)
+      nil
+    end
+
+    # navigator.storage.persist() (docs decision 11): asked by the boot
+    # only when a storage :local model exists -- data actually worth
+    # protecting; replica-only apps never prompt. The browser has the
+    # final word, the result is informational. The __funicularStorageApi
+    # seam mirrors the locks shim: only `undefined` falls through to
+    # the real navigator.storage.
+    STORAGE_PERSIST_JS = <<~'FUNICULAR_STORAGE_JS'
+      (() => {
+        const injected = globalThis.__funicularStorageApi;
+        const storage = (injected === undefined)
+          ? (globalThis.navigator && globalThis.navigator.storage)
+          : injected;
+        if (!storage || !storage.persist) {
+          return Promise.resolve("unsupported");
+        }
+        try {
+          return Promise.resolve(storage.persist()).then(
+            (granted) => (granted ? "granted" : "denied"),
+            () => "error");
+        } catch (e) {
+          return Promise.resolve("error");
+        }
+      })()
+    FUNICULAR_STORAGE_JS
+
+    def self.request_persistent_storage
+      return :disabled unless config.request_persistent_storage
+      return :unsupported unless Object.const_defined?(:JS)
+      # @type var global: untyped
+      global = JS.global
+      result = global.eval(STORAGE_PERSIST_JS).await.to_s
+      if result == "granted"
+        :granted
+      elsif result == "denied"
+        :denied
+      elsif result == "error"
+        :error
+      else
+        :unsupported
+      end
     end
 
     # ---- replica tables: schema-derived DDL + fingerprint ---------------

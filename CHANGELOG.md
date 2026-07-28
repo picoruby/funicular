@@ -76,6 +76,25 @@ of truth. Entries below accumulate as the feature lands.
   Locks API drops the page to `volatile` (everything works, nothing
   persists). `Funicular::DB.durability` reports the state; the JS shim
   accepts an injectable Locks API for tests.
+- The persistence core (`mrblib/db.rb`, docs decisions 11/16):
+  whole-database snapshots (serialize -> Base64) in Funicular's OWN
+  IndexedDB store, opened with the in-memory fallback disabled --
+  availability errors (private mode) classify as the `volatile` state,
+  every other storage error stays loud for the boot to fail on.
+  Auto-persist rides the post-commit change-event funnel with a
+  per-role debounce (replica ~5 s, local ~500 ms; a rollback schedules
+  nothing), `Funicular::DB.flush` snapshots immediately (writer only;
+  `ReadOnlyTabError` on a reader, honest no-op on volatile), and a
+  `visibilitychange` backstop persists when the tab hides. A persist
+  landing while that database has an open transaction (a stale timer,
+  the backstop, an in-block flush) refuses to serialize uncommitted
+  pages and defers itself to the commit/rollback settle. Failures are
+  never silent: always logged, plus `config.on_persist_error`.
+  `Funicular::DB.configure` arrives with the persistence knobs
+  (`replica_debounce_ms`/`local_debounce_ms`/
+  `request_persistent_storage` -- `navigator.storage.persist()` is
+  asked only when local data exists -- and the
+  `on_persist_error`/`on_boot_error`/`on_session_change` hooks).
 - The reactivity layer on top of the bus: `Component#watch(:key)` binds
   a state key to a `storage :local`/`.local` Relation -- the block runs
   once, materializes into `state[:key]`, and re-runs (re-subscribing,

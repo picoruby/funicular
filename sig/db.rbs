@@ -124,6 +124,63 @@ module Funicular
     def self.install_lock_shim: () -> void
     def self.release_writer_lock: () -> bool
 
+    class Config
+      @replica_debounce_ms: Integer
+      @local_debounce_ms: Integer
+      @request_persistent_storage: bool
+      @on_persist_error: Proc?
+      @on_boot_error: Proc?
+      @on_session_change: Proc?
+
+      attr_accessor replica_debounce_ms: Integer
+      attr_accessor local_debounce_ms: Integer
+      attr_accessor request_persistent_storage: bool
+      attr_accessor on_persist_error: Proc?
+      attr_accessor on_boot_error: Proc?
+      attr_accessor on_session_change: Proc?
+
+      def initialize: () -> void
+    end
+
+    self.@config: Config?
+    self.@databases: Hash[Symbol, [untyped, Array[untyped]]]?
+    self.@snapshot_identity: String?
+    self.@snapshot_store: untyped
+    self.@snapshot_store_unavailable: bool?
+    self.@persist_timers: Hash[Symbol, untyped]?
+    self.@persist_timer_tokens: Hash[Symbol, Integer]?
+    self.@persist_deferred: Hash[Symbol, bool]?
+    self.@mutation_generation: Integer?
+    self.@visibility_hook_installed: bool?
+
+    SNAPSHOT_DB_NAME: String
+    STORAGE_PERSIST_JS: String
+
+    def self.config: () -> Config
+    def self.configure: () { () -> void } -> nil
+    def self.__reset_config: () -> nil
+    def self.__register_database: (Symbol role, untyped raw_db, Array[untyped] models) -> nil
+    def self.__registered_database: (Symbol role) -> untyped
+    def self.__set_snapshot_identity: (String? identity) -> String?
+    def self.__set_snapshot_store: (untyped store) -> untyped
+    def self.snapshot_store: () -> untyped
+    def self.open_snapshot_store: () -> untyped
+    def self.__become_volatile: (untyped error) -> nil
+    def self.report_persist_error: (untyped error) -> nil
+    def self.invoke_persist_error_hook: (untyped error) -> nil
+    def self.mutation_generation: () -> Integer
+    def self.persist_snapshot: (Symbol role) -> bool
+    def self.restore_snapshot: (Symbol role) -> bool
+    def self.schedule_persist: (Symbol role) -> nil
+    def self.__persist_timer_fired: (Symbol role, Integer? token) -> nil
+    def self.__persist_timer_token: (Symbol role) -> Integer?
+    def self.resume_deferred_persist: (Symbol role) -> nil
+    def self.cancel_persist_timers: () -> nil
+    def self.flush: () -> bool
+    def self.__install_visibility_hook: () -> bool
+    def self.__visibility_flush: () -> nil
+    def self.request_persistent_storage: () -> Symbol
+
     def self.namespace_identity: (untyped application_id, untyped user_key, bool anonymous) -> String
     def self.resolve_namespace: (application_id: untyped, user_key: untyped, user_key_configured: bool, anonymous_only: bool, local_models: bool) -> String
     def self.snapshot_key: (String identity, Symbol role) -> String
