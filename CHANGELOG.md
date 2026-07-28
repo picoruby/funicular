@@ -52,6 +52,16 @@ of truth. Entries below accumulate as the feature lands.
   models' `local_columns` now fold their migrate blocks (implicit
   `id INTEGER PRIMARY KEY` included), replacing the interim
   UnavailableError.
+- The replica-table plumbing (`mrblib/db.rb`): CREATE TABLE derived from
+  the server schema (id type follows the server -- INTEGER or TEXT; a
+  schema without id raises pointing at `storage :ephemeral`; binary
+  attributes never reach the replica), the canonical-JSON schema
+  fingerprint stored in `funicular_meta` (string equality; a mismatch
+  drops and recreates ALL replica tables empty, refilled by the app's
+  next explicit fetch), and the single write-through entry points
+  `replica_upsert` (whole-row INSERT OR REPLACE through the codec) and
+  `replica_delete` (RETURNING-based), both firing the model's change
+  hook. Boot wiring and the REST call sites arrive next.
 - Local CRUD and the bare-class alias on `storage :local` models:
   synchronous, validated `create` (id from the inserted row; omitted
   attributes take the SQL DEFAULT while an explicit nil binds NULL; the

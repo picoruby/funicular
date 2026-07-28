@@ -61,9 +61,11 @@ module Funicular
 
     SQL_TYPES: Hash[Symbol, String]
     META_TABLE: String
+    REPLICA_FINGERPRINT_KEY: String
     self.@reserved_column_names: Array[Symbol]?
 
     def self.validate_identifier: (untyped name) -> String
+    def self.guard_reserved_table: (String table) -> String
     def self.baseline_index: (untyped migrations) -> Integer
     def self.fold_local_columns: (untyped model) -> Hash[String, Symbol]
     def self.fold_builders: (Array[TableBuilder] builders, untyped migrations, untyped model) -> Hash[String, Symbol]
@@ -71,7 +73,15 @@ module Funicular
     def self.rebuild_local_table: (untyped db, untyped model, ?Array[TableBuilder]? builders) -> Integer
     def self.stored_table_version: (untyped db, String table) -> Integer
     def self.store_table_version: (untyped db, String table, Integer version) -> void
+    def self.read_meta: (untyped db, String key) -> String?
+    def self.store_meta: (untyped db, String key, String value) -> void
     def self.ensure_meta_table: (untyped db) -> void
+    def self.replica_table_ddl: (untyped model) -> String
+    def self.canonical_replica_schema: (Array[untyped] models) -> String
+    def self.build_replica_tables: (untyped db, Array[untyped] models) -> bool
+    def self.stale_replica_tables: (String? stored) -> Array[String]
+    def self.replica_upsert: (untyped db, untyped model, Hash[untyped, untyped] attrs) -> bool
+    def self.replica_delete: (untyped db, untyped model, untyped id) -> bool
     def self.collect_builders: (untyped model) -> Array[TableBuilder]
     def self.fold_ops: (Hash[String, Symbol] columns, Array[untyped] ops, untyped model) -> void
     def self.guard_id: (String name, untyped model) -> void

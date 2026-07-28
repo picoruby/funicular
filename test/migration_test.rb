@@ -404,6 +404,21 @@ class MigrationTest < Picotest::Test
     assert_raise(ArgumentError) { Funicular::DB.fold_local_columns(renamer) }
   end
 
+  def test_local_table_cannot_be_named_funicular_meta
+    bad = Class.new(Funicular::Model)
+    bad.class_eval do
+      table_name "Funicular_Meta"
+      storage :local do
+        migrate 1 do |t|
+          t.string :name
+        end
+      end
+    end
+    assert_raise(ArgumentError) do
+      Funicular::DB.apply_local_migrations(@db, bad)
+    end
+  end
+
   def test_migrate_blocks_are_evaluated_once_per_run
     $mig_block_runs = 0
     counted = Class.new(Funicular::Model)

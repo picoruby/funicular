@@ -348,6 +348,18 @@ module Funicular
     # migration version per table (and, later, the replica fingerprint).
     META_TABLE = "funicular_meta"
 
+    # The metadata table belongs to the framework: no model -- local or
+    # replica -- may claim its name (SQLite table names are
+    # case-insensitive, so the check is too).
+    def self.guard_reserved_table(table)
+      if table.downcase == META_TABLE
+        raise ArgumentError,
+          "\"#{table}\" is reserved for framework metadata; pick " \
+          "another table_name"
+      end
+      table
+    end
+
     # SQL identifiers this layer interpolates (table and column names) must
     # be plain: ASCII letter or underscore first, then letters, digits,
     # underscores. Returns the name as a String.
@@ -431,7 +443,7 @@ module Funicular
       # them -- a broken declaration fails the same way everywhere.
       builders = collect_builders(model)
       fold_builders(builders, migrations, model)
-      table = validate_identifier(model.table_name)
+      table = guard_reserved_table(validate_identifier(model.table_name))
       baseline = migrations[baseline_index(migrations)][:version]
       max = migrations[migrations.size - 1][:version]
       stored = stored_table_version(db, table)
@@ -477,7 +489,7 @@ module Funicular
         builders = collect_builders(model)
         fold_builders(builders, migrations, model)
       end
-      table = validate_identifier(model.table_name)
+      table = guard_reserved_table(validate_identifier(model.table_name))
       max = migrations[migrations.size - 1][:version]
       db.transaction do
         db.execute("DROP TABLE IF EXISTS \"#{table}\"")
@@ -488,18 +500,27 @@ module Funicular
     end
 
     def self.stored_table_version(db, table)
-      ensure_meta_table(db)
-      rows = db.execute("SELECT value FROM \"#{META_TABLE}\" WHERE key = ?",
-                        ["table_version:#{table}"])
-      row = rows[0]
-      return 0 unless row
-      (row.is_a?(Hash) ? row.values[0] : row[0]).to_i
+      value = read_meta(db, "table_version:#{table}")
+      value ? value.to_i : 0
     end
 
     def self.store_table_version(db, table, version)
+      store_meta(db, "table_version:#{table}", version.to_s)
+    end
+
+    def self.read_meta(db, key)
+      ensure_meta_table(db)
+      rows = db.execute("SELECT value FROM \"#{META_TABLE}\" WHERE key = ?",
+                        [key])
+      row = rows[0]
+      return nil unless row
+      row.is_a?(Hash) ? row.values[0] : row[0]
+    end
+
+    def self.store_meta(db, key, value)
       ensure_meta_table(db)
       db.execute("INSERT OR REPLACE INTO \"#{META_TABLE}\" (key, value) " \
-                 "VALUES (?, ?)", ["table_version:#{table}", version.to_s])
+                 "VALUES (?, ?)", [key, value])
     end
 
     def self.ensure_meta_table(db)
@@ -715,6 +736,228 @@ module Funicular
 
     def self.index_name(table, columns)
       "index_#{table}_on_#{columns.join("_")}"
+    end
+
+    # ---- replica tables: schema-derived DDL + fingerprint ---------------
+    #
+    # Replica tables mirror server data; their shape is DERIVED from the
+    # server-delivered schema (docs decision 6), never migrated by hand.
+    # The fingerprint is the canonical schema JSON itself, stored in the
+    # meta table and compared by string equality.
+
+    REPLICA_FINGERPRINT_KEY = "replica_fingerprint"
+
+    # CREATE TABLE for one replica model. The id column type follows the
+    # server (:integer -> INTEGER, anything else -> TEXT for UUIDs); a
+    # schema without an id cannot be mirrored by row identity.
+    def self.replica_table_ddl(model)
+      columns = model.local_columns
+      id_type = columns["id"]
+      unless id_type
+        raise ArgumentError,
+          "#{model.table_name}: the server schema has no id attribute; " \
+          "rows cannot be mirrored -- declare storage :ephemeral"
+      end
+      table = validate_identifier(model.table_name)
+      # @type var defs: Array[String]
+      defs = ["\"id\" #{id_type == :integer ? "INTEGER" : "TEXT"} PRIMARY KEY"]
+      names = columns.keys
+      names_size = names.size
+      i = 0
+      while i < names_size
+        name = names[i]
+        unless name == "id"
+          defs << "\"#{validate_identifier(name)}\" " \
+                  "#{SQL_TYPES[columns[name]] || "TEXT"}"
+        end
+        i += 1
+      end
+      "CREATE TABLE \"#{table}\" (#{defs.join(", ")})"
+    end
+
+    # The canonical schema JSON: only DDL-affecting data (table names,
+    # column names and types, the id type), tables and columns sorted by
+    # name so hash ordering never leaks in. This string IS the
+    # fingerprint -- no digest (docs decision 6).
+    def self.canonical_replica_schema(models)
+      # @type var tables: Array[untyped]
+      tables = []
+      models_size = models.size
+      i = 0
+      while i < models_size
+        model = models[i]
+        columns = model.local_columns
+        names = columns.keys.sort
+        # @type var cols: Array[untyped]
+        cols = []
+        names_size = names.size
+        j = 0
+        while j < names_size
+          cols << [names[j], columns[names[j]].to_s]
+          j += 1
+        end
+        tables << [model.table_name, cols]
+        i += 1
+      end
+      # Plain array comparison: entries are [table_name, columns], so the
+      # sort is deterministic down to the column definitions without a
+      # comparator block.
+      tables.sort!
+      JSON.generate(["v1", tables])
+    end
+
+    # Bring the replica database to the declared schema. A matching
+    # fingerprint keeps every table and its data; a mismatch (or a fresh
+    # database) drops and recreates ALL replica tables EMPTY -- they
+    # refill on the app's next explicit fetch -- and stores the new
+    # fingerprint. One transaction. Returns true when tables were
+    # (re)built.
+    # The replica lives in its own database -- storage :local tables are
+    # in the OTHER database and can legitimately share names with
+    # replica tables (that is why notify_changed takes a database role).
+    # Only the framework's meta table needs shielding here.
+    def self.build_replica_tables(db, models)
+      # Duplicate checks compare ASCII-lowercased keys: SQLite table
+      # names are case-insensitive even when quoted. SQL statements keep
+      # the original validated spelling (the hash VALUES).
+      # @type var tables: Hash[String, String]
+      tables = {}
+      models_size = models.size
+      i = 0
+      while i < models_size
+        name = guard_reserved_table(validate_identifier(models[i].table_name))
+        key = name.downcase
+        if tables.has_key?(key)
+          raise ArgumentError,
+            "two replica models declare the table \"#{name}\" " \
+            "(SQLite table names are case-insensitive); give one of " \
+            "them another table_name"
+        end
+        tables[key] = name
+        i += 1
+      end
+      fingerprint = canonical_replica_schema(models)
+      stored = read_meta(db, REPLICA_FINGERPRINT_KEY)
+      return false if stored == fingerprint
+      # Drop the UNION of old and new table names: a model REMOVED from
+      # the declared set must not leave its stale table (and data)
+      # behind. The old names come from the stored fingerprint itself --
+      # it IS the canonical schema JSON.
+      old_names = stale_replica_tables(stored)
+      old_size = old_names.size
+      i = 0
+      while i < old_size
+        begin
+          # @type var old_name: String
+          old_name = validate_identifier(old_names[i])
+          # @type var old_key: String
+          old_key = old_name.downcase
+          unless old_key == META_TABLE || tables.has_key?(old_key)
+            tables[old_key] = old_name
+          end
+        rescue ArgumentError
+          # A corrupted meta row must not smuggle SQL into DROP TABLE.
+        end
+        i += 1
+      end
+      db.transaction do
+        keys = tables.keys
+        keys_size = keys.size
+        i = 0
+        while i < keys_size
+          db.execute("DROP TABLE IF EXISTS \"#{tables[keys[i]]}\"")
+          i += 1
+        end
+        i = 0
+        while i < models_size
+          db.execute(replica_table_ddl(models[i]))
+          i += 1
+        end
+        store_meta(db, REPLICA_FINGERPRINT_KEY, fingerprint)
+      end
+      true
+    end
+
+    # The table names recorded in a stored canonical fingerprint; empty
+    # when absent or unparsable (fail-safe: nothing extra to drop).
+    def self.stale_replica_tables(stored)
+      # @type var names: Array[String]
+      names = []
+      return names unless stored
+      begin
+        parsed = JSON.parse(stored)
+      rescue
+        return names
+      end
+      return names unless parsed.is_a?(Array)
+      list = parsed[1]
+      return names unless list.is_a?(Array)
+      list_size = list.size
+      i = 0
+      while i < list_size
+        entry = list[i]
+        names << entry[0].to_s if entry.is_a?(Array)
+        i += 1
+      end
+      names
+    end
+
+    # Apply one server-authoritative row: THE single write-through entry
+    # point (docs decision 5) -- fetch-through, create/update responses,
+    # and future Cable sync all land here. Whole-row INSERT OR REPLACE
+    # through the codec; keys absent from attrs store NULL (the server
+    # row is authoritative, there is no partial merge). Fires the
+    # model's change hook.
+    def self.replica_upsert(db, model, attrs)
+      columns = model.local_columns
+      table = validate_identifier(model.table_name)
+      names = columns.keys
+      # @type var cols: Array[String]
+      cols = []
+      # @type var marks: Array[String]
+      marks = []
+      # @type var binds: Array[untyped]
+      binds = []
+      id_present = false
+      names_size = names.size
+      i = 0
+      while i < names_size
+        name = names[i]
+        if attrs.has_key?(name)
+          value = attrs[name]
+        elsif attrs.has_key?(name.to_sym)
+          value = attrs[name.to_sym]
+        else
+          value = nil
+        end
+        id_present = true if name == "id" && !value.nil?
+        cols << "\"#{name}\""
+        marks << "?"
+        binds << Codec.encode(columns[name], value)
+        i += 1
+      end
+      unless id_present
+        raise ArgumentError,
+          "replica upsert into #{model.table_name} requires an id; " \
+          "the server row has none"
+      end
+      db.execute("INSERT OR REPLACE INTO \"#{table}\" " \
+                 "(#{cols.join(", ")}) VALUES (#{marks.join(", ")})", binds)
+      model.local_table_changed
+      true
+    end
+
+    # Remove one mirrored row (write-through destroy). Notifies only
+    # when the row existed; RETURNING keeps the check inside the one
+    # statement (no changes() race).
+    def self.replica_delete(db, model, id)
+      table = validate_identifier(model.table_name)
+      rows = db.execute(
+        "DELETE FROM \"#{table}\" WHERE \"id\" = ? RETURNING \"id\"",
+        [Codec.encode(model.local_columns["id"], id)])
+      deleted = !rows.empty?
+      model.local_table_changed if deleted
+      deleted
     end
 
     def self.quoted_list(columns)
