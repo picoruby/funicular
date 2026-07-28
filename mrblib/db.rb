@@ -1320,6 +1320,141 @@ module Funicular
       end
     end
 
+    # ---- writer election (docs decision 14) -----------------------------
+    #
+    # One tab per namespace persists. The election runs ONCE at boot
+    # with Web Locks' ifAvailable: granted makes this tab the
+    # persistent_writer (the lock is held by a promise resolved only at
+    # release), not granted makes it a persistent_reader for the LIFE of
+    # the page -- no promotion in v1, reload to write. No Web Locks API
+    # at all (or an API failure) means volatile: everything works,
+    # nothing persists.
+
+    # The JS side, installed once via eval. Tests (and exotic hosts) may
+    # inject their own Locks API as globalThis.__funicularLocksApi; the
+    # real navigator.locks is the fallback.
+    LOCK_SHIM_JS = <<~'FUNICULAR_LOCK_JS'
+      (() => {
+        if (globalThis.__funicularLocks) return;
+        globalThis.__funicularLocks = {
+          holds: {},
+          acquire(name) {
+            return new Promise((resolveAcquire) => {
+              // Injection seam: undefined falls through to the real
+              // navigator.locks; anything else (an object, or null to
+              // simulate ABSENCE even where the host has real locks --
+              // Node ships navigator.locks) is taken as-is.
+              const injected = globalThis.__funicularLocksApi;
+              const locks = (injected === undefined)
+                ? (globalThis.navigator && globalThis.navigator.locks)
+                : injected;
+              if (!locks || !locks.request) {
+                resolveAcquire("unsupported");
+                return;
+              }
+              try {
+                const requested = locks.request(
+                  name, { ifAvailable: true }, (lock) => {
+                    if (!lock) {
+                      resolveAcquire("busy");
+                      return null;
+                    }
+                    return new Promise((release) => {
+                      globalThis.__funicularLocks.holds[name] = release;
+                      resolveAcquire("acquired");
+                    });
+                  });
+                Promise.resolve(requested).catch(() => {
+                  resolveAcquire("error");
+                });
+              } catch (e) {
+                resolveAcquire("error");
+              }
+            });
+          },
+          release(name) {
+            const release = globalThis.__funicularLocks.holds[name];
+            if (!release) return false;
+            delete globalThis.__funicularLocks.holds[name];
+            release();
+            return true;
+          }
+        };
+      })()
+    FUNICULAR_LOCK_JS
+
+    # :unbooted -> :persistent_writer | :persistent_reader | :volatile.
+    # ("volatile" is deliberately distinct from storage :ephemeral.)
+    def self.durability
+      @durability || :unbooted
+    end
+
+    # Boot/test seam; election itself is one-shot.
+    def self.__set_durability(state)
+      @durability = state
+    end
+
+    def self.elect_writer(lock_name)
+      unless durability == :unbooted
+        raise Error,
+          "the writer election already ran (this tab is #{durability})"
+      end
+      # Claim the slot BEFORE awaiting: the await suspends this Task,
+      # and a concurrent elect_writer from another Task must fail the
+      # one-shot check meanwhile -- two elections could otherwise hold
+      # two locks with only one of them releasable.
+      @durability = :electing
+      begin
+        install_lock_shim
+        # @type var shim: untyped
+        shim = JS.global[:__funicularLocks]
+        result = shim.acquire(lock_name).await.to_s
+      rescue => e
+        @durability = :unbooted
+        # Explicit re-raise: a bare `raise` would not re-raise on the
+        # mruby VM.
+        raise e
+      end
+      state = if result == "acquired"
+        :persistent_writer
+      elsif result == "busy"
+        :persistent_reader
+      else
+        # "unsupported" (no Web Locks) or an API error: by-design
+        # absence drops the page to volatile (docs decision 14).
+        :volatile
+      end
+      @writer_lock_name = lock_name if state == :persistent_writer
+      @durability = state
+      state
+    end
+
+    def self.install_lock_shim
+      return if @lock_shim_installed
+      # @type var global: untyped
+      global = JS.global
+      global.eval(LOCK_SHIM_JS)
+      @lock_shim_installed = true
+    end
+
+    # Terminal step-down (docs decision 13) and teardown: resolving the
+    # holding promise lets a NEW tab win the next election. No-op unless
+    # this tab holds the lock.
+    def self.release_writer_lock
+      name = @writer_lock_name
+      return false unless name
+      @writer_lock_name = nil
+      # @type var shim: untyped
+      shim = JS.global[:__funicularLocks]
+      shim.release(name)
+      # Stepping down is one-way: another tab can win the lock from now
+      # on, so THIS tab must never persist again. It becomes a
+      # non-persisting reader, exactly like a tab that lost the
+      # election (docs decision 13).
+      @durability = :persistent_reader
+      true
+    end
+
     # ---- namespace identity (docs decisions 12/13) ----------------------
     #
     # One browser profile can hold data for several apps and several

@@ -66,6 +66,16 @@ of truth. Entries below accumulate as the feature lands.
   raising subscriber is isolated. `Model.local_table_changed` now feeds
   this bus, so every framework write (local CRUD, delete_all, replica
   write-through) announces itself.
+- The writer election (`mrblib/db.rb`, docs decision 14): one tab per
+  namespace persists. `Funicular::DB.elect_writer` runs once at boot
+  with Web Locks' `ifAvailable` -- granted makes the tab the
+  `persistent_writer` (the lock is held by a promise resolved only at
+  `release_writer_lock`, the terminal step-down seam), not granted
+  makes it a `persistent_reader` for the life of the page (no
+  promotion in v1; reload to write), and a missing or failing Web
+  Locks API drops the page to `volatile` (everything works, nothing
+  persists). `Funicular::DB.durability` reports the state; the JS shim
+  accepts an injectable Locks API for tests.
 - The reactivity layer on top of the bus: `Component#watch(:key)` binds
   a state key to a `storage :local`/`.local` Relation -- the block runs
   once, materializes into `state[:key]`, and re-runs (re-subscribing,

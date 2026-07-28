@@ -113,6 +113,17 @@ module Funicular
     def self.skip_sql_blanks: (String s, Integer i) -> Integer
     def self.read_sql_word: (String s, Integer i) -> [String, Integer]
     def self.read_sql_token: (String s, Integer i) -> [String, Integer]
+    LOCK_SHIM_JS: String
+    self.@durability: Symbol?
+    self.@writer_lock_name: String?
+    self.@lock_shim_installed: bool?
+
+    def self.durability: () -> Symbol
+    def self.__set_durability: (Symbol state) -> Symbol
+    def self.elect_writer: (String lock_name) -> Symbol
+    def self.install_lock_shim: () -> void
+    def self.release_writer_lock: () -> bool
+
     def self.namespace_identity: (untyped application_id, untyped user_key, bool anonymous) -> String
     def self.resolve_namespace: (application_id: untyped, user_key: untyped, user_key_configured: bool, anonymous_only: bool, local_models: bool) -> String
     def self.snapshot_key: (String identity, Symbol role) -> String
