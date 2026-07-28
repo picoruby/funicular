@@ -52,6 +52,19 @@ of truth. Entries below accumulate as the feature lands.
   models' `local_columns` now fold their migrate blocks (implicit
   `id INTEGER PRIMARY KEY` included), replacing the interim
   UnavailableError.
+- The guarded database handles (`mrblib/db.rb`,
+  `Funicular::DB::GuardedDatabase`/`GuardedStatement`/
+  `GuardedResultSet`): the proxies `Funicular::DB.local`/`.replica`
+  will hand out instead of raw connections. The allowlist is closed --
+  persist/close/serialize/deserialize/backup do not exist in any state,
+  `transaction` yields the proxy itself, and `query` returns a wrapped
+  result set. Read-only handles enforce at EVERY execution entry
+  (execute, step, ResultSet next/reset) via `Statement#readonly?` (a
+  write prepared while writable is still refused after the handle went
+  read-only, one-way), raising
+  `Funicular::DB::ReadOnlyTabError`; ATTACH/DETACH and
+  `PRAGMA query_only` are rejected in every state, comment prefixes
+  included, while read pragmas stay available.
 - The namespace identity (`mrblib/db.rb`): a typed, versioned tuple
   (`["v1", app, "anonymous"]` / `["v1", app, "user", key]`) encoded as
   canonical JSON, which every durable name -- the two snapshot keys and

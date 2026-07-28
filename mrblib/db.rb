@@ -742,6 +742,361 @@ module Funicular
       "index_#{table}_on_#{columns.join("_")}"
     end
 
+    # ---- guarded database handles (docs decision 15) --------------------
+    #
+    # Funicular::DB.local/.replica hand out these proxies, never raw
+    # connections. The allowlist is CLOSED: persist/close/serialize/
+    # deserialize/backup do not exist here in ANY state, so no caller
+    # can snapshot, close, or swap the database out from under the
+    # framework. Read-only enforcement happens at every execution entry
+    # via Statement#readonly? -- a statement prepared while writable is
+    # still refused once the handle went read-only.
+
+    # Statements that subvert framework control are rejected in every
+    # state: ATTACH/DETACH escape to other database files, and
+    # PRAGMA query_only would lift (or fake) the read-only lockdown.
+    # sqlite3_stmt_readonly classifies all three as read-only, so the
+    # statement-level check alone would let them through.
+    def self.guard_statement_sql(sql)
+      s = sql.to_s
+      i = skip_sql_blanks(s, 0)
+      head = read_sql_word(s, i)
+      word = head[0]
+      if word == "attach" || word == "detach"
+        raise ArgumentError,
+          "ATTACH/DETACH are not available through the guarded " \
+          "database handle"
+      end
+      # Only the PRAGMA NAME decides (read pragmas stay available):
+      # "PRAGMA table_info(query_only)" is fine, "PRAGMA query_only",
+      # "PRAGMA main.query_only = OFF" and quoted spellings are not.
+      if word == "pragma" && pragma_name(s, head[1]) == "query_only"
+        raise ArgumentError,
+          "PRAGMA query_only is managed by the framework and cannot be " \
+          "issued through the guarded database handle"
+      end
+    end
+
+    # The first keyword of a statement, lowercased, with leading
+    # whitespace and -- and /* */ comments skipped (a comment prefix
+    # must not smuggle ATTACH past the guard).
+    def self.statement_head(sql)
+      s = sql.to_s
+      read_sql_word(s, skip_sql_blanks(s, 0))[0]
+    end
+
+    # The [schema.]name of a PRAGMA statement, starting right after the
+    # PRAGMA keyword (pos). Quoted names ("x", 'x', `x`, [x]) resolve to
+    # their inner text so quoting cannot smuggle query_only past the
+    # guard.
+    def self.pragma_name(s, pos)
+      i = skip_sql_blanks(s, pos)
+      token = read_sql_token(s, i)
+      name = token[0]
+      i = skip_sql_blanks(s, token[1])
+      if s.getbyte(i) == 46 # '.': schema-qualified, the name follows
+        token = read_sql_token(s, skip_sql_blanks(s, i + 1))
+        name = token[0]
+      end
+      name
+    end
+
+    # Skip whitespace and -- / /* */ comments; returns the next index.
+    def self.skip_sql_blanks(s, i)
+      len = s.length
+      while i < len
+        c = s.getbyte(i)
+        if c == 32 || c == 9 || c == 10 || c == 13
+          i += 1
+        elsif c == 45 && s.getbyte(i + 1) == 45 # "--" line comment
+          i += 2
+          while i < len && !(s.getbyte(i) == 10)
+            i += 1
+          end
+        elsif c == 47 && s.getbyte(i + 1) == 42 # "/*" block comment
+          i += 2
+          while i < len && !(s.getbyte(i) == 42 && s.getbyte(i + 1) == 47)
+            i += 1
+          end
+          i += 2
+        else
+          break
+        end
+      end
+      i
+    end
+
+    # Read a bare identifier/keyword at i: [downcased word, next index].
+    def self.read_sql_word(s, i)
+      len = s.length
+      start = i
+      while i < len
+        c = s.getbyte(i)
+        unless c && ((97 <= c && c <= 122) || (65 <= c && c <= 90) ||
+                     (48 <= c && c <= 57) || c == 95)
+          break
+        end
+        i += 1
+      end
+      word = s[start, i - start]
+      [word ? word.downcase : "", i]
+    end
+
+    # Like read_sql_word, but also resolves quoted identifiers to their
+    # inner text.
+    def self.read_sql_token(s, i)
+      c = s.getbyte(i)
+      closer = nil
+      if c == 91 # [ closes with ]
+        closer = 93
+      elsif c == 34 # "
+        closer = 34
+      elsif c == 39 # '
+        closer = 39
+      elsif c == 96 # `
+        closer = 96
+      end
+      return read_sql_word(s, i) unless closer
+      len = s.length
+      j = i + 1
+      start = j
+      while j < len && !(s.getbyte(j) == closer)
+        j += 1
+      end
+      word = s[start, j - start]
+      [word ? word.downcase : "", j + 1]
+    end
+
+    # The one execution-time gate every guarded entry point shares:
+    # read-only handles run read-only statements only, no matter when
+    # the statement (or its result set) was created.
+    def self.enforce_read_only(read_only, raw_stmt)
+      if read_only && !raw_stmt.readonly?
+        raise ReadOnlyTabError,
+          "this tab cannot write to the local database (read-only state)"
+      end
+    end
+
+    class GuardedStatement
+      def initialize(stmt, guard)
+        @stmt = stmt
+        @guard = guard
+      end
+
+      def bind_params(*bind_vars)
+        @stmt.bind_params(*bind_vars)
+      end
+
+      def readonly?
+        @stmt.readonly?
+      end
+
+      def columns
+        @stmt.columns
+      end
+
+      def close
+        @stmt.close
+      end
+
+      def closed?
+        @stmt.closed?
+      end
+
+      # Returns materialized rows, never the raw ResultSet (the closed
+      # allowlist would otherwise leak through it).
+      def execute(*bind_vars)
+        check_writable
+        @stmt.execute(*bind_vars).to_a
+      end
+
+      def step
+        check_writable
+        @stmt.step
+      end
+
+      private
+
+      def check_writable
+        DB.enforce_read_only(@guard.read_only?, @stmt)
+      end
+    end
+
+    # Wraps a raw ResultSet so stepping it re-checks the read-only state
+    # every time: a write+RETURNING result set created while writable
+    # must refuse to step after the handle went read-only.
+    class GuardedResultSet
+      def initialize(rs, stmt, guard)
+        @rs = rs
+        @stmt = stmt
+        @guard = guard
+      end
+
+      def next
+        check_writable
+        @rs.next
+      end
+
+      def each
+        row = self.next
+        while row
+          yield row
+          row = self.next
+        end
+        self
+      end
+
+      def to_a
+        # @type var rows: Array[untyped]
+        rows = []
+        row = self.next
+        while row
+          rows << row
+          row = self.next
+        end
+        rows
+      end
+
+      # reset rebinds and re-runs the statement: same gate as stepping.
+      def reset(*bind_params)
+        check_writable
+        @rs.reset(*bind_params)
+      end
+
+      def eof?
+        @rs.eof?
+      end
+
+      def close
+        @rs.close
+      end
+
+      def closed?
+        @rs.closed?
+      end
+
+      def columns
+        @rs.columns
+      end
+
+      def types
+        @rs.types
+      end
+
+      private
+
+      def check_writable
+        DB.enforce_read_only(@guard.read_only?, @stmt)
+      end
+    end
+
+    class GuardedDatabase
+      def initialize(db, read_only = false)
+        @db = db
+        @read_only = read_only
+      end
+
+      def read_only?
+        @read_only
+      end
+
+      # One-way by design: persistent_reader tabs stay readers for the
+      # life of the page and the terminal latch only ever tightens.
+      def __become_read_only
+        @read_only = true
+      end
+
+      def execute(sql, bind_vars = [])
+        prepare(sql) do |stmt|
+          rows = stmt.execute(*bind_vars)
+          if block_given?
+            rows_size = rows.size
+            i = 0
+            while i < rows_size
+              yield rows[i]
+              i += 1
+            end
+          end
+          rows
+        end
+      end
+
+      def prepare(sql)
+        DB.guard_statement_sql(sql)
+        stmt = GuardedStatement.new(@db.prepare(sql), self)
+        return stmt unless block_given?
+        begin
+          yield stmt
+        ensure
+          stmt.close unless stmt.closed?
+        end
+      end
+
+      # SQLite3::Database#query equivalent: a result set you step through
+      # yourself -- wrapped, so neither the raw connection nor the raw
+      # ResultSet ever surfaces. With a block the set is closed for you.
+      def query(sql, bind_vars = [])
+        DB.guard_statement_sql(sql)
+        stmt = @db.prepare(sql)
+        stmt.bind_params(*bind_vars) unless bind_vars.empty?
+        result = GuardedResultSet.new(
+          SQLite3::ResultSet.new(@db, stmt), stmt, self)
+        return result unless block_given?
+        begin
+          yield result
+        ensure
+          result.close
+        end
+      end
+
+      def get_first_row(sql, bind_vars = [])
+        execute(sql, bind_vars)[0]
+      end
+
+      def get_first_value(sql, bind_vars = [])
+        row = execute(sql, bind_vars)[0]
+        return nil unless row
+        row.is_a?(Hash) ? row.values[0] : row[0]
+      end
+
+      # Yields THIS proxy (docs decision 15), so raw connections never
+      # surface through the transaction block either.
+      def transaction(mode = :deferred)
+        mode_sql = if mode == :deferred
+          "DEFERRED"
+        elsif mode == :immediate
+          "IMMEDIATE"
+        elsif mode == :exclusive
+          "EXCLUSIVE"
+        else
+          raise ArgumentError, "invalid transaction mode #{mode.inspect}"
+        end
+        execute("BEGIN #{mode_sql} TRANSACTION")
+        return true unless block_given?
+        aborting = false
+        begin
+          yield self
+        rescue => e
+          aborting = true
+          # Explicit re-raise: a bare `raise` would not re-raise on the
+          # mruby VM.
+          raise e
+        ensure
+          aborting ? rollback : commit
+        end
+      end
+
+      def commit
+        execute("COMMIT TRANSACTION")
+        true
+      end
+
+      def rollback
+        execute("ROLLBACK TRANSACTION")
+        true
+      end
+    end
+
     # ---- namespace identity (docs decisions 12/13) ----------------------
     #
     # One browser profile can hold data for several apps and several

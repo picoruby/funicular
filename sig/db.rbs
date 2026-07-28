@@ -24,6 +24,66 @@ module Funicular
     class ConfigError < Error
     end
 
+    class GuardedStatement
+      @stmt: untyped
+      @guard: GuardedDatabase
+
+      def initialize: (untyped stmt, GuardedDatabase guard) -> void
+      def bind_params: (*untyped bind_vars) -> untyped
+      def readonly?: () -> bool
+      def columns: () -> untyped
+      def close: () -> untyped
+      def closed?: () -> bool
+      def execute: (*untyped bind_vars) -> Array[untyped]
+      def step: () -> untyped
+
+      private def check_writable: () -> void
+    end
+
+    class GuardedResultSet
+      @rs: untyped
+      @stmt: untyped
+      @guard: GuardedDatabase
+
+      def initialize: (untyped rs, untyped stmt, GuardedDatabase guard) -> void
+      def next: () -> untyped
+      def each: () { (untyped row) -> void } -> GuardedResultSet
+      def to_a: () -> Array[untyped]
+      def reset: (*untyped bind_params) -> untyped
+      def eof?: () -> bool
+      def close: () -> untyped
+      def closed?: () -> bool
+      def columns: () -> untyped
+      def types: () -> untyped
+
+      private def check_writable: () -> void
+    end
+
+    def self.enforce_read_only: (bool read_only, untyped raw_stmt) -> void
+
+    class GuardedDatabase
+      @db: untyped
+      @read_only: bool
+
+      def initialize: (untyped db, ?bool read_only) -> void
+      def read_only?: () -> bool
+      def __become_read_only: () -> void
+      def execute: (String sql, ?Array[untyped] bind_vars) ?{ (untyped row) -> void } -> untyped
+      def prepare: (String sql) ?{ (GuardedStatement stmt) -> untyped } -> untyped
+      def query: (String sql, ?Array[untyped] bind_vars) ?{ (GuardedResultSet result) -> untyped } -> untyped
+      def get_first_row: (String sql, ?Array[untyped] bind_vars) -> untyped
+      def get_first_value: (String sql, ?Array[untyped] bind_vars) -> untyped
+      def transaction: (?Symbol mode) ?{ (GuardedDatabase proxy) -> untyped } -> untyped
+      def commit: () -> bool
+      def rollback: () -> bool
+    end
+
+    def self.guard_statement_sql: (untyped sql) -> void
+    def self.statement_head: (untyped sql) -> String
+    def self.pragma_name: (String s, Integer pos) -> String
+    def self.skip_sql_blanks: (String s, Integer i) -> Integer
+    def self.read_sql_word: (String s, Integer i) -> [String, Integer]
+    def self.read_sql_token: (String s, Integer i) -> [String, Integer]
     def self.namespace_identity: (untyped application_id, untyped user_key, bool anonymous) -> String
     def self.resolve_namespace: (application_id: untyped, user_key: untyped, user_key_configured: bool, anonymous_only: bool, local_models: bool) -> String
     def self.snapshot_key: (String identity, Symbol role) -> String
