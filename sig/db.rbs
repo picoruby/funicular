@@ -39,18 +39,18 @@ module Funicular
     def self.unsubscribe: (Integer id) -> nil
     def self.notify_changed: (untyped target, ?untyped table) -> nil
     def self.validate_role: (untyped role) -> Symbol
-    def self.deferral_depth: (Symbol role) -> Integer
-    def self.pending_seen: (Symbol role) -> Hash[String, bool]
-    def self.pending_order: (Symbol role) -> Array[[Symbol, String]]
+    private def self.deferral_depth: (Symbol role) -> Integer
+    private def self.pending_seen: (Symbol role) -> Hash[String, bool]
+    private def self.pending_order: (Symbol role) -> Array[[Symbol, String]]
     def self.__begin_deferral: (Symbol role) -> void
     def self.__commit_deferral: (Symbol role) -> void
     def self.__rollback_deferral: (Symbol role) -> void
-    def self.clear_pending: (Symbol role) -> nil
-    def self.enqueue_delivery: (Symbol role, String table) -> nil
+    private def self.clear_pending: (Symbol role) -> nil
+    private def self.enqueue_delivery: (Symbol role, String table) -> nil
     def self.__set_tick_scheduler: (Proc? scheduler) -> Proc?
-    def self.schedule_drain: () -> nil
+    private def self.schedule_drain: () -> nil
     def self.__drain_events: () -> nil
-    def self.deliver_event: (Symbol role, String table, ?Integer? generation) -> void
+    private def self.deliver_event: (Symbol role, String table, ?Integer? generation) -> void
 
     class GuardedStatement
       @stmt: untyped
@@ -109,11 +109,11 @@ module Funicular
     end
 
     def self.guard_statement_sql: (untyped sql) -> void
-    def self.statement_head: (untyped sql) -> String
-    def self.pragma_name: (String s, Integer pos) -> String
-    def self.skip_sql_blanks: (String s, Integer i) -> Integer
-    def self.read_sql_word: (String s, Integer i) -> [String, Integer]
-    def self.read_sql_token: (String s, Integer i) -> [String, Integer]
+    private def self.statement_head: (untyped sql) -> String
+    private def self.pragma_name: (String s, Integer pos) -> String
+    private def self.skip_sql_blanks: (String s, Integer i) -> Integer
+    private def self.read_sql_word: (String s, Integer i) -> [String, Integer]
+    private def self.read_sql_token: (String s, Integer i) -> [String, Integer]
     LOCK_SHIM_JS: String
     self.@durability: Symbol?
     self.@writer_lock_name: String?
@@ -122,7 +122,7 @@ module Funicular
     def self.durability: () -> Symbol
     def self.__set_durability: (Symbol state) -> Symbol
     def self.elect_writer: (String lock_name) -> Symbol
-    def self.install_lock_shim: () -> void
+    private def self.install_lock_shim: () -> void
     def self.release_writer_lock: () -> bool
 
     class Config
@@ -166,16 +166,16 @@ module Funicular
     def self.__set_snapshot_store: (untyped store) -> untyped
     def self.snapshot_store: () -> untyped
     def self.open_snapshot_store: () -> untyped
-    def self.__become_volatile: (untyped error) -> nil
-    def self.report_persist_error: (untyped error) -> nil
-    def self.invoke_persist_error_hook: (untyped error) -> nil
+    private def self.__become_volatile: (untyped error) -> nil
+    private def self.report_persist_error: (untyped error) -> nil
+    private def self.invoke_persist_error_hook: (untyped error) -> nil
     def self.mutation_generation: () -> Integer
     def self.persist_snapshot: (Symbol role) -> bool
     def self.restore_snapshot: (Symbol role) -> bool
-    def self.schedule_persist: (Symbol role) -> nil
+    private def self.schedule_persist: (Symbol role) -> nil
     def self.__persist_timer_fired: (Symbol role, Integer? token) -> nil
     def self.__persist_timer_token: (Symbol role) -> Integer?
-    def self.resume_deferred_persist: (Symbol role) -> nil
+    private def self.resume_deferred_persist: (Symbol role) -> nil
     def self.cancel_persist_timers: () -> nil
     def self.flush: () -> bool
     def self.__install_visibility_hook: () -> bool
@@ -183,13 +183,38 @@ module Funicular
     def self.request_persistent_storage: () -> Symbol
     def self.stale_generation?: (Integer token) -> bool
     def self.stale_response_error: () -> Error
+
+    self.@boot_state: Symbol?
+    self.@session_epoch: untyped
+    self.@local_handle: GuardedDatabase?
+    self.@replica_handle: GuardedDatabase?
+    self.@schema_lockdown: untyped
+
+    def self.boot_state: () -> Symbol
+    def self.__set_boot_state: (Symbol state) -> Symbol
+    def self.session_epoch: () -> untyped
+    def self.boot: (models: Array[untyped], ?metadata: Hash[Symbol, untyped]) -> bool
+    private def self.__boot_steps: (Array[untyped] models, Hash[Symbol, untyped] metadata) -> nil
+    private def self.metadata_value: (Hash[Symbol, untyped]? metadata, Symbol key, untyped default) -> untyped
+    private def self.report_boot_error: (Array[untyped] errors) -> nil
+    private def self.__install_handles: (untyped local_db, untyped replica_db) -> nil
+    def self.local: () -> GuardedDatabase
+    def self.replica: () -> GuardedDatabase
+    def self.__model_local_db: (untyped model) -> GuardedDatabase
+    def self.__model_replica_db: () -> GuardedDatabase?
+    private def self.engage_schema_lockdown: (untyped db, untyped error) -> nil
+    def self.schema_lockdown: () -> untyped
+    private def self.__check_schema_lockdown: (String context) -> nil
+    def self.reset_local_table: (untyped model) -> bool
+    private def self.revalidate_schema_lockdown: (untyped db) -> nil
+    def self.__reset_boot: () -> nil
     def self.wipe: () -> bool
-    def self.tick_generation: () -> Integer
-    def self.clear_tick_events: () -> nil
-    def self.ensure_not_in_transaction: (Symbol role) -> nil
-    def self.wipe_role: (Symbol role) -> nil
-    def self.notify_wiped: (Symbol role) -> nil
-    def self.drop_all_tables: (untyped db) -> nil
+    private def self.tick_generation: () -> Integer
+    private def self.clear_tick_events: () -> nil
+    private def self.ensure_not_in_transaction: (Symbol role) -> nil
+    private def self.wipe_role: (Symbol role) -> nil
+    private def self.notify_wiped: (Symbol role) -> nil
+    private def self.drop_all_tables: (untyped db) -> nil
 
     def self.namespace_identity: (untyped application_id, untyped user_key, bool anonymous) -> String
     def self.resolve_namespace: (application_id: untyped, user_key: untyped, user_key_configured: bool, anonymous_only: bool, local_models: bool) -> String
@@ -240,35 +265,35 @@ module Funicular
     self.@reserved_column_names: Array[Symbol]?
 
     def self.validate_identifier: (untyped name) -> String
-    def self.guard_reserved_table: (String table) -> String
-    def self.baseline_index: (untyped migrations) -> Integer
+    private def self.guard_reserved_table: (String table) -> String
+    private def self.baseline_index: (untyped migrations) -> Integer
     def self.fold_local_columns: (untyped model) -> Hash[String, Symbol]
-    def self.fold_builders: (Array[TableBuilder] builders, untyped migrations, untyped model) -> Hash[String, Symbol]
+    private def self.fold_builders: (Array[TableBuilder] builders, untyped migrations, untyped model) -> Hash[String, Symbol]
     def self.apply_local_migrations: (untyped db, untyped model) -> Integer
     def self.rebuild_local_table: (untyped db, untyped model, ?Array[TableBuilder]? builders) -> Integer
     def self.stored_table_version: (untyped db, String table) -> Integer
     def self.store_table_version: (untyped db, String table, Integer version) -> void
     def self.read_meta: (untyped db, String key) -> String?
     def self.store_meta: (untyped db, String key, String value) -> void
-    def self.ensure_meta_table: (untyped db) -> void
+    private def self.ensure_meta_table: (untyped db) -> void
     def self.replica_table_ddl: (untyped model) -> String
     def self.canonical_replica_schema: (Array[untyped] models) -> String
     def self.build_replica_tables: (untyped db, Array[untyped] models) -> bool
-    def self.stale_replica_tables: (String? stored) -> Array[String]
+    private def self.stale_replica_tables: (String? stored) -> Array[String]
     def self.replica_upsert: (untyped db, untyped model, Hash[untyped, untyped] attrs) -> bool
     def self.replica_upsert_all: (untyped db, untyped model, Array[untyped] rows) -> bool
     private def self.replica_upsert_row: (untyped db, untyped model, Hash[untyped, untyped] attrs) -> void
     def self.replica_delete: (untyped db, untyped model, untyped id) -> bool
-    def self.collect_builders: (untyped model) -> Array[TableBuilder]
-    def self.fold_ops: (Hash[String, Symbol] columns, Array[untyped] ops, untyped model) -> void
-    def self.guard_id: (String name, untyped model) -> void
-    def self.guard_reserved_column: (String name, untyped model) -> void
-    def self.apply_blocks: (untyped db, untyped model, Integer from_version, Array[TableBuilder] builders) -> void
-    def self.run_block: (untyped db, String table, TableBuilder builder, bool create_mode) -> void
-    def self.run_alter_op: (untyped db, String table, Array[untyped] op) -> void
-    def self.column_ddl: (Array[untyped] op) -> String
-    def self.default_literal: (Symbol `type`, untyped value) -> String
-    def self.index_name: (String table, Array[String] columns) -> String
-    def self.quoted_list: (Array[String] columns) -> String
+    private def self.collect_builders: (untyped model) -> Array[TableBuilder]
+    private def self.fold_ops: (Hash[String, Symbol] columns, Array[untyped] ops, untyped model) -> void
+    private def self.guard_id: (String name, untyped model) -> void
+    private def self.guard_reserved_column: (String name, untyped model) -> void
+    private def self.apply_blocks: (untyped db, untyped model, Integer from_version, Array[TableBuilder] builders) -> void
+    private def self.run_block: (untyped db, String table, TableBuilder builder, bool create_mode) -> void
+    private def self.run_alter_op: (untyped db, String table, Array[untyped] op) -> void
+    private def self.column_ddl: (Array[untyped] op) -> String
+    private def self.default_literal: (Symbol `type`, untyped value) -> String
+    private def self.index_name: (String table, Array[String] columns) -> String
+    private def self.quoted_list: (Array[String] columns) -> String
   end
 end

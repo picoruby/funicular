@@ -74,6 +74,7 @@ module Funicular
     def self.define_local_accessor: (String name, Array[Symbol] existing) -> void
     def self.merge_keyword_attrs: (Hash[untyped, untyped] attrs, Hash[Symbol, untyped] kw) -> Hash[untyped, untyped]
     def self.local_create: (?Hash[untyped, untyped] attrs) -> Model
+    def self.reset_local: () -> bool
     def self.local_query: (String method_name) -> Relation
     def self.where: (?Hash[untyped, untyped] | String | nil conditions, *untyped binds) -> Relation
     def self.order: (*untyped args) -> Relation

@@ -352,16 +352,18 @@ module Funicular
     # migration version per table (and, later, the replica fingerprint).
     META_TABLE = "funicular_meta"
 
-    # The metadata table belongs to the framework: no model -- local or
-    # replica -- may claim its name (SQLite table names are
-    # case-insensitive, so the check is too).
-    def self.guard_reserved_table(table)
-      if table.downcase == META_TABLE
-        raise ArgumentError,
-          "\"#{table}\" is reserved for framework metadata; pick " \
-          "another table_name"
+    class << self
+      # The metadata table belongs to the framework: no model -- local or
+      # replica -- may claim its name (SQLite table names are
+      # case-insensitive, so the check is too).
+      private def guard_reserved_table(table)
+        if table.downcase == META_TABLE
+          raise ArgumentError,
+            "\"#{table}\" is reserved for framework metadata; pick " \
+            "another table_name"
+        end
+        table
       end
-      table
     end
 
     # SQL identifiers this layer interpolates (table and column names) must
@@ -387,18 +389,20 @@ module Funicular
       s
     end
 
-    # The index of the block the table is (re)built from: the NEWEST
-    # `reset: true` block, or the first block when none is marked. Blocks
-    # before it are superseded history -- they may stay in the code (the
-    # docs only say they MAY be deleted) but are never folded or applied.
-    def self.baseline_index(migrations)
-      base = 0
-      i = 0
-      while i < migrations.size
-        base = i if migrations[i][:reset]
-        i += 1
+    class << self
+      # The index of the block the table is (re)built from: the NEWEST
+      # `reset: true` block, or the first block when none is marked. Blocks
+      # before it are superseded history -- they may stay in the code (the
+      # docs only say they MAY be deleted) but are never folded or applied.
+      private def baseline_index(migrations)
+        base = 0
+        i = 0
+        while i < migrations.size
+          base = i if migrations[i][:reset]
+          i += 1
+        end
+        base
       end
-      base
     end
 
     # Fold a model's migrate blocks into column metadata (column name ->
@@ -409,18 +413,20 @@ module Funicular
       fold_builders(collect_builders(model), model.local_migrations, model)
     end
 
-    # The fold over ALREADY-collected builders: the migration runner
-    # evaluates each migrate block exactly once per run and feeds the same
-    # recorded operations to this validation and to the DDL.
-    def self.fold_builders(builders, migrations, model)
-      # @type var columns: Hash[String, Symbol]
-      columns = { "id" => :integer }
-      i = migrations ? baseline_index(migrations) : 0
-      while i < builders.size
-        fold_ops(columns, builders[i].ops, model)
-        i += 1
+    class << self
+      # The fold over ALREADY-collected builders: the migration runner
+      # evaluates each migrate block exactly once per run and feeds the same
+      # recorded operations to this validation and to the DDL.
+      private def fold_builders(builders, migrations, model)
+        # @type var columns: Hash[String, Symbol]
+        columns = { "id" => :integer }
+        i = migrations ? baseline_index(migrations) : 0
+        while i < builders.size
+          fold_ops(columns, builders[i].ops, model)
+          i += 1
+        end
+        columns
       end
-      columns
     end
 
     # Bring one model's local table to its declared schema. Fresh and
@@ -527,219 +533,221 @@ module Funicular
                  "VALUES (?, ?)", [key, value])
     end
 
-    def self.ensure_meta_table(db)
-      db.execute("CREATE TABLE IF NOT EXISTS \"#{META_TABLE}\" " \
-                 "(key TEXT PRIMARY KEY, value TEXT)")
-    end
-
-    # Run every migrate block against a fresh TableBuilder, returning the
-    # recorded operations in declaration order. The runner calls this
-    # exactly once per migration run; local_columns is the only other
-    # caller. Blocks should stay deterministic and side-effect free.
-    def self.collect_builders(model)
-      migrations = model.local_migrations
-      unless migrations
-        raise ArgumentError,
-          "#{model} has no migrate blocks (is it storage :local?)"
+    class << self
+      private def ensure_meta_table(db)
+        db.execute("CREATE TABLE IF NOT EXISTS \"#{META_TABLE}\" " \
+                   "(key TEXT PRIMARY KEY, value TEXT)")
       end
-      # @type var builders: Array[TableBuilder]
-      builders = []
-      i = 0
-      while i < migrations.size
-        t = TableBuilder.new
-        migrations[i][:block].call(t)
-        builders << t
-        i += 1
-      end
-      builders
-    end
 
-    # Apply one block's column effects to the running fold. Unknown or
-    # duplicate names fail here, before any SQL runs.
-    def self.fold_ops(columns, ops, model)
-      i = 0
-      while i < ops.size
-        op = ops[i]
-        kind = op[0]
-        if kind == :add_column
-          name = op[1]
-          if columns.has_key?(name)
-            raise ArgumentError,
-              "duplicate column #{name.inspect} in #{model.table_name} migrations"
-          end
-          guard_reserved_column(name, model)
-          columns[name] = op[2]
-        elsif kind == :rename
-          old_name = op[1]
-          guard_id(old_name, model)
-          type = columns[old_name]
-          unless type
-            raise ArgumentError,
-              "rename of unknown column #{old_name.inspect} in " \
-              "#{model.table_name} migrations"
-          end
-          if columns.has_key?(op[2])
-            raise ArgumentError,
-              "duplicate column #{op[2].inspect} in #{model.table_name} migrations"
-          end
-          guard_reserved_column(op[2], model)
-          columns.delete(old_name)
-          columns[op[2]] = type
-        elsif kind == :remove
-          name = op[1]
-          guard_id(name, model)
-          unless columns.has_key?(name)
-            raise ArgumentError,
-              "remove of unknown column #{name.inspect} in " \
-              "#{model.table_name} migrations"
-          end
-          columns.delete(name)
+      # Run every migrate block against a fresh TableBuilder, returning the
+      # recorded operations in declaration order. The runner calls this
+      # exactly once per migration run; local_columns is the only other
+      # caller. Blocks should stay deterministic and side-effect free.
+      private def collect_builders(model)
+        migrations = model.local_migrations
+        unless migrations
+          raise ArgumentError,
+            "#{model} has no migrate blocks (is it storage :local?)"
         end
-        # index/remove_index/execute do not affect the fold
-        i += 1
-      end
-    end
-
-    def self.guard_id(name, model)
-      if name == "id"
-        raise ArgumentError,
-          "the id column is implicit and cannot be renamed or removed " \
-          "(#{model.table_name} migrations)"
-      end
-    end
-
-    # A column name must not shadow the model API: the generated reader
-    # would clobber anything the BASE Funicular::Model instance already
-    # responds to (destroy, reload, update, valid?, errors, class, hash,
-    # ...). Checking against the base class -- never the subclass -- keeps
-    # a model's own generated accessors from tripping the guard when its
-    # blocks are folded again.
-    def self.guard_reserved_column(name, model)
-      # The __ prefix is the framework-internal namespace (__custom_*
-      # writer stashes, __local_* helpers): a column named __custom_title
-      # would clobber the alias that wraps a hand-written title= writer.
-      if name.start_with?("__")
-        raise ArgumentError,
-          "column names starting with __ are reserved for framework " \
-          "internals (#{model.table_name} migrations); rename " \
-          "#{name.inspect}"
-      end
-      reserved = @reserved_column_names
-      unless reserved
-        # Both lists: instance_methods alone omits private methods, and a
-        # column named "initialize" or "method_missing" must be rejected
-        # just as hard as "destroy".
-        reserved = Funicular::Model.instance_methods +
-                   Funicular::Model.private_instance_methods
-        @reserved_column_names = reserved
-      end
-      if reserved.include?(name.to_sym)
-        raise ArgumentError,
-          "column name #{name.inspect} collides with a Funicular::Model " \
-          "method (#{model.table_name} migrations); rename the column"
-      end
-    end
-
-    # Apply every block at or after the baseline with version >
-    # from_version (pre-baseline history is never applied), using the
-    # builders the caller already collected and validated. The first
-    # block applied onto a dropped/absent table runs in create mode (its
-    # column ops become the CREATE TABLE); everything later alters.
-    def self.apply_blocks(db, model, from_version, builders)
-      migrations = model.local_migrations
-      table = validate_identifier(model.table_name)
-      i = baseline_index(migrations)
-      creating = from_version < migrations[i][:version]
-      while i < migrations.size
-        if from_version < migrations[i][:version]
-          run_block(db, table, builders[i], creating)
-          creating = false
-        end
-        i += 1
-      end
-    end
-
-    def self.run_block(db, table, builder, create_mode)
-      ops = builder.ops
-      if create_mode
-        # @type var defs: Array[String]
-        defs = ["\"id\" INTEGER PRIMARY KEY"]
+        # @type var builders: Array[TableBuilder]
+        builders = []
         i = 0
-        while i < ops.size
-          op = ops[i]
-          defs << column_ddl(op) if op[0] == :add_column
+        while i < migrations.size
+          t = TableBuilder.new
+          migrations[i][:block].call(t)
+          builders << t
           i += 1
         end
-        db.execute("CREATE TABLE \"#{table}\" (#{defs.join(", ")})")
+        builders
+      end
+
+      # Apply one block's column effects to the running fold. Unknown or
+      # duplicate names fail here, before any SQL runs.
+      private def fold_ops(columns, ops, model)
         i = 0
         while i < ops.size
           op = ops[i]
           kind = op[0]
           if kind == :add_column
-            # already part of the CREATE TABLE
-          elsif kind == :index || kind == :remove_index || kind == :execute
-            run_alter_op(db, table, op)
-          else
-            raise ArgumentError,
-              "#{kind} needs an existing table; not allowed in the block " \
-              "that creates \"#{table}\""
+            name = op[1]
+            if columns.has_key?(name)
+              raise ArgumentError,
+                "duplicate column #{name.inspect} in #{model.table_name} migrations"
+            end
+            guard_reserved_column(name, model)
+            columns[name] = op[2]
+          elsif kind == :rename
+            old_name = op[1]
+            guard_id(old_name, model)
+            type = columns[old_name]
+            unless type
+              raise ArgumentError,
+                "rename of unknown column #{old_name.inspect} in " \
+                "#{model.table_name} migrations"
+            end
+            if columns.has_key?(op[2])
+              raise ArgumentError,
+                "duplicate column #{op[2].inspect} in #{model.table_name} migrations"
+            end
+            guard_reserved_column(op[2], model)
+            columns.delete(old_name)
+            columns[op[2]] = type
+          elsif kind == :remove
+            name = op[1]
+            guard_id(name, model)
+            unless columns.has_key?(name)
+              raise ArgumentError,
+                "remove of unknown column #{name.inspect} in " \
+                "#{model.table_name} migrations"
+            end
+            columns.delete(name)
+          end
+          # index/remove_index/execute do not affect the fold
+          i += 1
+        end
+      end
+
+      private def guard_id(name, model)
+        if name == "id"
+          raise ArgumentError,
+            "the id column is implicit and cannot be renamed or removed " \
+            "(#{model.table_name} migrations)"
+        end
+      end
+
+      # A column name must not shadow the model API: the generated reader
+      # would clobber anything the BASE Funicular::Model instance already
+      # responds to (destroy, reload, update, valid?, errors, class, hash,
+      # ...). Checking against the base class -- never the subclass -- keeps
+      # a model's own generated accessors from tripping the guard when its
+      # blocks are folded again.
+      private def guard_reserved_column(name, model)
+        # The __ prefix is the framework-internal namespace (__custom_*
+        # writer stashes, __local_* helpers): a column named __custom_title
+        # would clobber the alias that wraps a hand-written title= writer.
+        if name.start_with?("__")
+          raise ArgumentError,
+            "column names starting with __ are reserved for framework " \
+            "internals (#{model.table_name} migrations); rename " \
+            "#{name.inspect}"
+        end
+        reserved = @reserved_column_names
+        unless reserved
+          # Both lists: instance_methods alone omits private methods, and a
+          # column named "initialize" or "method_missing" must be rejected
+          # just as hard as "destroy".
+          reserved = Funicular::Model.instance_methods +
+                     Funicular::Model.private_instance_methods
+          @reserved_column_names = reserved
+        end
+        if reserved.include?(name.to_sym)
+          raise ArgumentError,
+            "column name #{name.inspect} collides with a Funicular::Model " \
+            "method (#{model.table_name} migrations); rename the column"
+        end
+      end
+
+      # Apply every block at or after the baseline with version >
+      # from_version (pre-baseline history is never applied), using the
+      # builders the caller already collected and validated. The first
+      # block applied onto a dropped/absent table runs in create mode (its
+      # column ops become the CREATE TABLE); everything later alters.
+      private def apply_blocks(db, model, from_version, builders)
+        migrations = model.local_migrations
+        table = validate_identifier(model.table_name)
+        i = baseline_index(migrations)
+        creating = from_version < migrations[i][:version]
+        while i < migrations.size
+          if from_version < migrations[i][:version]
+            run_block(db, table, builders[i], creating)
+            creating = false
           end
           i += 1
         end
-      else
-        i = 0
-        while i < ops.size
-          run_alter_op(db, table, ops[i])
-          i += 1
+      end
+
+      private def run_block(db, table, builder, create_mode)
+        ops = builder.ops
+        if create_mode
+          # @type var defs: Array[String]
+          defs = ["\"id\" INTEGER PRIMARY KEY"]
+          i = 0
+          while i < ops.size
+            op = ops[i]
+            defs << column_ddl(op) if op[0] == :add_column
+            i += 1
+          end
+          db.execute("CREATE TABLE \"#{table}\" (#{defs.join(", ")})")
+          i = 0
+          while i < ops.size
+            op = ops[i]
+            kind = op[0]
+            if kind == :add_column
+              # already part of the CREATE TABLE
+            elsif kind == :index || kind == :remove_index || kind == :execute
+              run_alter_op(db, table, op)
+            else
+              raise ArgumentError,
+                "#{kind} needs an existing table; not allowed in the block " \
+                "that creates \"#{table}\""
+            end
+            i += 1
+          end
+        else
+          i = 0
+          while i < ops.size
+            run_alter_op(db, table, ops[i])
+            i += 1
+          end
         end
       end
-    end
 
-    def self.run_alter_op(db, table, op)
-      kind = op[0]
-      if kind == :add_column
-        db.execute("ALTER TABLE \"#{table}\" ADD COLUMN #{column_ddl(op)}")
-      elsif kind == :rename
-        db.execute("ALTER TABLE \"#{table}\" RENAME COLUMN \"#{op[1]}\" " \
-                   "TO \"#{op[2]}\"")
-      elsif kind == :remove
-        db.execute("ALTER TABLE \"#{table}\" DROP COLUMN \"#{op[1]}\"")
-      elsif kind == :index
-        db.execute("CREATE INDEX \"#{index_name(table, op[1])}\" " \
-                   "ON \"#{table}\" (#{quoted_list(op[1])})")
-      elsif kind == :remove_index
-        db.execute("DROP INDEX \"#{index_name(table, op[1])}\"")
-      elsif kind == :execute
-        db.execute(op[1])
-      else
-        raise ArgumentError, "unknown migration op #{kind.inspect}"
+      private def run_alter_op(db, table, op)
+        kind = op[0]
+        if kind == :add_column
+          db.execute("ALTER TABLE \"#{table}\" ADD COLUMN #{column_ddl(op)}")
+        elsif kind == :rename
+          db.execute("ALTER TABLE \"#{table}\" RENAME COLUMN \"#{op[1]}\" " \
+                     "TO \"#{op[2]}\"")
+        elsif kind == :remove
+          db.execute("ALTER TABLE \"#{table}\" DROP COLUMN \"#{op[1]}\"")
+        elsif kind == :index
+          db.execute("CREATE INDEX \"#{index_name(table, op[1])}\" " \
+                     "ON \"#{table}\" (#{quoted_list(op[1])})")
+        elsif kind == :remove_index
+          db.execute("DROP INDEX \"#{index_name(table, op[1])}\"")
+        elsif kind == :execute
+          db.execute(op[1])
+        else
+          raise ArgumentError, "unknown migration op #{kind.inspect}"
+        end
       end
-    end
 
-    # op: [:add_column, name, type, default, null]
-    def self.column_ddl(op)
-      sql = "\"#{op[1]}\" #{SQL_TYPES[op[2]]}"
-      default = op[3]
-      unless default.nil?
-        sql += " DEFAULT #{default_literal(op[2], default)}"
+      # op: [:add_column, name, type, default, null]
+      private def column_ddl(op)
+        sql = "\"#{op[1]}\" #{SQL_TYPES[op[2]]}"
+        default = op[3]
+        unless default.nil?
+          sql += " DEFAULT #{default_literal(op[2], default)}"
+        end
+        sql += " NOT NULL" unless op[4]
+        sql
       end
-      sql += " NOT NULL" unless op[4]
-      sql
-    end
 
-    # Defaults go through the shared codec, so `default: false` stores 0
-    # and a Time default stores the canonical UTC string.
-    def self.default_literal(type, value)
-      encoded = Codec.encode(type, value)
-      if encoded.is_a?(String)
-        "'#{encoded.gsub("'", "''")}'"
-      else
-        encoded.to_s
+      # Defaults go through the shared codec, so `default: false` stores 0
+      # and a Time default stores the canonical UTC string.
+      private def default_literal(type, value)
+        encoded = Codec.encode(type, value)
+        if encoded.is_a?(String)
+          "'#{encoded.gsub("'", "''")}'"
+        else
+          encoded.to_s
+        end
       end
-    end
 
-    def self.index_name(table, columns)
-      "index_#{table}_on_#{columns.join("_")}"
+      private def index_name(table, columns)
+        "index_#{table}_on_#{columns.join("_")}"
+      end
     end
 
     # ---- change-event bus (docs decision 10) ----------------------------
@@ -811,20 +819,22 @@ module Funicular
         "role must be :local or :replica, got #{role.inspect}"
     end
 
-    def self.deferral_depth(role)
-      depths = @deferral_depths
-      value = depths ? depths[role] : nil
-      value || 0
-    end
+    class << self
+      private def deferral_depth(role)
+        depths = @deferral_depths
+        value = depths ? depths[role] : nil
+        value || 0
+      end
 
-    def self.pending_seen(role)
-      all = (@pending_seen ||= {}) # steep:ignore UnannotatedEmptyCollection
-      all[role] ||= {}
-    end
+      private def pending_seen(role)
+        all = (@pending_seen ||= {}) # steep:ignore UnannotatedEmptyCollection
+        all[role] ||= {}
+      end
 
-    def self.pending_order(role)
-      all = (@pending_orders ||= {}) # steep:ignore UnannotatedEmptyCollection
-      all[role] ||= []
+      private def pending_order(role)
+        all = (@pending_orders ||= {}) # steep:ignore UnannotatedEmptyCollection
+        all[role] ||= []
+      end
     end
 
     # Transaction hooks (GuardedDatabase), tracked PER ROLE: the local
@@ -866,47 +876,49 @@ module Funicular
       resume_deferred_persist(role)
     end
 
-    # A persist that found its database mid-transaction parked itself
-    # in @persist_deferred (see persist_snapshot); the settle turns the
-    # park into a fresh debounce arm.
-    def self.resume_deferred_persist(role)
-      deferred = @persist_deferred
-      return nil unless deferred
-      return nil unless deferred[role]
-      deferred.delete(role)
-      schedule_persist(role)
-      nil
-    end
-
-    def self.clear_pending(role)
-      seen_all = @pending_seen
-      seen_all.delete(role) if seen_all
-      order_all = @pending_orders
-      order_all.delete(role) if order_all
-      nil
-    end
-
-    # Delivery belongs to the NEXT tick (docs decision 10): a write that
-    # happens during a component update must never patch watchers
-    # synchronously into that update. Until the scheduled drain runs,
-    # events collapse per [role, table]; the first event of a tick
-    # schedules exactly one drain.
-    def self.enqueue_delivery(role, table)
-      # Auto-persist rides the same post-commit funnel (docs decision
-      # 11): every event (re)arms the role's debounce timer, and a
-      # rollback -- which never reaches here -- schedules nothing.
-      schedule_persist(role)
-      pending = (@tick_events ||= {}) # steep:ignore UnannotatedEmptyCollection
-      key = "#{role}:#{table}"
-      unless pending.has_key?(key)
-        pending[key] = true
-        order = (@tick_order ||= []) # steep:ignore UnannotatedEmptyCollection
-        order << [role, table]
+    class << self
+      # A persist that found its database mid-transaction parked itself
+      # in @persist_deferred (see persist_snapshot); the settle turns the
+      # park into a fresh debounce arm.
+      private def resume_deferred_persist(role)
+        deferred = @persist_deferred
+        return nil unless deferred
+        return nil unless deferred[role]
+        deferred.delete(role)
+        schedule_persist(role)
+        nil
       end
-      return nil if @drain_scheduled
-      @drain_scheduled = true
-      schedule_drain
-      nil
+
+      private def clear_pending(role)
+        seen_all = @pending_seen
+        seen_all.delete(role) if seen_all
+        order_all = @pending_orders
+        order_all.delete(role) if order_all
+        nil
+      end
+
+      # Delivery belongs to the NEXT tick (docs decision 10): a write that
+      # happens during a component update must never patch watchers
+      # synchronously into that update. Until the scheduled drain runs,
+      # events collapse per [role, table]; the first event of a tick
+      # schedules exactly one drain.
+      private def enqueue_delivery(role, table)
+        # Auto-persist rides the same post-commit funnel (docs decision
+        # 11): every event (re)arms the role's debounce timer, and a
+        # rollback -- which never reaches here -- schedules nothing.
+        schedule_persist(role)
+        pending = (@tick_events ||= {}) # steep:ignore UnannotatedEmptyCollection
+        key = "#{role}:#{table}"
+        unless pending.has_key?(key)
+          pending[key] = true
+          order = (@tick_order ||= []) # steep:ignore UnannotatedEmptyCollection
+          order << [role, table]
+        end
+        return nil if @drain_scheduled
+        @drain_scheduled = true
+        schedule_drain
+        nil
+      end
     end
 
     # Boot/tests may install their own scheduler (it must eventually
@@ -917,26 +929,28 @@ module Funicular
       @tick_scheduler = scheduler
     end
 
-    def self.schedule_drain
-      scheduler = @tick_scheduler
-      if scheduler
-        scheduler.call
-      elsif Object.const_defined?(:JS)
-        JS.global.setTimeout(0) do
+    class << self
+      private def schedule_drain
+        scheduler = @tick_scheduler
+        if scheduler
+          scheduler.call
+        elsif Object.const_defined?(:JS)
+          JS.global.setTimeout(0) do
+            __drain_events
+          end
+        else
           __drain_events
         end
-      else
-        __drain_events
+        nil
       end
-      nil
-    end
 
-    # Bumped by clear_tick_events: deliveries carrying an older
-    # generation are stale and stop, even MID-DRAIN -- a wipe called
-    # from inside a subscriber must silence the rest of the drain,
-    # which holds its events in a local the buffer clear cannot reach.
-    def self.tick_generation
-      @tick_generation || 0
+      # Bumped by clear_tick_events: deliveries carrying an older
+      # generation are stale and stop, even MID-DRAIN -- a wipe called
+      # from inside a subscriber must silence the rest of the drain,
+      # which holds its events in a local the buffer clear cannot reach.
+      private def tick_generation
+        @tick_generation || 0
+      end
     end
 
     def self.__drain_events
@@ -959,30 +973,32 @@ module Funicular
       nil
     end
 
-    def self.deliver_event(role, table, generation = nil)
-      subs = @subscriptions
-      return unless subs
-      # Snapshot the ids: a handler may (un)subscribe during delivery.
-      ids = subs.keys
-      ids_size = ids.size
-      i = 0
-      while i < ids_size
-        # An earlier subscriber of this very event may have staled the
-        # delivery (wipe): the remaining subscribers hear only from the
-        # wipe's own notification.
-        break if generation && !(tick_generation == generation)
-        entry = subs[ids[i]]
-        if entry && entry[0] == role && entry[1] == table
-          begin
-            entry[2].call(role, table)
-          rescue => e
-            # Subscriber isolation: one broken watcher must not starve
-            # the others (docs decision 10).
-            puts "[Funicular] change subscriber raised: " \
-                 "#{e.class}: #{e.message}"
+    class << self
+      private def deliver_event(role, table, generation = nil)
+        subs = @subscriptions
+        return unless subs
+        # Snapshot the ids: a handler may (un)subscribe during delivery.
+        ids = subs.keys
+        ids_size = ids.size
+        i = 0
+        while i < ids_size
+          # An earlier subscriber of this very event may have staled the
+          # delivery (wipe): the remaining subscribers hear only from the
+          # wipe's own notification.
+          break if generation && !(tick_generation == generation)
+          entry = subs[ids[i]]
+          if entry && entry[0] == role && entry[1] == table
+            begin
+              entry[2].call(role, table)
+            rescue => e
+              # Subscriber isolation: one broken watcher must not starve
+              # the others (docs decision 10).
+              puts "[Funicular] change subscriber raised: " \
+                   "#{e.class}: #{e.message}"
+            end
           end
+          i += 1
         end
-        i += 1
       end
     end
 
@@ -1021,94 +1037,96 @@ module Funicular
       end
     end
 
-    # The first keyword of a statement, lowercased, with leading
-    # whitespace and -- and /* */ comments skipped (a comment prefix
-    # must not smuggle ATTACH past the guard).
-    def self.statement_head(sql)
-      s = sql.to_s
-      read_sql_word(s, skip_sql_blanks(s, 0))[0]
-    end
+    class << self
+      # The first keyword of a statement, lowercased, with leading
+      # whitespace and -- and /* */ comments skipped (a comment prefix
+      # must not smuggle ATTACH past the guard).
+      private def statement_head(sql)
+        s = sql.to_s
+        read_sql_word(s, skip_sql_blanks(s, 0))[0]
+      end
 
-    # The [schema.]name of a PRAGMA statement, starting right after the
-    # PRAGMA keyword (pos). Quoted names ("x", 'x', `x`, [x]) resolve to
-    # their inner text so quoting cannot smuggle query_only past the
-    # guard.
-    def self.pragma_name(s, pos)
-      i = skip_sql_blanks(s, pos)
-      token = read_sql_token(s, i)
-      name = token[0]
-      i = skip_sql_blanks(s, token[1])
-      if s.getbyte(i) == 46 # '.': schema-qualified, the name follows
-        token = read_sql_token(s, skip_sql_blanks(s, i + 1))
+      # The [schema.]name of a PRAGMA statement, starting right after the
+      # PRAGMA keyword (pos). Quoted names ("x", 'x', `x`, [x]) resolve to
+      # their inner text so quoting cannot smuggle query_only past the
+      # guard.
+      private def pragma_name(s, pos)
+        i = skip_sql_blanks(s, pos)
+        token = read_sql_token(s, i)
         name = token[0]
+        i = skip_sql_blanks(s, token[1])
+        if s.getbyte(i) == 46 # '.': schema-qualified, the name follows
+          token = read_sql_token(s, skip_sql_blanks(s, i + 1))
+          name = token[0]
+        end
+        name
       end
-      name
-    end
 
-    # Skip whitespace and -- / /* */ comments; returns the next index.
-    def self.skip_sql_blanks(s, i)
-      len = s.length
-      while i < len
-        c = s.getbyte(i)
-        if c == 32 || c == 9 || c == 10 || c == 13
+      # Skip whitespace and -- / /* */ comments; returns the next index.
+      private def skip_sql_blanks(s, i)
+        len = s.length
+        while i < len
+          c = s.getbyte(i)
+          if c == 32 || c == 9 || c == 10 || c == 13
+            i += 1
+          elsif c == 45 && s.getbyte(i + 1) == 45 # "--" line comment
+            i += 2
+            while i < len && !(s.getbyte(i) == 10)
+              i += 1
+            end
+          elsif c == 47 && s.getbyte(i + 1) == 42 # "/*" block comment
+            i += 2
+            while i < len && !(s.getbyte(i) == 42 && s.getbyte(i + 1) == 47)
+              i += 1
+            end
+            i += 2
+          else
+            break
+          end
+        end
+        i
+      end
+
+      # Read a bare identifier/keyword at i: [downcased word, next index].
+      private def read_sql_word(s, i)
+        len = s.length
+        start = i
+        while i < len
+          c = s.getbyte(i)
+          unless c && ((97 <= c && c <= 122) || (65 <= c && c <= 90) ||
+                       (48 <= c && c <= 57) || c == 95)
+            break
+          end
           i += 1
-        elsif c == 45 && s.getbyte(i + 1) == 45 # "--" line comment
-          i += 2
-          while i < len && !(s.getbyte(i) == 10)
-            i += 1
-          end
-        elsif c == 47 && s.getbyte(i + 1) == 42 # "/*" block comment
-          i += 2
-          while i < len && !(s.getbyte(i) == 42 && s.getbyte(i + 1) == 47)
-            i += 1
-          end
-          i += 2
-        else
-          break
         end
+        word = s[start, i - start]
+        [word ? word.downcase : "", i]
       end
-      i
-    end
 
-    # Read a bare identifier/keyword at i: [downcased word, next index].
-    def self.read_sql_word(s, i)
-      len = s.length
-      start = i
-      while i < len
+      # Like read_sql_word, but also resolves quoted identifiers to their
+      # inner text.
+      private def read_sql_token(s, i)
         c = s.getbyte(i)
-        unless c && ((97 <= c && c <= 122) || (65 <= c && c <= 90) ||
-                     (48 <= c && c <= 57) || c == 95)
-          break
+        closer = nil
+        if c == 91 # [ closes with ]
+          closer = 93
+        elsif c == 34 # "
+          closer = 34
+        elsif c == 39 # '
+          closer = 39
+        elsif c == 96 # `
+          closer = 96
         end
-        i += 1
+        return read_sql_word(s, i) unless closer
+        len = s.length
+        j = i + 1
+        start = j
+        while j < len && !(s.getbyte(j) == closer)
+          j += 1
+        end
+        word = s[start, j - start]
+        [word ? word.downcase : "", j + 1]
       end
-      word = s[start, i - start]
-      [word ? word.downcase : "", i]
-    end
-
-    # Like read_sql_word, but also resolves quoted identifiers to their
-    # inner text.
-    def self.read_sql_token(s, i)
-      c = s.getbyte(i)
-      closer = nil
-      if c == 91 # [ closes with ]
-        closer = 93
-      elsif c == 34 # "
-        closer = 34
-      elsif c == 39 # '
-        closer = 39
-      elsif c == 96 # `
-        closer = 96
-      end
-      return read_sql_word(s, i) unless closer
-      len = s.length
-      j = i + 1
-      start = j
-      while j < len && !(s.getbyte(j) == closer)
-        j += 1
-      end
-      word = s[start, j - start]
-      [word ? word.downcase : "", j + 1]
     end
 
     # The one execution-time gate every guarded entry point shares:
@@ -1466,12 +1484,14 @@ module Funicular
       state
     end
 
-    def self.install_lock_shim
-      return if @lock_shim_installed
-      # @type var global: untyped
-      global = JS.global
-      global.eval(LOCK_SHIM_JS)
-      @lock_shim_installed = true
+    class << self
+      private def install_lock_shim
+        return if @lock_shim_installed
+        # @type var global: untyped
+        global = JS.global
+        global.eval(LOCK_SHIM_JS)
+        @lock_shim_installed = true
+      end
     end
 
     # Terminal step-down (docs decision 13) and teardown: resolving the
@@ -1683,38 +1703,40 @@ module Funicular
       end
     end
 
-    # Private mode or an exotic embedder: everything works, nothing
-    # persists. A held writer lock is released first -- release also
-    # steps @durability down, so volatile is claimed after.
-    def self.__become_volatile(error)
-      release_writer_lock
-      @durability = :volatile
-      puts "[Funicular] persistent storage is unavailable; this page " \
-           "runs volatile (everything works, nothing persists): " \
-           "#{error.class}: #{error.message}"
-      invoke_persist_error_hook(error)
-      nil
-    end
-
-    # Persistence failures are never silent (docs decision 11): always
-    # the log, plus the app's hook when registered.
-    def self.report_persist_error(error)
-      puts "[Funicular] snapshot persistence failed: " \
-           "#{error.class}: #{error.message}"
-      invoke_persist_error_hook(error)
-      nil
-    end
-
-    def self.invoke_persist_error_hook(error)
-      hook = config.on_persist_error
-      return nil unless hook
-      begin
-        hook.call(error)
-      rescue => e
-        puts "[Funicular] on_persist_error hook raised: " \
-             "#{e.class}: #{e.message}"
+    class << self
+      # Private mode or an exotic embedder: everything works, nothing
+      # persists. A held writer lock is released first -- release also
+      # steps @durability down, so volatile is claimed after.
+      private def __become_volatile(error)
+        release_writer_lock
+        @durability = :volatile
+        puts "[Funicular] persistent storage is unavailable; this page " \
+             "runs volatile (everything works, nothing persists): " \
+             "#{error.class}: #{error.message}"
+        invoke_persist_error_hook(error)
+        nil
       end
-      nil
+
+      # Persistence failures are never silent (docs decision 11): always
+      # the log, plus the app's hook when registered.
+      private def report_persist_error(error)
+        puts "[Funicular] snapshot persistence failed: " \
+             "#{error.class}: #{error.message}"
+        invoke_persist_error_hook(error)
+        nil
+      end
+
+      private def invoke_persist_error_hook(error)
+        hook = config.on_persist_error
+        return nil unless hook
+        begin
+          hook.call(error)
+        rescue => e
+          puts "[Funicular] on_persist_error hook raised: " \
+               "#{e.class}: #{e.message}"
+        end
+        nil
+      end
     end
 
     # Advanced by wipe (docs decision 17): a snapshot captured under an
@@ -1729,6 +1751,12 @@ module Funicular
     # written.
     def self.persist_snapshot(role)
       validate_role(role)
+      # Mid-boot the databases are (partly) unrestored while the
+      # election is already won: a snapshot now would overwrite the
+      # stored data with an empty image. The boot itself never
+      # persists, so :booting refuses at this FINAL entry -- flush and
+      # the debounce path funnel through here.
+      return false if boot_state == :booting
       return false unless durability == :persistent_writer
       db = __registered_database(role)
       return false unless db
@@ -1796,28 +1824,30 @@ module Funicular
     # enqueue_delivery funnel means transactional writes schedule at
     # COMMIT and a rollback schedules nothing.
 
-    def self.schedule_persist(role)
-      return nil unless durability == :persistent_writer
-      return nil unless @snapshot_store
-      return nil unless Object.const_defined?(:JS)
-      timers = (@persist_timers ||= {}) # steep:ignore UnannotatedEmptyCollection
-      existing = timers[role]
-      # @type var global: untyped
-      global = JS.global
-      global.clearTimeout(existing) if existing
-      # The clear can come too late: a timer whose JS deadline already
-      # passed has its callback QUEUED on the Ruby side, beyond
-      # clearTimeout's reach. Every (re)arm therefore bumps the role's
-      # token, and only the callback holding the current token acts.
-      tokens = (@persist_timer_tokens ||= {}) # steep:ignore UnannotatedEmptyCollection
-      token = (tokens[role] || 0) + 1
-      tokens[role] = token
-      cfg = config
-      ms = role == :local ? cfg.local_debounce_ms : cfg.replica_debounce_ms
-      timers[role] = global.setTimeout(ms) do
-        __persist_timer_fired(role, token)
+    class << self
+      private def schedule_persist(role)
+        return nil unless durability == :persistent_writer
+        return nil unless @snapshot_store
+        return nil unless Object.const_defined?(:JS)
+        timers = (@persist_timers ||= {}) # steep:ignore UnannotatedEmptyCollection
+        existing = timers[role]
+        # @type var global: untyped
+        global = JS.global
+        global.clearTimeout(existing) if existing
+        # The clear can come too late: a timer whose JS deadline already
+        # passed has its callback QUEUED on the Ruby side, beyond
+        # clearTimeout's reach. Every (re)arm therefore bumps the role's
+        # token, and only the callback holding the current token acts.
+        tokens = (@persist_timer_tokens ||= {}) # steep:ignore UnannotatedEmptyCollection
+        token = (tokens[role] || 0) + 1
+        tokens[role] = token
+        cfg = config
+        ms = role == :local ? cfg.local_debounce_ms : cfg.replica_debounce_ms
+        timers[role] = global.setTimeout(ms) do
+          __persist_timer_fired(role, token)
+        end
+        nil
       end
-      nil
     end
 
     # The armed timer's landing point. A stale callback (its timer was
@@ -2000,6 +2030,16 @@ module Funicular
     # a persistent_reader); volatile is fine too -- the only tab, all
     # memory, no snapshots to delete.
     def self.wipe
+      # Like reset_local, wipe reaches the RAW databases, so a
+      # mid-boot wipe must be kept out (durability is already elected
+      # then). :failed stays allowed: wiping from on_boot_error IS the
+      # official corrupt-snapshot recovery (docs decision 16) -- the
+      # durability check below still requires the failure to have
+      # happened after the election.
+      unless boot_state == :ready || boot_state == :failed
+        raise Error,
+          "wipe requires a booted page (boot state: #{boot_state})"
+      end
       state = durability
       if state == :persistent_reader
         raise ReadOnlyTabError,
@@ -2060,85 +2100,404 @@ module Funicular
       true
     end
 
-    # Empty the next-tick delivery buffer AND stale a drain that is
-    # already running (it holds its events in a local; the generation
-    # bump is what reaches it). A drain merely scheduled stays
-    # scheduled and no-ops; the next enqueue schedules a fresh one.
-    def self.clear_tick_events
-      @tick_generation = tick_generation + 1
-      @tick_order = []
-      @tick_events = {}
-      nil
-    end
-
-    def self.ensure_not_in_transaction(role)
-      db = __registered_database(role)
-      return nil unless db
-      if db.transaction_active?
-        raise Error,
-          "cannot wipe: the #{role} database has an open transaction; " \
-          "settle it (commit or rollback) first"
+    class << self
+      # Empty the next-tick delivery buffer AND stale a drain that is
+      # already running (it holds its events in a local; the generation
+      # bump is what reaches it). A drain merely scheduled stays
+      # scheduled and no-ops; the next enqueue schedules a fresh one.
+      private def clear_tick_events
+        @tick_generation = tick_generation + 1
+        @tick_order = []
+        @tick_events = {}
+        nil
       end
-      nil
-    end
 
-    def self.wipe_role(role)
-      registry = @databases
-      entry = registry ? registry[role] : nil
-      return nil unless entry
-      db = entry[0]
-      return nil unless db
-      models = entry[1]
-      drop_all_tables(db)
-      models_size = models.size
-      if role == :local
+      private def ensure_not_in_transaction(role)
+        db = __registered_database(role)
+        return nil unless db
+        if db.transaction_active?
+          raise Error,
+            "the #{role} database has an open transaction; settle it " \
+            "(commit or rollback) before rebuilding"
+        end
+        nil
+      end
+
+      private def wipe_role(role)
+        registry = @databases
+        entry = registry ? registry[role] : nil
+        return nil unless entry
+        db = entry[0]
+        return nil unless db
+        models = entry[1]
+        drop_all_tables(db)
+        models_size = models.size
+        if role == :local
+          i = 0
+          while i < models_size
+            # The meta table is gone, so every table reads as version 0
+            # and rebuilds from its baseline.
+            apply_local_migrations(db, models[i])
+            i += 1
+          end
+        else
+          # The stored fingerprint is gone too: the fresh-boot path
+          # recreates the declared tables and stores it again.
+          build_replica_tables(db, models)
+        end
+        nil
+      end
+
+      # One change event per wiped table, sent only from wipe's step 5 --
+      # strictly after the rebuild AND the snapshot deletes.
+      private def notify_wiped(role)
+        registry = @databases
+        entry = registry ? registry[role] : nil
+        return nil unless entry
+        return nil unless entry[0]
+        models = entry[1]
+        models_size = models.size
         i = 0
         while i < models_size
-          # The meta table is gone, so every table reads as version 0
-          # and rebuilds from its baseline.
-          apply_local_migrations(db, models[i])
+          notify_changed(role, models[i].table_name)
           i += 1
         end
+        nil
+      end
+
+      private def drop_all_tables(db)
+        rows = db.execute(
+          "SELECT name FROM sqlite_master WHERE type = 'table' " \
+          "AND name NOT LIKE 'sqlite_%'")
+        rows_size = rows.size
+        i = 0
+        while i < rows_size
+          row = rows[i]
+          name = row.is_a?(Hash) ? row.values[0] : row[0]
+          # Unlike model-declared names, this comes from sqlite_master and
+          # may be any legal SQLite identifier. Double embedded quotes.
+          quoted_name = name.to_s.gsub('"', '""')
+          db.execute("DROP TABLE IF EXISTS \"#{quoted_name}\"")
+          i += 1
+        end
+        nil
+      end
+    end
+
+    # ---- boot (docs decision 19) ----------------------------------------
+    #
+    # The client-side boot: everything above wired together in the one
+    # order that works, driven by Funicular.start (a later change).
+    # Failure philosophy is decision 16's fail loud: any error stops
+    # the boot, components stay unmounted (wired with start), and
+    # on_boot_error hears about it. SchemaTooNew is NOT a failure --
+    # the local database completes the boot locked down instead.
+
+    def self.boot_state
+      @boot_state || :unbooted
+    end
+
+    def self.__set_boot_state(state)
+      @boot_state = state
+    end
+
+    # The page's session epoch, held for the HTTP layer (a later
+    # change: X-Funicular-Epoch mismatch -> terminal latch).
+    def self.session_epoch
+      @session_epoch
+    end
+
+    # metadata comes from the page (picoruby_include_tag data
+    # attributes, read in a later change); tests and embedders pass it
+    # directly. Absent keys fall back to a replica-only anonymous
+    # default.
+    def self.boot(models:, metadata: {})
+      if Funicular.server?
+        raise UnavailableError,
+          "Funicular::DB.boot does not run on the server (SSR renders " \
+          "from state, not from a local database)"
+      end
+      unless boot_state == :unbooted
+        raise Error, "DB.boot already ran (state: #{boot_state})"
+      end
+      @boot_state = :booting
+      begin
+        __boot_steps(models, metadata)
+        @boot_state = :ready
+        true
+      rescue => e
+        @boot_state = :failed
+        # No partial boot: whatever was already wired up is torn back
+        # out of reach (the getters below also gate on :ready).
+        @local_handle = nil
+        @replica_handle = nil
+        report_boot_error([e])
+        # The hook above had its recovery chance (a wipe from it runs
+        # as the writer). A page that stays failed can do nothing with
+        # the writer slot except deny it to every other tab -- release
+        # it (no-op when the election never ran or was lost).
+        release_writer_lock
+        false
+      end
+    end
+
+    class << self
+      private def __boot_steps(models, metadata)
+        # @type var local_models: Array[untyped]
+        local_models = []
+        # @type var replica_models: Array[untyped]
+        replica_models = []
+        i = 0
+        models_size = models.size
+        while i < models_size
+          model = models[i]
+          if model.local?
+            local_models << model
+          elsif model.replica?
+            replica_models << model
+          end
+          i += 1
+        end
+        identity = resolve_namespace(
+          application_id: metadata_value(metadata, :application_id,
+                                         "funicular"),
+          user_key: metadata_value(metadata, :user_key, nil),
+          user_key_configured: !!metadata_value(metadata,
+                                                :user_key_configured, false),
+          anonymous_only: !!metadata_value(metadata, :anonymous_only, false),
+          local_models: !local_models.empty?)
+        __set_snapshot_identity(identity)
+        @session_epoch = metadata_value(metadata, :epoch, nil)
+        elect_writer(lock_name(identity))
+        # Availability errors drop to volatile inside; anything else
+        # re-raises and fails the boot (docs decision 16).
+        open_snapshot_store
+        local_db = SQLite3::Database.new(":memory:")
+        replica_db = SQLite3::Database.new(":memory:")
+        __register_database(:local, local_db, local_models)
+        __register_database(:replica, replica_db, replica_models)
+        restore_snapshot(:local)
+        begin
+          i = 0
+          local_size = local_models.size
+          while i < local_size
+            apply_local_migrations(local_db, local_models[i])
+            i += 1
+          end
+        rescue SchemaTooNewError => e
+          # Decision 7: the WHOLE local database fails loud, but the
+          # boot itself completes -- raw SELECT export must survive a
+          # deploy rollback.
+          engage_schema_lockdown(local_db, e)
+        end
+        restore_snapshot(:replica)
+        build_replica_tables(replica_db, replica_models)
+        __install_handles(local_db, replica_db)
+        request_persistent_storage unless local_models.empty?
+        __install_visibility_hook
+        nil
+      end
+
+      private def metadata_value(metadata, key, default)
+        return default unless metadata
+        metadata.has_key?(key) ? metadata[key] : default
+      end
+
+      # Boot failures are never silent (docs decision 16): always the
+      # console, plus the app's hook when registered. The hook receives
+      # the ARRAY of errors -- the schema barrier (a later change)
+      # reports several at once.
+      private def report_boot_error(errors)
+        errors_size = errors.size
+        i = 0
+        while i < errors_size
+          e = errors[i]
+          message = "[Funicular] boot failed: #{e.class}: #{e.message}"
+          if Object.const_defined?(:JS)
+            # @type var global: untyped
+            global = JS.global
+            global[:console].error(message)
+          else
+            puts message
+          end
+          i += 1
+        end
+        hook = config.on_boot_error
+        if hook
+          begin
+            hook.call(errors)
+          rescue => hook_error
+            puts "[Funicular] on_boot_error hook raised: " \
+                 "#{hook_error.class}: #{hook_error.message}"
+          end
+        end
+        nil
+      end
+
+      private def __install_handles(local_db, replica_db)
+        read_only = durability == :persistent_reader
+        # Belt (the proxy refuses at every execution entry) and braces
+        # (SQLite itself refuses): docs decision 15. The replica handle
+        # stays memory-writable even on a reader -- fetch-through
+        # revalidation works there.
+        local_db.execute("PRAGMA query_only = ON") if read_only
+        @local_handle = GuardedDatabase.new(local_db, :local, read_only)
+        @replica_handle = GuardedDatabase.new(replica_db, :replica, false)
+        nil
+      end
+    end
+
+    # The raw-SQL escape hatches (docs decision 20): guarded proxies,
+    # never raw connections. Everything gates on boot_state == :ready,
+    # not on the handle's existence -- mid-boot (an await inside
+    # __boot_steps lets other Tasks run) and after a failed boot the
+    # handles must be equally out of reach.
+    def self.local
+      handle = boot_state == :ready ? @local_handle : nil
+      unless handle
+        raise UnavailableError, "the local database is not booted"
+      end
+      handle
+    end
+
+    def self.replica
+      handle = boot_state == :ready ? @replica_handle : nil
+      unless handle
+        raise UnavailableError, "the replica database is not booted"
+      end
+      handle
+    end
+
+    # The funnel every Model-level local operation goes through
+    # (Model.local_db): ready check, then the SchemaTooNew latch.
+    def self.__model_local_db(model)
+      handle = boot_state == :ready ? @local_handle : nil
+      unless handle
+        raise UnavailableError,
+          "#{model.to_s}: the local database is not booted"
+      end
+      __check_schema_lockdown(model.to_s)
+      handle
+    end
+
+    def self.__model_replica_db
+      boot_state == :ready ? @replica_handle : nil
+    end
+
+    # ---- SchemaTooNew lockdown (docs decision 7) ------------------------
+    #
+    # stored version > declared max means a deploy rollback: the whole
+    # local database refuses to run backwards. Model-level operations
+    # raise; the raw DB.local handle keeps SELECT working (query_only
+    # blocks writes at the SQLite level) so the user's data can still
+    # be exported.
+
+    class << self
+      private def engage_schema_lockdown(db, error)
+        @schema_lockdown = error
+        db.execute("PRAGMA query_only = ON")
+        puts "[Funicular] local database locked down " \
+             "(SchemaTooNew): #{error.message}"
+        nil
+      end
+    end
+
+    def self.schema_lockdown
+      @schema_lockdown
+    end
+
+    class << self
+      private def __check_schema_lockdown(context)
+        error = @schema_lockdown
+        return nil unless error
+        raise SchemaTooNewError,
+          "#{context}: the local database is locked down (#{error.message})"
+      end
+    end
+
+    # Model.reset_local lands here: drop + rebuild ONE table from its
+    # baseline, on the writer (or volatile) tab. When the database sat
+    # locked down, the whole declared set revalidates -- v1 has no
+    # per-table nuance, so the lockdown lifts only when every table
+    # passes again.
+    def self.reset_local_table(model)
+      # Same :ready gate as the handles: this path reaches the RAW
+      # database, so hiding the proxies alone would not keep a
+      # mid-boot (or failed-boot) rebuild out.
+      unless boot_state == :ready
+        raise UnavailableError, "the local database is not booted"
+      end
+      state = durability
+      if state == :persistent_reader
+        raise ReadOnlyTabError,
+          "reset_local requires the writer tab " \
+          "(this tab is a persistent_reader)"
+      end
+      db = __registered_database(:local)
+      unless db
+        raise UnavailableError, "the local database is not booted"
+      end
+      # Same nesting hazard as wipe: never rebuild into an open
+      # transaction.
+      ensure_not_in_transaction(:local)
+      lockdown = @schema_lockdown
+      if lockdown
+        db.execute("PRAGMA query_only = OFF")
+        begin
+          rebuild_local_table(db, model)
+          revalidate_schema_lockdown(db)
+        rescue => e
+          # The lift is provisional: whatever failed here (a broken
+          # rebuild, an ordinary migration error during revalidation),
+          # the lockdown still stands and SQLite's own write refusal
+          # must stand back up with it -- the raw export path is
+          # SELECT-only by contract.
+          db.execute("PRAGMA query_only = ON") if @schema_lockdown
+          raise e
+        end
       else
-        # The stored fingerprint is gone too: the fresh-boot path
-        # recreates the declared tables and stores it again.
-        build_replica_tables(db, models)
+        rebuild_local_table(db, model)
       end
-      nil
+      model.local_table_changed
+      true
     end
 
-    # One change event per wiped table, sent only from wipe's step 5 --
-    # strictly after the rebuild AND the snapshot deletes.
-    def self.notify_wiped(role)
-      registry = @databases
-      entry = registry ? registry[role] : nil
-      return nil unless entry
-      return nil unless entry[0]
-      models = entry[1]
-      models_size = models.size
-      i = 0
-      while i < models_size
-        notify_changed(role, models[i].table_name)
-        i += 1
+    class << self
+      private def revalidate_schema_lockdown(db)
+        registry = @databases
+        entry = registry ? registry[:local] : nil
+        # @type var models: Array[untyped]
+        models = entry ? entry[1] : []
+        begin
+          i = 0
+          models_size = models.size
+          while i < models_size
+            apply_local_migrations(db, models[i])
+            i += 1
+          end
+          @schema_lockdown = nil
+          puts "[Funicular] local database lockdown lifted"
+        rescue SchemaTooNewError => e
+          engage_schema_lockdown(db, e)
+        end
+        nil
       end
-      nil
     end
 
-    def self.drop_all_tables(db)
-      rows = db.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table' " \
-        "AND name NOT LIKE 'sqlite_%'")
-      rows_size = rows.size
-      i = 0
-      while i < rows_size
-        row = rows[i]
-        name = row.is_a?(Hash) ? row.values[0] : row[0]
-        # Unlike model-declared names, this comes from sqlite_master and
-        # may be any legal SQLite identifier. Double embedded quotes.
-        quoted_name = name.to_s.gsub('"', '""')
-        db.execute("DROP TABLE IF EXISTS \"#{quoted_name}\"")
-        i += 1
-      end
+    # Test seam: boot wires process-global state; per-file test VMs
+    # unwind it between tests.
+    def self.__reset_boot
+      release_writer_lock
+      @boot_state = :unbooted
+      @durability = :unbooted
+      @local_handle = nil
+      @replica_handle = nil
+      @schema_lockdown = nil
+      @session_epoch = nil
+      @databases = nil
+      cancel_persist_timers
+      __set_snapshot_store(nil)
+      __set_snapshot_identity(nil)
       nil
     end
 
@@ -2282,28 +2641,30 @@ module Funicular
       true
     end
 
-    # The table names recorded in a stored canonical fingerprint; empty
-    # when absent or unparsable (fail-safe: nothing extra to drop).
-    def self.stale_replica_tables(stored)
-      # @type var names: Array[String]
-      names = []
-      return names unless stored
-      begin
-        parsed = JSON.parse(stored)
-      rescue
-        return names
+    class << self
+      # The table names recorded in a stored canonical fingerprint; empty
+      # when absent or unparsable (fail-safe: nothing extra to drop).
+      private def stale_replica_tables(stored)
+        # @type var names: Array[String]
+        names = []
+        return names unless stored
+        begin
+          parsed = JSON.parse(stored)
+        rescue
+          return names
+        end
+        return names unless parsed.is_a?(Array)
+        list = parsed[1]
+        return names unless list.is_a?(Array)
+        list_size = list.size
+        i = 0
+        while i < list_size
+          entry = list[i]
+          names << entry[0].to_s if entry.is_a?(Array)
+          i += 1
+        end
+        names
       end
-      return names unless parsed.is_a?(Array)
-      list = parsed[1]
-      return names unless list.is_a?(Array)
-      list_size = list.size
-      i = 0
-      while i < list_size
-        entry = list[i]
-        names << entry[0].to_s if entry.is_a?(Array)
-        i += 1
-      end
-      names
     end
 
     # Apply one server-authoritative row: THE single write-through entry
@@ -2391,15 +2752,17 @@ module Funicular
       deleted
     end
 
-    def self.quoted_list(columns)
-      # @type var quoted: Array[String]
-      quoted = []
-      i = 0
-      while i < columns.size
-        quoted << "\"#{columns[i]}\""
-        i += 1
+    class << self
+      private def quoted_list(columns)
+        # @type var quoted: Array[String]
+        quoted = []
+        i = 0
+        while i < columns.size
+          quoted << "\"#{columns[i]}\""
+          i += 1
+        end
+        quoted.join(", ")
       end
-      quoted.join(", ")
     end
   end
 end

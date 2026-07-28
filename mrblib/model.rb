@@ -281,19 +281,34 @@ module Funicular
       derived
     end
 
-    # The handle local queries run against. Arrives with Funicular::DB.boot
-    # (a later change); until then every materializer fails loud.
+    # The handle local queries run against: the guarded local proxy
+    # installed by Funicular::DB.boot. Before the boot every
+    # materializer fails loud (UnavailableError -- SSR included), and
+    # a SchemaTooNew lockdown raises here, the funnel every
+    # model-level local operation passes through.
     def self.local_db
-      raise Funicular::DB::UnavailableError,
-        "#{to_s}: the local database is not booted"
+      Funicular::DB.__model_local_db(self)
     end
 
-    # The handle REST write-through applies replica rows to. DB.boot (a
-    # later change) overrides this with the guarded replica handle --
-    # raw connections are never exposed globally. While it returns nil,
-    # write-through stays inert and REST works standalone.
+    # The handle REST write-through applies replica rows to: the
+    # guarded replica proxy from DB.boot -- raw connections are never
+    # exposed globally. While it is nil (not booted), write-through
+    # stays inert and REST works standalone.
     def self.replica_db
-      nil
+      Funicular::DB.__model_replica_db
+    end
+
+    # Drop this table and rebuild it from its migrate baseline (docs
+    # decision 7): the programmatic reset for one client-only table.
+    # Writer (or volatile) tab only; lifts a SchemaTooNew lockdown
+    # when the whole declared set passes again afterwards.
+    def self.reset_local
+      unless local?
+        raise Funicular::DB::NoTableError,
+          "#{to_s} is not storage :local; reset_local rebuilds " \
+          "client-only tables"
+      end
+      Funicular::DB.reset_local_table(self)
     end
 
     def self.build_from_local(attrs)

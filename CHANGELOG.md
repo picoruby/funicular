@@ -95,6 +95,41 @@ of truth. Entries below accumulate as the feature lands.
   `request_persistent_storage` -- `navigator.storage.persist()` is
   asked only when local data exists -- and the
   `on_persist_error`/`on_boot_error`/`on_session_change` hooks).
+- `Funicular::DB.boot` (docs decision 19), the client-side boot that
+  wires everything in order: page metadata -> namespace resolution
+  (+ session epoch held for the HTTP layer) -> writer election ->
+  snapshot store (availability errors -> volatile) -> the two
+  `:memory:` connections -> local snapshot restore + migrations ->
+  replica restore + schema-derived DDL -> guarded handles installed
+  (`Funicular::DB.local`/`.replica`, and `Model.local_db`/`replica_db`
+  now consult the boot; reader tabs get `PRAGMA query_only=ON` plus a
+  read-only local proxy) -> `navigator.storage.persist()` when a
+  local model exists -> the visibilitychange backstop. One-shot;
+  raises `UnavailableError` under SSR. The handles gate on
+  `boot_state == :ready`, not on their existence: mid-boot (another
+  Task running during a boot await) and after a failed boot the
+  database is equally unreachable -- and the raw-database paths that
+  bypass the handles carry the gate too: `Model.reset_local` requires
+  `:ready`, `wipe` allows `:ready` or `:failed` (wiping from
+  `on_boot_error` is the official corrupt-snapshot recovery), and
+  `persist_snapshot` -- the final persistence entry that flush and
+  the debounce funnel through -- refuses during `:booting`, so a
+  mid-boot flush cannot overwrite stored snapshots with unrestored
+  databases. Any failure is decision 16's
+  fail loud: `boot_state` becomes `:failed`, the handles are torn
+  back out, the errors hit the console and `config.on_boot_error`,
+  nothing mounts (wired with `Funicular.start` in a following
+  change), and once the hook has had its recovery chance the writer
+  lock is released -- a failed page must not deny the writer slot to
+  every other tab. SchemaTooNew instead
+  completes the boot LOCKED DOWN (docs decision 7): every model-level
+  local operation raises `SchemaTooNewError`, raw SELECT export
+  through `DB.local` survives, writes are refused by SQLite itself.
+  `Model.reset_local` arrives with it: writer-only baseline rebuild of
+  one client-only table that lifts the lockdown once the whole
+  declared set passes again -- and the lift is provisional: a reset
+  that fails mid-rebuild puts SQLite's own write refusal
+  (`query_only`) back up before re-raising.
 - `Funicular::DB.wipe` and the mutation generation (docs decision 17):
   one call drops every table in both databases of the current
   namespace, deletes its two snapshot keys, rebuilds the replica DDL +

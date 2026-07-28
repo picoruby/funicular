@@ -100,12 +100,14 @@ class WipeTest < Picotest::Test
     Funicular::DB.__register_database(:replica, $wipe_replica_db,
                                       [WipeNote])
     Funicular::DB.__set_durability(:persistent_writer)
+    Funicular::DB.__set_boot_state(:ready)
     Funicular::DB.__set_snapshot_store($wipe_store)
     Funicular::DB.__set_snapshot_identity($wipe_identity)
   end
 
   def teardown
     Funicular::DB.cancel_persist_timers
+    Funicular::DB.__set_boot_state(:unbooted)
     Funicular::DB.__set_durability(:unbooted)
     Funicular::DB.__set_snapshot_store(nil)
     Funicular::DB.__set_snapshot_identity(nil)
