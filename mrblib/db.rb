@@ -909,42 +909,69 @@ module Funicular
     # row is authoritative, there is no partial merge). Fires the
     # model's change hook.
     def self.replica_upsert(db, model, attrs)
-      columns = model.local_columns
-      table = validate_identifier(model.table_name)
-      names = columns.keys
-      # @type var cols: Array[String]
-      cols = []
-      # @type var marks: Array[String]
-      marks = []
-      # @type var binds: Array[untyped]
-      binds = []
-      id_present = false
-      names_size = names.size
-      i = 0
-      while i < names_size
-        name = names[i]
-        if attrs.has_key?(name)
-          value = attrs[name]
-        elsif attrs.has_key?(name.to_sym)
-          value = attrs[name.to_sym]
-        else
-          value = nil
-        end
-        id_present = true if name == "id" && !value.nil?
-        cols << "\"#{name}\""
-        marks << "?"
-        binds << Codec.encode(columns[name], value)
-        i += 1
-      end
-      unless id_present
-        raise ArgumentError,
-          "replica upsert into #{model.table_name} requires an id; " \
-          "the server row has none"
-      end
-      db.execute("INSERT OR REPLACE INTO \"#{table}\" " \
-                 "(#{cols.join(", ")}) VALUES (#{marks.join(", ")})", binds)
+      replica_upsert_row(db, model, attrs)
       model.local_table_changed
       true
+    end
+
+    # Batch apply for whole-collection fetches: every row lands -- or,
+    # when any row fails (a malformed value, most likely), NONE does --
+    # inside ONE transaction, and the change hook fires once after the
+    # commit: a 50-row fetch is one event, not fifty.
+    def self.replica_upsert_all(db, model, rows)
+      rows_size = rows.size
+      return true if rows_size == 0
+      db.transaction do
+        i = 0
+        while i < rows_size
+          replica_upsert_row(db, model, rows[i])
+          i += 1
+        end
+      end
+      model.local_table_changed
+      true
+    end
+
+    class << self
+      # NOT a public entry point: writing a row without the change
+      # notification would bypass the apply-path contract. Only
+      # replica_upsert and replica_upsert_all come through here.
+      private def replica_upsert_row(db, model, attrs)
+        columns = model.local_columns
+        table = validate_identifier(model.table_name)
+        names = columns.keys
+        # @type var cols: Array[String]
+        cols = []
+        # @type var marks: Array[String]
+        marks = []
+        # @type var binds: Array[untyped]
+        binds = []
+        id_present = false
+        names_size = names.size
+        i = 0
+        while i < names_size
+          name = names[i]
+          if attrs.has_key?(name)
+            value = attrs[name]
+          elsif attrs.has_key?(name.to_sym)
+            value = attrs[name.to_sym]
+          else
+            value = nil
+          end
+          id_present = true if name == "id" && !value.nil?
+          cols << "\"#{name}\""
+          marks << "?"
+          binds << Codec.encode(columns[name], value)
+          i += 1
+        end
+        unless id_present
+          raise ArgumentError,
+            "replica upsert into #{model.table_name} requires an id; " \
+            "the server row has none"
+        end
+        db.execute("INSERT OR REPLACE INTO \"#{table}\" " \
+                   "(#{cols.join(", ")}) VALUES (#{marks.join(", ")})", binds)
+      end
     end
 
     # Remove one mirrored row (write-through destroy). Notifies only

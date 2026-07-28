@@ -52,6 +52,16 @@ of truth. Entries below accumulate as the feature lands.
   models' `local_columns` now fold their migrate blocks (implicit
   `id INTEGER PRIMARY KEY` included), replacing the interim
   UnavailableError.
+- REST is wired to the local database layer: response values decode
+  through the shared codec when instances initialize and when `update`
+  applies the server row (ISO 8601 strings become `Time`, 1/0 become
+  booleans -- `Post.all` and `Post.local.find` now return the same Ruby
+  types), and every successful REST call mirrors its result into the
+  replica through the single apply entry point BEFORE user callbacks
+  run (`all`/`find`/`create` upsert, `update` upserts the applied
+  server row, `destroy` deletes). Write-through stays inert until
+  `Funicular::DB.boot` installs the replica handle, so REST keeps
+  working standalone.
 - The replica-table plumbing (`mrblib/db.rb`): CREATE TABLE derived from
   the server schema (id type follows the server -- INTEGER or TEXT; a
   schema without id raises pointing at `storage :ephemeral`; binary

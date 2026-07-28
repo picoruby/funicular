@@ -81,6 +81,8 @@ module Funicular
     def self.build_replica_tables: (untyped db, Array[untyped] models) -> bool
     def self.stale_replica_tables: (String? stored) -> Array[String]
     def self.replica_upsert: (untyped db, untyped model, Hash[untyped, untyped] attrs) -> bool
+    def self.replica_upsert_all: (untyped db, untyped model, Array[untyped] rows) -> bool
+    private def self.replica_upsert_row: (untyped db, untyped model, Hash[untyped, untyped] attrs) -> void
     def self.replica_delete: (untyped db, untyped model, untyped id) -> bool
     def self.collect_builders: (untyped model) -> Array[TableBuilder]
     def self.fold_ops: (Hash[String, Symbol] columns, Array[untyped] ops, untyped model) -> void

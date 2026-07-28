@@ -288,6 +288,14 @@ module Funicular
         "#{to_s}: the local database is not booted"
     end
 
+    # The handle REST write-through applies replica rows to. DB.boot (a
+    # later change) overrides this with the guarded replica handle --
+    # raw connections are never exposed globally. While it returns nil,
+    # write-through stays inert and REST works standalone.
+    def self.replica_db
+      nil
+    end
+
     def self.build_from_local(attrs)
       record = new({})
       record.__hydrate_local(attrs)
@@ -299,6 +307,32 @@ module Funicular
     # delegates to the change-event bus and snapshot scheduling; until
     # then there is nobody to notify.
     def self.local_table_changed
+    end
+
+    # ---- write-through (docs decision 5) --------------------------------
+    # Successful REST responses mirror rows into the replica through the
+    # single apply entry point, BEFORE user callbacks run. Inert on
+    # non-replica models and until DB.boot installs the replica handle.
+
+    def self.__write_through_upsert(attrs)
+      return unless replica?
+      db = replica_db
+      return unless db
+      Funicular::DB.replica_upsert(db, self, attrs)
+    end
+
+    def self.__write_through_upsert_all(rows)
+      return unless replica?
+      db = replica_db
+      return unless db
+      Funicular::DB.replica_upsert_all(db, self, rows)
+    end
+
+    def self.__write_through_delete(id)
+      return unless replica?
+      db = replica_db
+      return unless db
+      Funicular::DB.replica_delete(db, self, id)
     end
 
     # Generate attribute readers/writers from the migrate fold, mirroring
@@ -466,11 +500,28 @@ module Funicular
           # already normalized.
           send("#{name}=", value)
         else
+          unless is_local || value.nil?
+            # REST values pass through the shared codec, so JSON strings
+            # and 1/0 become the same Ruby types local queries return
+            # (docs decision 8: Post.all and Post.local.find agree).
+            value = Funicular::DB::Codec.decode(
+              klass.rest_attribute_type(name), value)
+          end
           instance_variable_set("@#{name}", value)
         end
         i += 1
       end
       @provided_attributes = provided
+    end
+
+    # The schema-declared type of a REST attribute (nil when unknown);
+    # feeds the shared codec on the REST side.
+    def self.rest_attribute_type(name)
+      sch = @schema
+      return nil unless sch
+      config = sch[name]
+      return nil unless config
+      (config["type"] || "string").to_sym
     end
 
     # A record not yet in the local table (docs: "a new record is one
@@ -521,7 +572,19 @@ module Funicular
         if response.error?
           block.call(nil, response.error_message) if block
         else
-          instances = response.data.map { |attrs| new(attrs) }
+          rows = response.data
+          rows_size = rows.size
+          # Fetch-through (docs decision 5): the whole collection lands
+          # in the replica -- one transaction, one change event -- before
+          # anything else sees it.
+          __write_through_upsert_all(rows)
+          # @type var instances: Array[Model]
+          instances = []
+          i = 0
+          while i < rows_size
+            instances << new(rows[i])
+            i += 1
+          end
           block.call(instances, nil) if block
         end
       end
@@ -546,6 +609,7 @@ module Funicular
           block.call(nil, response.error_message) if block
         else
           klass = model_class || self
+          klass.__write_through_upsert(response.data)
           instance = klass.new(response.data)
           block.call(instance, nil) if block
         end
@@ -582,6 +646,7 @@ module Funicular
           block.call(nil, response.error_message) if block
         else
           klass = model_class || self
+          klass.__write_through_upsert(response.data)
           instance = klass.new(response.data)
           block.call(instance, nil) if block
         end
@@ -605,6 +670,7 @@ module Funicular
         if response.error?
           block.call(nil, response.error_message) if block
         else
+          __write_through_delete(id) unless id.nil?
           block.call(true, nil) if block
         end
       end
@@ -647,10 +713,25 @@ module Funicular
         if response.error?
           block.call(nil, response.error_message) if block
         else
+          data = response.data
+          # The replica holds the server's row before the callback runs
+          # (docs decision 4).
+          self.class.__write_through_upsert(data)
           # Apply the server's authoritative row (defaults, callbacks and
-          # normalizations included) before reporting success.
-          response.data.each do |key, value|
+          # normalizations included) through the codec before reporting
+          # success.
+          keys = data.keys
+          keys_size = keys.size
+          i = 0
+          while i < keys_size
+            key = keys[i]
+            value = data[key]
+            unless value.nil?
+              value = Funicular::DB::Codec.decode(
+                self.class.rest_attribute_type(key.to_s), value)
+            end
             instance_variable_set("@#{key}", value)
+            i += 1
           end
           @changed_attributes = {}
           block.call(self, nil) if block
