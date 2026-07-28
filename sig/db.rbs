@@ -63,6 +63,7 @@ module Funicular
     META_TABLE: String
 
     def self.validate_identifier: (untyped name) -> String
+    def self.baseline_index: (untyped migrations) -> Integer
     def self.fold_local_columns: (untyped model) -> Hash[String, Symbol]
     def self.apply_local_migrations: (untyped db, untyped model) -> Integer
     def self.rebuild_local_table: (untyped db, untyped model) -> Integer

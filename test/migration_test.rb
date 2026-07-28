@@ -247,6 +247,83 @@ class MigrationTest < Picotest::Test
     assert_equal(["index_mig_gadgets_on_name"], index_names("mig_gadgets"))
   end
 
+  # ---- reset: true kept mid-history ----
+  # The docs only say pre-reset blocks MAY be deleted: a reset block must
+  # act as the baseline even when the superseded history stays in code.
+
+  def reset_history_model(extra_version = nil)
+    klass = Class.new(Funicular::Model)
+    klass.class_eval do
+      table_name "mig_resets"
+      storage :local do
+        migrate 1 do |t|
+          t.string :old_name
+          t.string :title
+        end
+        migrate 2, reset: true do |t|
+          t.string :title
+          t.string :new_name
+        end
+        migrate 3 do |t|
+          t.integer :rank
+        end
+        if extra_version
+          migrate 4 do |t|
+            t.float :score
+          end
+        end
+      end
+    end
+    klass
+  end
+
+  def test_mid_history_reset_is_the_fold_baseline
+    expected = {
+      "id" => :integer,
+      "title" => :string,
+      "new_name" => :string,
+      "rank" => :integer,
+    }
+    # No duplicate-column error although the reset block redefines title.
+    assert_equal(expected, Funicular::DB.fold_local_columns(reset_history_model))
+  end
+
+  def test_fresh_apply_skips_pre_reset_history
+    model = reset_history_model
+    assert_equal(3, Funicular::DB.apply_local_migrations(@db, model))
+    assert_equal(["id", "title", "new_name", "rank"],
+                 table_columns("mig_resets"))
+    assert_equal(3, Funicular::DB.stored_table_version(@db, "mig_resets"))
+  end
+
+  def test_below_mid_history_reset_rebuilds
+    v1 = Class.new(Funicular::Model)
+    v1.class_eval do
+      table_name "mig_resets"
+      storage :local do
+        migrate 1 do |t|
+          t.string :old_name
+          t.string :title
+        end
+      end
+    end
+    Funicular::DB.apply_local_migrations(@db, v1)
+    @db.execute("INSERT INTO mig_resets (old_name) VALUES ('stale')")
+    assert_equal(3, Funicular::DB.apply_local_migrations(@db, reset_history_model))
+    assert_equal(["id", "title", "new_name", "rank"],
+                 table_columns("mig_resets"))
+    assert_equal(0, @db.execute("SELECT COUNT(*) FROM mig_resets")[0][0])
+  end
+
+  def test_incremental_upgrade_above_mid_history_reset_keeps_data
+    Funicular::DB.apply_local_migrations(@db, reset_history_model)
+    @db.execute("INSERT INTO mig_resets (title) VALUES ('kept')")
+    assert_equal(4, Funicular::DB.apply_local_migrations(@db, reset_history_model(4)))
+    assert_equal(["id", "title", "new_name", "rank", "score"],
+                 table_columns("mig_resets"))
+    assert_equal("kept", @db.execute("SELECT title FROM mig_resets")[0][0])
+  end
+
   # ---- failure handling ----
 
   def test_failed_upgrade_rolls_back_in_production

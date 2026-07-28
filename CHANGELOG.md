@@ -39,7 +39,9 @@ of truth. Entries below accumulate as the feature lands.
   columns with `default:`/`null:`, `timestamps`, `index`/`remove_index`,
   `rename`, `remove`, raw `execute`) and the per-table runner
   (`Funicular::DB.apply_local_migrations`): fresh and below-baseline
-  tables rebuild from the first retained block, upgrades apply exactly
+  tables rebuild from the baseline -- the newest `reset: true` block, or
+  the first block; superseded pre-reset history may stay in the code and
+  is never folded or applied -- upgrades apply exactly
   the missing blocks in one transaction (rolled back on failure; in
   development a failed upgrade auto-resets the table instead), applied
   versions live in the `funicular_meta` table, and a table newer than

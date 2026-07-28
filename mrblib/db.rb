@@ -371,14 +371,30 @@ module Funicular
       s
     end
 
+    # The index of the block the table is (re)built from: the NEWEST
+    # `reset: true` block, or the first block when none is marked. Blocks
+    # before it are superseded history -- they may stay in the code (the
+    # docs only say they MAY be deleted) but are never folded or applied.
+    def self.baseline_index(migrations)
+      base = 0
+      i = 0
+      while i < migrations.size
+        base = i if migrations[i][:reset]
+        i += 1
+      end
+      base
+    end
+
     # Fold a model's migrate blocks into column metadata (column name ->
     # declared type), the implicit id included. Pure: no database touched,
-    # usable before boot.
+    # usable before boot. Folding starts at the baseline, so a reset block
+    # may redefine columns that also appear in the superseded history.
     def self.fold_local_columns(model)
       # @type var columns: Hash[String, Symbol]
       columns = { "id" => :integer }
       builders = collect_builders(model)
-      i = 0
+      migrations = model.local_migrations
+      i = migrations ? baseline_index(migrations) : 0
       while i < builders.size
         fold_ops(columns, builders[i].ops, model)
         i += 1
@@ -387,8 +403,9 @@ module Funicular
     end
 
     # Bring one model's local table to its declared schema. Fresh and
-    # below-baseline tables are rebuilt from the first retained block;
-    # tables between baseline and max get exactly the missing blocks; a
+    # below-baseline tables are rebuilt from the baseline (see
+    # baseline_index); tables between baseline and max get exactly the
+    # missing blocks; a
     # table NEWER than the declarations raises SchemaTooNewError (deploy
     # rollback; the whole-DB lockdown is wired at boot). All applied work
     # runs in one transaction. When an incremental upgrade fails in
@@ -401,7 +418,7 @@ module Funicular
           "#{model} has no migrate blocks (is it storage :local?)"
       end
       table = validate_identifier(model.table_name)
-      baseline = migrations[0][:version]
+      baseline = migrations[baseline_index(migrations)][:version]
       max = migrations[migrations.size - 1][:version]
       stored = stored_table_version(db, table)
       if max < stored
@@ -541,15 +558,16 @@ module Funicular
       end
     end
 
-    # Apply every block with version > from_version. The first block
-    # applied onto a dropped/absent table runs in create mode (its column
-    # ops become the CREATE TABLE); everything later alters.
+    # Apply every block at or after the baseline with version >
+    # from_version (pre-baseline history is never applied). The first
+    # block applied onto a dropped/absent table runs in create mode (its
+    # column ops become the CREATE TABLE); everything later alters.
     def self.apply_blocks(db, model, from_version)
       migrations = model.local_migrations
       builders = collect_builders(model)
       table = validate_identifier(model.table_name)
-      creating = from_version < migrations[0][:version]
-      i = 0
+      i = baseline_index(migrations)
+      creating = from_version < migrations[i][:version]
       while i < migrations.size
         if from_version < migrations[i][:version]
           run_block(db, table, builders[i], creating)
