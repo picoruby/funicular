@@ -931,6 +931,14 @@ module Funicular
       nil
     end
 
+    # Bumped by clear_tick_events: deliveries carrying an older
+    # generation are stale and stop, even MID-DRAIN -- a wipe called
+    # from inside a subscriber must silence the rest of the drain,
+    # which holds its events in a local the buffer clear cannot reach.
+    def self.tick_generation
+      @tick_generation || 0
+    end
+
     def self.__drain_events
       # Un-schedule FIRST: events raised by the subscribers below belong
       # to the next tick and must get a drain of their own.
@@ -939,17 +947,19 @@ module Funicular
       @tick_order = []
       @tick_events = {}
       return nil unless order
+      generation = tick_generation
       order_size = order.size
       i = 0
       while i < order_size
+        break unless tick_generation == generation
         event = order[i]
-        deliver_event(event[0], event[1])
+        deliver_event(event[0], event[1], generation)
         i += 1
       end
       nil
     end
 
-    def self.deliver_event(role, table)
+    def self.deliver_event(role, table, generation = nil)
       subs = @subscriptions
       return unless subs
       # Snapshot the ids: a handler may (un)subscribe during delivery.
@@ -957,6 +967,10 @@ module Funicular
       ids_size = ids.size
       i = 0
       while i < ids_size
+        # An earlier subscriber of this very event may have staled the
+        # delivery (wipe): the remaining subscribers hear only from the
+        # wipe's own notification.
+        break if generation && !(tick_generation == generation)
         entry = subs[ids[i]]
         if entry && entry[0] == role && entry[1] == table
           begin
@@ -1958,6 +1972,174 @@ module Funicular
       else
         :unsupported
       end
+    end
+
+    # ---- wipe (docs decision 17) ----------------------------------------
+    #
+    # The everything-nuke for logout and for discarding a corrupt local
+    # snapshot: both databases of the CURRENT namespace dropped and
+    # rebuilt empty, both snapshot keys deleted. Namespacing already
+    # isolates users by construction, so this is a cleanup tool, not a
+    # security requirement -- but it must be safe to call mid-flight.
+
+    # In-flight work issued before a wipe must be discarded, never
+    # applied: REST verbs capture the generation at issue time and
+    # check it at response time, and persist_snapshot re-checks it
+    # before the store put.
+    def self.stale_generation?(token)
+      !(token == mutation_generation)
+    end
+
+    def self.stale_response_error
+      Error.new(
+        "the local data was wiped while this request was in flight; " \
+        "the response was discarded")
+    end
+
+    # Writer-only like every destructive operation (ReadOnlyTabError on
+    # a persistent_reader); volatile is fine too -- the only tab, all
+    # memory, no snapshots to delete.
+    def self.wipe
+      state = durability
+      if state == :persistent_reader
+        raise ReadOnlyTabError,
+          "wipe requires the writer tab " \
+          "(this tab is a persistent_reader)"
+      end
+      unless state == :persistent_writer || state == :volatile
+        raise Error, "wipe requires a booted page (this tab is #{state})"
+      end
+      # A wipe is all-or-nothing. With a transaction open on either
+      # database the rebuild below would nest its transactions -- or be
+      # swallowed into the caller's and resurrected by its ROLLBACK --
+      # so refuse BEFORE any side effect: generation, snapshots, and
+      # tables stay untouched.
+      #
+      # ORDERING INVARIANT: from this check to the end of the rebuild,
+      # this Task never suspends -- everything in between is
+      # synchronous SQLite/C (timer and drain REGISTRATION included),
+      # so no other Task can slip a new transaction in behind the
+      # check. The snapshot deletes, the only awaiting operations,
+      # follow the rebuild, and the notifications come after THOSE.
+      ensure_not_in_transaction(:local)
+      ensure_not_in_transaction(:replica)
+      # 1. Advance the generation FIRST: from here on, in-flight REST
+      #    responses and already-captured snapshot images are stale.
+      @mutation_generation = mutation_generation + 1
+      # 2. No armed or parked persist survives (queued timer callbacks
+      #    go stale with their tokens), and change events queued BEFORE
+      #    the wipe are discarded: an already-scheduled drain would
+      #    deliver them during the snapshot deletes below, letting a
+      #    watcher observe the wiped tables before -- or without -- the
+      #    deletes succeeding. The wipe's own notifications (step 5)
+      #    are the only events that may tell of it.
+      cancel_persist_timers
+      clear_tick_events
+      # 3. Drop + rebuild both databases.
+      wipe_role(:local)
+      wipe_role(:replica)
+      # 4. Delete the snapshots. Running after the rebuild is safe: the
+      #    generation bump already made every pre-wipe image stale, and
+      #    a put issued before the wipe is overwritten by these deletes
+      #    (IndexedDB runs same-store readwrite transactions in issue
+      #    order). Nothing races them from our side either -- no
+      #    post-wipe persist is armed until the notifications below.
+      store = @snapshot_store
+      identity = @snapshot_identity
+      if store && identity
+        store.delete(snapshot_key(identity, :local))
+        store.delete(snapshot_key(identity, :replica))
+      end
+      # 5. Notify LAST -- the databases are queryable and the old
+      #    snapshots are really gone. A failing delete raises out of
+      #    wipe with no watcher told and no fresh persist armed:
+      #    components must never render a "wiped" state whose old
+      #    snapshot could still resurrect on reload.
+      notify_wiped(:local)
+      notify_wiped(:replica)
+      true
+    end
+
+    # Empty the next-tick delivery buffer AND stale a drain that is
+    # already running (it holds its events in a local; the generation
+    # bump is what reaches it). A drain merely scheduled stays
+    # scheduled and no-ops; the next enqueue schedules a fresh one.
+    def self.clear_tick_events
+      @tick_generation = tick_generation + 1
+      @tick_order = []
+      @tick_events = {}
+      nil
+    end
+
+    def self.ensure_not_in_transaction(role)
+      db = __registered_database(role)
+      return nil unless db
+      if db.transaction_active?
+        raise Error,
+          "cannot wipe: the #{role} database has an open transaction; " \
+          "settle it (commit or rollback) first"
+      end
+      nil
+    end
+
+    def self.wipe_role(role)
+      registry = @databases
+      entry = registry ? registry[role] : nil
+      return nil unless entry
+      db = entry[0]
+      return nil unless db
+      models = entry[1]
+      drop_all_tables(db)
+      models_size = models.size
+      if role == :local
+        i = 0
+        while i < models_size
+          # The meta table is gone, so every table reads as version 0
+          # and rebuilds from its baseline.
+          apply_local_migrations(db, models[i])
+          i += 1
+        end
+      else
+        # The stored fingerprint is gone too: the fresh-boot path
+        # recreates the declared tables and stores it again.
+        build_replica_tables(db, models)
+      end
+      nil
+    end
+
+    # One change event per wiped table, sent only from wipe's step 5 --
+    # strictly after the rebuild AND the snapshot deletes.
+    def self.notify_wiped(role)
+      registry = @databases
+      entry = registry ? registry[role] : nil
+      return nil unless entry
+      return nil unless entry[0]
+      models = entry[1]
+      models_size = models.size
+      i = 0
+      while i < models_size
+        notify_changed(role, models[i].table_name)
+        i += 1
+      end
+      nil
+    end
+
+    def self.drop_all_tables(db)
+      rows = db.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' " \
+        "AND name NOT LIKE 'sqlite_%'")
+      rows_size = rows.size
+      i = 0
+      while i < rows_size
+        row = rows[i]
+        name = row.is_a?(Hash) ? row.values[0] : row[0]
+        # Unlike model-declared names, this comes from sqlite_master and
+        # may be any legal SQLite identifier. Double embedded quotes.
+        quoted_name = name.to_s.gsub('"', '""')
+        db.execute("DROP TABLE IF EXISTS \"#{quoted_name}\"")
+        i += 1
+      end
+      nil
     end
 
     # ---- replica tables: schema-derived DDL + fingerprint ---------------

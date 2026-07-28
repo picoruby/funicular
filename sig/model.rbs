@@ -60,14 +60,14 @@ module Funicular
     # nil; on failure `result` is nil. destroy's success payload is `true`.
     # On storage :local models these methods are synchronous instead
     # (bare-class alias): no blocks, direct return values.
-    def self.all: (?Hash[untyped, untyped] params) ?{ (Array[Model]? instances, String? error) -> void } -> untyped
-    def self.find: (?untyped id, ?endpoint_name: String, ?model_class: singleton(Model)) ?{ (Model? instance, String? error) -> void } -> untyped
+    def self.all: (?Hash[untyped, untyped] params) ?{ (Array[Model]? instances, untyped error) -> void } -> untyped
+    def self.find: (?untyped id, ?endpoint_name: String, ?model_class: singleton(Model)) ?{ (Model? instance, untyped error) -> void } -> untyped
     def self.create: (?Hash[untyped, untyped] attrs, **untyped kw) ?{ (Model? instance, untyped error) -> void } -> untyped
     def self.destroy: (?untyped id) ?{ (bool? success, untyped error) -> void } -> untyped
 
     def update: (?Hash[untyped, untyped]? attrs) ?{ (Model? instance, untyped error) -> void } -> untyped
     def destroy: () ?{ (bool? success, untyped error) -> void } -> untyped
-    def reload: () ?{ (Model? instance, String? error) -> void } -> untyped
+    def reload: () ?{ (Model? instance, untyped error) -> void } -> untyped
 
     # storage :local CRUD and the bare-class alias
     def self.define_local_accessors: (Hash[String, Symbol] columns) -> void

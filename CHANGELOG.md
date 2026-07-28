@@ -95,6 +95,26 @@ of truth. Entries below accumulate as the feature lands.
   `request_persistent_storage` -- `navigator.storage.persist()` is
   asked only when local data exists -- and the
   `on_persist_error`/`on_boot_error`/`on_session_change` hooks).
+- `Funicular::DB.wipe` and the mutation generation (docs decision 17):
+  one call drops every table in both databases of the current
+  namespace, deletes its two snapshot keys, rebuilds the replica DDL +
+  fingerprint and the local migration state from scratch, and notifies
+  watchers only once the tables are queryable again AND the stale
+  snapshots are really gone (components re-render onto empty tables,
+  never onto missing ones; a failing snapshot delete raises out of
+  wipe before any watcher is told). Writer-only
+  (`ReadOnlyTabError` on a reader; fine on volatile, where there are
+  no snapshots to delete). The wipe is safe mid-flight: it advances
+  the mutation generation FIRST, so REST responses issued before it
+  are discarded -- the callback gets `(nil, Funicular::DB::Error)`
+  instead of resurrecting the previous session's rows -- pending
+  persistence timers are cancelled, and an in-progress snapshot
+  cannot overwrite the cleared state. While either database has an
+  open transaction, wipe refuses loudly BEFORE any side effect: the
+  rebuild would otherwise nest into (or be rolled back with) that
+  transaction. The check cannot be raced, either: wipe never suspends
+  its Task between the check and the end of the rebuild -- the
+  snapshot deletes, the only awaiting operations, come last.
 - The reactivity layer on top of the bus: `Component#watch(:key)` binds
   a state key to a `storage :local`/`.local` Relation -- the block runs
   once, materializes into `state[:key]`, and re-runs (re-subscribing,

@@ -31,6 +31,7 @@ module Funicular
     self.@pending_orders: Hash[Symbol, Array[[Symbol, String]]]?
     self.@tick_events: Hash[String, bool]?
     self.@tick_order: Array[[Symbol, String]]?
+    self.@tick_generation: Integer?
     self.@drain_scheduled: bool?
     self.@tick_scheduler: Proc?
 
@@ -49,7 +50,7 @@ module Funicular
     def self.__set_tick_scheduler: (Proc? scheduler) -> Proc?
     def self.schedule_drain: () -> nil
     def self.__drain_events: () -> nil
-    def self.deliver_event: (Symbol role, String table) -> void
+    def self.deliver_event: (Symbol role, String table, ?Integer? generation) -> void
 
     class GuardedStatement
       @stmt: untyped
@@ -180,6 +181,15 @@ module Funicular
     def self.__install_visibility_hook: () -> bool
     def self.__visibility_flush: () -> nil
     def self.request_persistent_storage: () -> Symbol
+    def self.stale_generation?: (Integer token) -> bool
+    def self.stale_response_error: () -> Error
+    def self.wipe: () -> bool
+    def self.tick_generation: () -> Integer
+    def self.clear_tick_events: () -> nil
+    def self.ensure_not_in_transaction: (Symbol role) -> nil
+    def self.wipe_role: (Symbol role) -> nil
+    def self.notify_wiped: (Symbol role) -> nil
+    def self.drop_all_tables: (untyped db) -> nil
 
     def self.namespace_identity: (untyped application_id, untyped user_key, bool anonymous) -> String
     def self.resolve_namespace: (application_id: untyped, user_key: untyped, user_key_configured: bool, anonymous_only: bool, local_models: bool) -> String

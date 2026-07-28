@@ -589,8 +589,14 @@ module Funicular
         path = "#{path}?#{URI.encode_www_form(params)}"
       end
 
+      # A wipe between issue and response makes the response stale: it
+      # is discarded, never applied -- a logout can never resurrect the
+      # previous session's rows (docs decision 17).
+      generation = Funicular::DB.mutation_generation
       HTTP.get(path) do |response|
-        if response.error?
+        if Funicular::DB.stale_generation?(generation)
+          block.call(nil, Funicular::DB.stale_response_error) if block
+        elsif response.error?
           block.call(nil, response.error_message) if block
         else
           rows = response.data
@@ -625,8 +631,11 @@ module Funicular
       path = endpoint["path"]
       path = path.gsub(":id", id.to_s) if id
 
+      generation = Funicular::DB.mutation_generation
       HTTP.get(path) do |response|
-        if response.error?
+        if Funicular::DB.stale_generation?(generation)
+          block.call(nil, Funicular::DB.stale_response_error) if block
+        elsif response.error?
           block.call(nil, response.error_message) if block
         else
           klass = model_class || self
@@ -662,8 +671,11 @@ module Funicular
         return
       end
 
+      generation = Funicular::DB.mutation_generation
       HTTP.post(endpoint["path"], attrs) do |response|
-        if response.error?
+        if Funicular::DB.stale_generation?(generation)
+          block.call(nil, Funicular::DB.stale_response_error) if block
+        elsif response.error?
           block.call(nil, response.error_message) if block
         else
           klass = model_class || self
@@ -687,8 +699,11 @@ module Funicular
 
       path = id ? endpoint["path"].gsub(":id", id.to_s) : endpoint["path"]
 
+      generation = Funicular::DB.mutation_generation
       HTTP.delete(path) do |response|
-        if response.error?
+        if Funicular::DB.stale_generation?(generation)
+          block.call(nil, Funicular::DB.stale_response_error) if block
+        elsif response.error?
           block.call(nil, response.error_message) if block
         else
           __write_through_delete(id) unless id.nil?
@@ -730,8 +745,11 @@ module Funicular
       endpoint = self.class.endpoints["update"]
       path = endpoint["path"].gsub(":id", @id.to_s)
 
+      generation = Funicular::DB.mutation_generation
       HTTP.patch(path, json_attrs) do |response|
-        if response.error?
+        if Funicular::DB.stale_generation?(generation)
+          block.call(nil, Funicular::DB.stale_response_error) if block
+        elsif response.error?
           block.call(nil, response.error_message) if block
         else
           data = response.data
