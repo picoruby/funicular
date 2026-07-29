@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Local Notes - Funicular</title>
+</head>
+<body>
+  <div><a href="../index.html">Back</a></div>
+  <h1>Local Notes (Funicular local database)</h1>
+  <div id="app"></div>
+
+  <div class="explain">
+    <p>A server-less demo of the local database layer:
+      <code>storage :local</code>, <code>.local</code> queries,
+      <code>watch</code>, snapshot persistence, the single-writer
+      election, and <code>Funicular::DB.wipe</code>.</p>
+    <ul>
+      <li><b>Add some notes, then reload the page.</b> The writer tab
+        snapshots the database into IndexedDB about half a second
+        after the last write, and the next visit restores it.</li>
+      <li><b>Open this page in a second tab.</b> Only one tab per
+        browser profile wins the writer election; the other becomes a
+        persistent reader whose writes raise. Close the writer tab
+        and reload the reader to take over.</li>
+      <li><b>Press "Wipe everything".</b> Both databases of this
+        namespace are dropped and rebuilt empty, the stored snapshots
+        are deleted, and the watcher re-renders onto empty tables.</li>
+      <li>The list re-renders through
+        <code>watch(:notes) { Note.local.order(created_at: :desc) }</code>
+        after every change event; no manual state bookkeeping.</li>
+    </ul>
+  </div>
+
+  <script type="text/ruby">
+    class Note < Funicular::Model
+      table_name "local_notes"
+      storage :local do
+        migrate 1 do |t|
+          t.string :title
+          t.timestamps
+        end
+      end
+    end
+
+    class NotesApp < Funicular::Component
+      READER_MESSAGE =
+        "This tab is a persistent reader: another tab holds the " \
+        "writer lock. Close the writer tab and reload to write here."
+
+      def initialize_state
+        # start boots the database before anything mounts, so the
+        # durability verdict is already final here.
+        {
+          notes: [],
+          message: "",
+          durability: Funicular::DB.durability,
+        }
+      end
+
+      def component_did_mount
+        watch(:notes) { Note.local.order(created_at: :desc) }
+      end
+
+      def handle_add(event)
+        event.preventDefault
+        field = JS.document.getElementById("note-title")
+        title = field[:value].to_s
+        return if title.empty?
+        begin
+          Note.create(title: title)
+          field[:value] = ""
+          patch(message: "")
+        rescue Funicular::DB::ReadOnlyTabError
+          patch(message: READER_MESSAGE)
+        end
+      end
+
+      def handle_delete(note)
+        -> {
+          begin
+            note.destroy
+            patch(message: "")
+          rescue Funicular::DB::ReadOnlyTabError
+            patch(message: READER_MESSAGE)
+          end
+        }
+      end
+
+      def handle_wipe(event)
+        event.preventDefault
+        begin
+          Funicular::DB.wipe
+          patch(message: "Wiped: tables rebuilt empty, snapshots deleted.")
+        rescue Funicular::DB::ReadOnlyTabError
+          patch(message: READER_MESSAGE)
+        end
+      end
+
+      def render
+        notes = state[:notes]
+        div(class: "notes-app") do
+          p(class: "status") do
+            "durability: #{state[:durability]} | notes: #{notes.size}"
+          end
+          div(class: "composer") do
+            input(type: "text", id: "note-title",
+                  placeholder: "What to remember?")
+            button(onclick: :handle_add) { "Add" }
+            button(onclick: :handle_wipe, class: "danger") do
+              "Wipe everything"
+            end
+          end
+          p(class: "message") { state[:message] }
+          ul(class: "notes") do
+            notes.each do |note|
+              li(key: note.id) do
+                span(class: "title") { note.title }
+                span(class: "stamp") { note.created_at.to_s }
+                button(onclick: handle_delete(note), class: "delete") do
+                  "delete"
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+
+    # No load_schemas round: a local-only app boots right inside
+    # start's gate, on the anonymous "funicular" namespace (this page
+    # carries no include-tag metadata).
+    Funicular.start(NotesApp, container: 'app')
+  </script>
+  <script src="../init.iife.js"></script>
+</body>
+<style>
+.notes-app {
+  max-width: 560px;
+}
+
+.status {
+  color: #555;
+  font-family: monospace;
+}
+
+.composer input {
+  margin-right: 6px;
+  padding: 4px 6px;
+  width: 260px;
+}
+
+.composer button {
+  margin-right: 6px;
+}
+
+.composer .danger {
+  color: #a00;
+}
+
+.message {
+  color: #a00;
+  min-height: 1.2em;
+}
+
+ul.notes {
+  list-style: none;
+  padding: 0;
+}
+
+ul.notes li {
+  border-bottom: 1px solid #ddd;
+  display: flex;
+  gap: 10px;
+  padding: 6px 2px;
+}
+
+ul.notes .title {
+  flex: 1;
+}
+
+ul.notes .stamp {
+  color: #888;
+  font-size: 0.85em;
+}
+
+.explain {
+  border-top: 1px solid #ccc;
+  color: #333;
+  margin-top: 24px;
+  max-width: 640px;
+  padding-top: 12px;
+}
+</style>
+</html>
