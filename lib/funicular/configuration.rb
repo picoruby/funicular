@@ -26,7 +26,7 @@ module Funicular
     SOURCES = %i[local_debug local_dist cdn].freeze
 
     attr_reader :development_source, :test_source, :production_source
-    attr_reader :application_id, :user_key, :anonymous_only
+    attr_reader :application_id, :user_key, :anonymous_only, :local_database
     attr_writer :cdn_version
 
     def initialize
@@ -37,6 +37,27 @@ module Funicular
       @application_id     = "funicular"
       @user_key           = nil
       @anonymous_only     = false
+      @local_database     = false
+    end
+
+    # The SQLite/IndexedDB subsystem is deliberately opt-in. A plain
+    # Funicular application remains REST-only and pays none of its boot,
+    # storage, locking, or session-epoch costs.
+    def local_database=(value)
+      @local_database = value ? true : false
+    end
+
+    # Called after Rails initializers and again when the include tag is
+    # rendered. The client boot separately validates the emitted contract.
+    # Validation cannot run from local_database= because initializer
+    # assignment order is free.
+    def validate_local_database!
+      return true unless @local_database
+      return true if @user_key || @anonymous_only
+
+      raise ArgumentError,
+            "Funicular local_database requires config.user_key or " \
+            "config.anonymous_only = true"
     end
 
     # The application's namespace id (docs: local_database.md, data
@@ -53,8 +74,8 @@ module Funicular
 
     # A callable receiving the controller and returning a stable,
     # non-reusable identifier for the signed-in user (nil when signed
-    # out). Mandatory for apps that declare local-database models,
-    # unless anonymous_only says the app genuinely has no users.
+    # out). Mandatory whenever the local database is enabled, unless
+    # anonymous_only says the app genuinely has no users.
     def user_key=(value)
       unless value.respond_to?(:call)
         raise ArgumentError,

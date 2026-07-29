@@ -3,10 +3,10 @@
 require_relative "session_epoch"
 
 module Funicular
-  # Controller mixin installed by the Railtie: rotates the session
-  # epoch where the user_key lambda has its controller, and leaves the
-  # value in the request env for the EpochHeader middleware to write
-  # out (docs decision 13).
+  # Controller mixin installed by the Railtie: when the local database is
+  # enabled, it rotates the session epoch where the user_key lambda has its
+  # controller, and leaves the value in the request env for the EpochHeader
+  # middleware to write out (docs decision 13).
   #
   # The header itself is deliberately NOT set here: a controller-set
   # header dies with the controller's response when the action raises,
@@ -36,6 +36,8 @@ module Funicular
     private
 
     def stamp_funicular_epoch
+      local_database = Funicular.configuration.local_database
+      return yield unless local_database
       unless Funicular::SessionEpoch.session_available?(session)
         # No session middleware (API-only Rails): there is no cookie
         # identity for the epoch to protect, so the feature stays off
@@ -46,7 +48,7 @@ module Funicular
       request.env[ENV_KEY] = Funicular::SessionEpoch.stamp!(session, self)
       yield
     ensure
-      if Funicular::SessionEpoch.session_available?(session)
+      if local_database && Funicular::SessionEpoch.session_available?(session)
         request.env[ENV_KEY] = Funicular::SessionEpoch.stamp!(session, self)
       end
     end

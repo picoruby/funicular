@@ -66,7 +66,11 @@ class BootTest < Picotest::Test
     "endpoints" => {},
   }
 
-  META = { application_id: "boot_app", anonymous_only: true }
+  META = {
+    local_database: true,
+    application_id: "boot_app",
+    anonymous_only: true,
+  }
 
   def setup
     JS.global.eval(FAKE_JS)
@@ -125,7 +129,8 @@ class BootTest < Picotest::Test
 
   def test_boot_wires_a_writer_tab
     result = boot([BootDraft, BootNote],
-                  { application_id: "boot_app", anonymous_only: true,
+                  { local_database: true, application_id: "boot_app",
+                    anonymous_only: true,
                     epoch: "e1" })
     assert_equal(true, result)
     assert_equal(:ready, Funicular::DB.boot_state)
@@ -179,6 +184,46 @@ class BootTest < Picotest::Test
       Funicular.server = false
     end
     assert_equal(:unbooted, Funicular::DB.boot_state)
+  end
+
+  def test_direct_boot_requires_the_opt_in_flag
+    assert_raise(Funicular::DB::ConfigError) do
+      Funicular::DB.boot(models: [BootDraft],
+                         metadata: { application_id: "boot_app",
+                                     anonymous_only: true })
+    end
+    assert_equal(:unbooted, Funicular::DB.boot_state)
+    assert_equal(:unbooted, Funicular::DB.durability)
+  end
+
+  def test_enabled_boot_requires_application_identity_metadata
+    $boot_errors = nil
+    Funicular::DB.configure do
+      config.on_boot_error = ->(errors) { $boot_errors = errors }
+    end
+    result = boot([BootDraft],
+                  { local_database: true, anonymous_only: true })
+    assert_equal(false, result)
+    assert_equal(:failed, Funicular::DB.boot_state)
+    assert_equal(Funicular::DB::ConfigError, $boot_errors[0].class)
+  end
+
+  def test_ssr_runtime_guards_do_not_read_browser_metadata
+    JS.global.eval(
+      "Object.defineProperty(globalThis, 'document', { configurable: true, " \
+      "get: () => { throw new Error('document was read') } })")
+    Funicular.server = true
+    begin
+      assert_raise(Funicular::DB::UnavailableError) do
+        Funicular::DB.local
+      end
+      assert_raise(Funicular::DB::UnavailableError) do
+        BootDraft.count
+      end
+    ensure
+      Funicular.server = false
+      JS.global.eval("delete globalThis.document")
+    end
   end
 
   def test_reader_boot_locks_local_writes_only
@@ -273,9 +318,10 @@ class BootTest < Picotest::Test
     Funicular::DB.configure do
       config.on_boot_error = ->(errors) { $boot_errors = errors }
     end
-    # A local model is declared but neither user_key nor
-    # anonymous_only is configured (docs decision 12).
-    result = boot([BootDraft, BootNote], { application_id: "boot_app" })
+    # Durable storage is enabled but neither user_key nor anonymous_only
+    # is configured.
+    result = boot([BootDraft, BootNote],
+                  { local_database: true, application_id: "boot_app" })
     assert_equal(false, result)
     assert_equal(:failed, Funicular::DB.boot_state)
     assert_equal(1, $boot_errors.size)
@@ -474,19 +520,4 @@ class BootTest < Picotest::Test
     assert_equal(true, write_refused)
   end
 
-  def test_metadata_defaults_to_the_anonymous_funicular_namespace
-    assert_equal(true, boot([BootNote], {}))
-    assert_equal(nil, Funicular::DB.session_epoch)
-    Funicular::DB.replica.execute(
-      "INSERT INTO boot_notes (id, body) VALUES (1, 'x')")
-    assert_equal(true, Funicular::DB.flush)
-    keys = $boot_store.data.keys
-    found = false
-    i = 0
-    while i < keys.size
-      found = true if keys[i].include?("\"funicular\",\"anonymous\"")
-      i += 1
-    end
-    assert_equal(true, found)
-  end
 end

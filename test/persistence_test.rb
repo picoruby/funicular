@@ -44,6 +44,7 @@ class PersistenceTest < Picotest::Test
   end
 
   def setup
+    Funicular::DB.__set_local_database_enabled(true)
     $per_db = SQLite3::Database.new(":memory:")
     $per_db.execute(
       "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)")
@@ -64,6 +65,7 @@ class PersistenceTest < Picotest::Test
     Funicular::DB.__register_database(:local, nil, [])
     Funicular::DB.__register_database(:replica, nil, [])
     Funicular::DB.__reset_config
+    Funicular::DB.__set_local_database_enabled(false)
     JS.global.eval(
       "delete globalThis.__funicularStorageApi; " \
       "delete globalThis.document")

@@ -1540,27 +1540,23 @@ module Funicular
       JSON.generate(["v1", app, "user", key])
     end
 
-    # The declaration rules, checked authoritatively on the CLIENT (docs
-    # decision 12: only the client knows whether storage :local models
-    # are declared). user_key_configured says whether a user_key SOURCE
-    # is declared at all; user_key is the value it resolved to for THIS
-    # page load -- nil while signed out. Configuration errors key off
-    # the flag, the anonymous/user choice keys off the value: a
-    # signed-out visit to an app with local models boots into the
-    # anonymous namespace instead of failing.
+    # The declaration rules, checked authoritatively on the client.
+    # Enabling durable browser storage always requires an explicit identity
+    # contract, including replica-only applications. user_key_configured says
+    # whether a user_key SOURCE is declared at all; user_key is the value it
+    # resolved to for THIS page load -- nil while signed out.
     def self.resolve_namespace(application_id:, user_key:,
-                               user_key_configured:, anonymous_only:,
-                               local_models:)
+                               user_key_configured:, anonymous_only:)
       if user_key_configured && anonymous_only
         raise ConfigError,
           "user_key and anonymous_only are mutually exclusive; " \
           "configure exactly one"
       end
-      if !user_key_configured && !anonymous_only && local_models
+      if !user_key_configured && !anonymous_only
         raise ConfigError,
-          "storage :local models are declared but no user_key is " \
-          "configured; set config.user_key, or anonymous_only = true " \
-          "to accept one shared anonymous namespace"
+          "local database is enabled but no user_key is configured; " \
+          "set config.user_key, or anonymous_only = true to accept " \
+          "one shared anonymous namespace"
       end
       # nil is the legitimate signed-out state. An EMPTY string is a
       # broken user_key source: it falls through to namespace_identity's
@@ -1948,6 +1944,7 @@ module Funicular
     # cannot be serialized (see persist_snapshot); its snapshot defers
     # to the commit/rollback settle and flush reports false.
     def self.flush
+      __ensure_local_database_enabled(:flush)
       state = durability
       if state == :persistent_reader
         raise ReadOnlyTabError,
@@ -2066,6 +2063,7 @@ module Funicular
     # a persistent_reader); volatile is fine too -- the only tab, all
     # memory, no snapshots to delete.
     def self.wipe
+      __ensure_local_database_enabled(:wipe)
       # The terminal latch first: on a terminated volatile page the
       # durability checks below would still let this raw path through.
       ensure_session_not_terminated(:wipe)
@@ -2258,24 +2256,30 @@ module Funicular
       @session_epoch
     end
 
-    # metadata comes from the page (the picoruby_include_tag data
-    # attributes); tests and embedders may pass both arguments
-    # directly. Absent metadata falls back to a replica-only anonymous
-    # default; absent models fall back to every declared Model
-    # subclass.
+    # Metadata comes from the page (the picoruby_include_tag data
+    # attributes); tests and embedders may pass it directly. Missing opt-in
+    # or identity metadata is a configuration error. Absent models fall back
+    # to every declared Model subclass.
     def self.boot(models: nil, metadata: nil)
       if Funicular.server?
         raise UnavailableError,
           "Funicular::DB.boot does not run on the server (SSR renders " \
           "from state, not from a local database)"
       end
+      page_metadata = metadata || __page_metadata
+      unless metadata_value(page_metadata, :local_database, false)
+        raise ConfigError,
+          "local database is disabled; set config.local_database = true"
+      end
+      @local_database_latched = true
+      @local_database_enabled = true
       unless boot_state == :unbooted
         raise Error, "DB.boot already ran (state: #{boot_state})"
       end
       @boot_state = :booting
       begin
         __boot_steps(models || Funicular::Model.__registered_models,
-                     metadata || read_page_metadata)
+                     page_metadata)
         @boot_state = :ready
         true
       rescue => e
@@ -2298,18 +2302,27 @@ module Funicular
       false
     end
 
+    # Schema loading still runs for REST-only applications. Its failures use
+    # the same console/hook reporting without pretending that a disabled DB
+    # entered (and failed) its lifecycle.
+    def self.__report_boot_errors(errors)
+      report_boot_error(errors)
+      false
+    end
+
     # The picoruby_include_tag embeds the namespace identity and the
     # session epoch as HTML-escaped data attributes (docs decision 12);
-    # the Rails side emits them in a later change, and this is the
-    # client half of that contract. No tag (or no document -- tests,
-    # exotic embedders) means the replica-only anonymous default.
+    # this is the client half of that contract. No opt-in tag (or no document
+    # in tests and exotic embedders) means that the subsystem is disabled.
     PAGE_METADATA_JS = <<~'FUNICULAR_META_JS'
       (() => {
         if (typeof document === "undefined") return "null";
-        const el = document.querySelector("[data-funicular-application-id]");
+        const el = document.querySelector(
+          '[data-funicular-local-database="true"]');
         if (!el) return "null";
         const d = el.dataset;
         return JSON.stringify({
+          local_database: true,
           application_id: d.funicularApplicationId,
           user_key:
             (d.funicularUserKey === undefined) ? null : d.funicularUserKey,
@@ -2328,12 +2341,54 @@ module Funicular
       return {} if raw == "null" || raw.empty?
       data = JSON.parse(raw)
       {
+        local_database: !!data["local_database"],
         application_id: data["application_id"],
         user_key: data["user_key"],
         user_key_configured: !!data["user_key_configured"],
         anonymous_only: !!data["anonymous_only"],
         epoch: data["epoch"],
       }
+    end
+
+    # Page metadata is immutable for the life of an application boot. Lazy
+    # latching lets model class bodies load without a DOM and keeps an early
+    # top-level local API call consistent with the later start/boot decision.
+    def self.__page_metadata
+      metadata = @page_metadata
+      return metadata if @page_metadata_latched && metadata
+      @page_metadata_latched = true
+      @page_metadata = read_page_metadata
+    end
+
+    def self.local_database_enabled?
+      return false if Funicular.server?
+      return !!@local_database_enabled if @local_database_latched
+      @local_database_latched = true
+      metadata = __page_metadata
+      @local_database_enabled =
+        !!metadata_value(metadata, :local_database, false)
+    end
+
+    # Test/embedder seam for code that installs DB state directly instead of
+    # entering through page metadata and DB.boot.
+    def self.__set_local_database_enabled(value)
+      @local_database_latched = true
+      @local_database_enabled = value ? true : false
+    end
+
+    # Runtime local APIs use UnavailableError. Configuration entry points
+    # (DB.boot/Funicular.start) use ConfigError instead.
+    def self.__ensure_local_database_enabled(operation)
+      if Funicular.server?
+        raise UnavailableError,
+          "#{operation}: the local database is unavailable on the server"
+      end
+      unless local_database_enabled?
+        raise UnavailableError,
+          "#{operation}: local database is disabled; " \
+          "set config.local_database = true"
+      end
+      true
     end
 
     # ---- session epoch: the terminal latch (docs decision 13) -----------
@@ -2357,11 +2412,12 @@ module Funicular
     # HTTP.get at app init) is epoch-checked too, not only traffic
     # after DB.boot -- the boot alone would latch too late.
     def self.__latch_page_epoch
+      return nil unless local_database_enabled?
       epoch = @session_epoch
       return epoch if epoch
       return nil if @page_epoch_latched
       @page_epoch_latched = true
-      @session_epoch = metadata_value(read_page_metadata, :epoch, nil)
+      @session_epoch = metadata_value(__page_metadata, :epoch, nil)
     end
 
     def self.session_terminated?
@@ -2375,6 +2431,7 @@ module Funicular
     # expected value latches lazily right here, so the very first
     # response a page ever receives is already checked.
     def self.__session_epoch_ok?(header)
+      return true unless local_database_enabled?
       expected = __latch_page_epoch
       return true unless expected
       return false if session_terminated?
@@ -2444,12 +2501,11 @@ module Funicular
         end
         identity = resolve_namespace(
           application_id: metadata_value(metadata, :application_id,
-                                         "funicular"),
+                                         nil),
           user_key: metadata_value(metadata, :user_key, nil),
           user_key_configured: !!metadata_value(metadata,
                                                 :user_key_configured, false),
-          anonymous_only: !!metadata_value(metadata, :anonymous_only, false),
-          local_models: !local_models.empty?)
+          anonymous_only: !!metadata_value(metadata, :anonymous_only, false))
         __set_snapshot_identity(identity)
         @session_epoch = metadata_value(metadata, :epoch, nil)
         # A mismatch detected before the boot even started (the schema
@@ -2570,6 +2626,7 @@ module Funicular
     # __boot_steps lets other Tasks run) and after a failed boot the
     # handles must be equally out of reach.
     def self.local
+      __ensure_local_database_enabled(:local)
       handle = boot_state == :ready ? @local_handle : nil
       unless handle
         raise UnavailableError, "the local database is not booted"
@@ -2578,6 +2635,7 @@ module Funicular
     end
 
     def self.replica
+      __ensure_local_database_enabled(:replica)
       handle = boot_state == :ready ? @replica_handle : nil
       unless handle
         raise UnavailableError, "the replica database is not booted"
@@ -2588,6 +2646,7 @@ module Funicular
     # The funnel every Model-level local operation goes through
     # (Model.local_db): ready check, then the SchemaTooNew latch.
     def self.__model_local_db(model)
+      __ensure_local_database_enabled(model.to_s)
       handle = boot_state == :ready ? @local_handle : nil
       unless handle
         raise UnavailableError,
@@ -2638,6 +2697,7 @@ module Funicular
     # per-table nuance, so the lockdown lifts only when every table
     # passes again.
     def self.reset_local_table(model)
+      __ensure_local_database_enabled(:reset_local)
       # The terminal latch first: on a terminated volatile page the
       # durability check below would still let this raw path through.
       ensure_session_not_terminated(:reset_local)
@@ -2714,6 +2774,10 @@ module Funicular
       @replica_handle = nil
       @schema_lockdown = nil
       @session_epoch = nil
+      @page_metadata = nil
+      @page_metadata_latched = false
+      @local_database_enabled = false
+      @local_database_latched = false
       @page_epoch_latched = false
       @session_terminated = false
       @databases = nil

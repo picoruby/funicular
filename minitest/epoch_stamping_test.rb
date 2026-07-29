@@ -69,6 +69,7 @@ class EpochStampingTest < Minitest::Test
 
   def setup
     @config = Funicular::Configuration.new
+    @config.local_database = true
     @config.user_key = ->(controller) { controller.current_user_key }
     Funicular.instance_variable_set(:@configuration, @config)
     @session = {}
@@ -95,6 +96,19 @@ class EpochStampingTest < Minitest::Test
 
   def test_including_registers_the_around_action
     assert_includes StampedController.around_actions, :stamp_funicular_epoch
+  end
+
+  def test_disabled_local_database_does_not_touch_the_session_or_resolver
+    @config.local_database = false
+    @config.user_key = ->(_controller) { flunk "resolver was called" }
+    ran = false
+    session = {}
+    controller = StampedController.new(session)
+    controller.current_user_key = "u1"
+    controller.process { ran = true }
+    assert ran
+    assert_empty session
+    assert_nil controller.request.env["funicular.epoch"]
   end
 
   def test_the_epoch_lands_in_the_request_env

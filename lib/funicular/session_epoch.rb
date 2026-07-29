@@ -5,9 +5,10 @@ require "securerandom"
 
 module Funicular
   # The server half of the session epoch (docs: local_database.md, "The
-  # session epoch"). The epoch is an opaque value that changes on every
-  # authentication transition; every response carries it in the
-  # X-Funicular-Epoch header, and the client goes terminal on a mismatch
+  # session epoch"). When the local database is enabled, the epoch is an
+  # opaque value that changes on every authentication transition; every
+  # response carries it in the X-Funicular-Epoch header, and the client goes
+  # terminal on a mismatch
   # so a tab can never keep applying data that now belongs to somebody
   # else's cookie session.
   #

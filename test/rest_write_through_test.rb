@@ -207,7 +207,8 @@ class RestWriteThroughTest < Picotest::Test
     assert_equal(0, $wt_db.execute("SELECT COUNT(*) FROM wt_posts")[0][0])
   end
 
-  def test_without_a_replica_db_rest_still_works
+  def test_disabled_local_database_keeps_rest_working_without_write_through
+    assert_equal(false, Funicular::DB.local_database_enabled?)
     $wt_response = ok({ "id" => 1, "title" => "a" })
     got = nil
     WtBare.find(1) { |post, e| got = post }

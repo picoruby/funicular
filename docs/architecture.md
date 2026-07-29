@@ -94,6 +94,13 @@ persistence). The user-facing contract is documented in
 [local_database.md](local_database.md); the contributor-relevant invariants
 are:
 
+- The entire subsystem is optional and defaults off. Rails emits an explicit
+  page opt-in only for `config.local_database = true`; without it schema and
+  REST traffic continue normally, while DB boot, SQLite, IndexedDB, Web Locks,
+  replica write-through, and session-epoch handling do not run. Disabled
+  `storage :local` declarations fail at the pre-DOM start gate, and runtime
+  local APIs raise `UnavailableError`. Disabling does not delete snapshots.
+
 - Two databases split by durability class: `funicular_replica`
   (server-recoverable, dropped and rebuilt on schema mismatch) and
   `funicular_local` (client-only data, evolved via numbered `migrate` blocks
@@ -130,8 +137,8 @@ are:
   encoded identity is used for snapshot keys, the Web Lock name, the
   previous-identity value in the Rails session, and epoch rotation.
   (Configuration contract for user_key/anonymous_only: see the dedicated
-  bullet below.) A separate SESSION EPOCH is managed by the Railtie
-  with no app code: kept in the Rails session, rotated (SecureRandom)
+  bullet below.) When the subsystem is enabled, a separate SESSION EPOCH is
+  managed by the Railtie with no app code: kept in the Rails session, rotated (SecureRandom)
   whenever the computed user_key changes, stamped on all REST/schema
   responses (X-Funicular-Epoch). A mismatching OR MISSING epoch on an
   apply-path response moves the page to a TERMINAL invalid-session state:
@@ -176,7 +183,7 @@ are:
   reset_local (which internally lifts query_only for the rebuild; still
   ReadOnlyTabError on non-writer tabs) are the only doors. No per-table
   nuance in v1.
-- Boot is one state machine (`Funicular::DB.boot`, driven by
+- When opted in, boot is one state machine (`Funicular::DB.boot`, driven by
   Funicular.start, independent of load_schemas usage): declarations ->
   namespace+epoch -> writer election -> local restore+migrations -> replica
   restore+fingerprint (after ALL schemas collected) -> components mount.
@@ -224,13 +231,14 @@ are:
   re-subscribing each evaluation. Hashes/scalars/raw SQL: use Model.on_change
   + patch. (The dependency collector, tables: option, and refresh :auto's
   barrier-time all-endpoint validation are deferred with :auto itself.)
-- user_key is mandatory when local-database models are declared
-  (`anonymous_only = true` is the explicit opt-out for auth-less apps;
-  both set = config error); the AUTHORITATIVE unconfigured check is
-  client-side in DB.boot after all declarations are recorded -- the Rails
-  side raises only when it can reliably detect the misconfiguration.
-  Namespace + epoch metadata are emitted by `picoruby_include_tag` as
-  HTML-escaped data attributes (no new helper; CSR-only apps covered).
+- Every opted-in application requires `user_key`, or `anonymous_only = true`
+  as the explicit choice for an auth-less app (both set = config error), even
+  when it has only replica models. Rails validates after initialization and
+  before helper output; DB.boot validates the emitted contract defensively.
+  The opt-in flag plus namespace and epoch metadata are emitted by
+  `picoruby_include_tag` as HTML-escaped data attributes (no new helper;
+  CSR-only apps covered). No metadata means disabled, never an implicit
+  anonymous `"funicular"` namespace.
   Session epoch state is stored PER application_id
   (session[:funicular_epochs][app_id] = { identity:, epoch: }) so multiple
   Funicular apps sharing one Rails session cannot rotate each other's

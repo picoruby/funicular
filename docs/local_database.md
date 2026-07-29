@@ -1,7 +1,9 @@
 # Local Database
 
-Funicular apps get a real relational database inside the browser: SQLite,
+Funicular can provide a real relational database inside the browser: SQLite,
 compiled to WebAssembly, queried from Ruby with an ActiveRecord-flavored API.
+The subsystem is disabled by default; an application that does not opt in
+remains REST-only and does not open SQLite, IndexedDB, or Web Locks.
 
 ```ruby
 Post.local.where(published: true).order(created_at: :desc).limit(10).each do |post|
@@ -73,6 +75,33 @@ the bare class and `.local` are interchangeable: `Draft.where(...)` is
 
 ## Quick start
 
+First, enable the subsystem and declare how browser storage is isolated:
+
+```ruby
+# config/initializers/funicular.rb (Rails)
+Funicular.configure do |config|
+  config.local_database = true
+  config.user_key = ->(controller) {
+    controller.current_user&.storage_key
+  }
+end
+```
+
+An application with no user accounts can deliberately share one anonymous
+namespace instead:
+
+```ruby
+Funicular.configure do |config|
+  config.local_database = true
+  config.anonymous_only = true
+end
+```
+
+Enabling the feature without exactly one of these identity declarations fails
+during Rails startup. Conversely, adding `.local` calls while leaving the
+feature disabled raises a clear runtime error, and declaring `storage :local`
+while disabled prevents `Funicular.start` from mounting the application.
+
 ```ruby
 # app/funicular/models/post.rb
 class Post < Funicular::Model
@@ -113,8 +142,9 @@ end
 
 What happens here:
 
-1. `Post` is an ordinary schema-loaded model. By default it gets a replica
-   table, auto-created from the schema your Rails server already delivers.
+1. `Post` is an ordinary schema-loaded model. When the local database is
+   enabled, the default `storage :replica` gives it a table auto-created from
+   the schema your Rails server already delivers.
 2. `Post.all { ... }` fetches from the REST endpoint as it always has; the
    framework additionally upserts every fetched row into the replica table
    (fetch-through).
@@ -125,9 +155,9 @@ What happens here:
 
 ## Declaring models
 
-Two orthogonal declarations control a model's relationship with the local
-database. Both have defaults chosen so that the common case needs no
-declaration at all.
+Two orthogonal declarations control a model's relationship with an enabled
+local database. Both have defaults chosen so that the common opted-in case
+needs no declaration at all.
 
 ### `storage` -- where the model's data lives
 
@@ -156,10 +186,10 @@ storage :local
 
 #### How the databases boot
 
-Database startup is one state machine (`Funicular::DB.boot`), driven by
-`Funicular.start`, and it runs whether or not the app uses server schemas
-at all -- an app with only `storage :local` models and no
-`Funicular.load_schemas` call still gets namespace resolution, writer
+When `config.local_database = true`, database startup is one state machine
+(`Funicular::DB.boot`), driven by `Funicular.start`, and it runs whether or not
+the app uses server schemas at all -- an app with only `storage :local` models
+and no `Funicular.load_schemas` call still gets namespace resolution, writer
 election, snapshot restore, and local migrations. The order is fixed:
 
 1. Model class bodies only record declarations; nothing touches SQLite.
@@ -173,7 +203,10 @@ election, snapshot restore, and local migrations. The order is fixed:
 6. Components mount/hydrate only after the databases they can reach are
    queryable; a `watch` can never observe a half-booted database.
 
-If any schema request fails, startup fails loudly and precisely: the
+With the local database disabled, schema requests and REST CRUD still run,
+but successful schema loading proceeds directly to component startup without
+waiting for a database. If any schema request fails, startup fails loudly and
+precisely in either mode: the
 `load_schemas` completion block is NOT invoked (so the app's
 `Funicular.start` call inside it never runs), the replica database is not
 initialized (a partial replica would be worse than none), and the failure
@@ -185,10 +218,10 @@ unset never means silence.
 -- success, HTTP error status, parse error, and fetch Promise rejection
 (network down, CORS, aborted) -- into exactly one callback invocation per
 request, so the barrier always settles; it cannot hang waiting for a
-request whose Promise rejected. And an EMPTY schema set is only a valid
-boot when no replica models are declared -- replica models with zero loaded
-schemas would mean mounting components over nonexistent tables, so that is
-a boot failure too.
+request whose Promise rejected. When the database is enabled, an EMPTY schema
+set is only a valid boot when no replica models are declared -- replica models
+with zero loaded schemas would mean mounting components over nonexistent
+tables, so that is a boot failure too.
 
 The schema fingerprint covers only what affects SQLite DDL -- table names,
 column names and types, and the id type. Endpoint or validation changes on
@@ -692,6 +725,7 @@ configuration API):
 ```ruby
 # config/initializers/funicular.rb (Rails)
 Funicular.configure do |config|
+  config.local_database = true
   config.application_id = "my_app"          # default: "funicular"
   config.user_key = ->(controller) {
     controller.current_user&.storage_key    # see below
@@ -715,8 +749,9 @@ canonical JSON, and that ONE encoded identity is used everywhere it
 matters: snapshot keys, the Web Lock name, the previous-identity value in
 the Rails session, and the epoch-rotation comparison.
 
-**Configuring `user_key` is mandatory for apps that use the local
-database.** The gem cannot detect whether your app has authentication, and
+**Opting in and configuring an identity are both mandatory.** Set
+`config.local_database = true`, then configure `user_key` or explicitly choose
+`anonymous_only`. The gem cannot detect whether your app has authentication, and
 a forgotten `user_key` would silently put every logged-in user into the
 shared `anonymous` namespace AND stop the session epoch from rotating --
 both isolation mechanisms broken at once. So the contract is explicit:
@@ -724,25 +759,28 @@ declare one or the other,
 
 ```ruby
 Funicular.configure do |config|
+  config.local_database = true
   config.user_key = ->(controller) { ... }   # apps with authentication
   # or, for apps that genuinely have no users:
   config.anonymous_only = true
 end
 ```
 
-and an app that declares local-database models without doing either fails
-loudly. The authoritative check runs client-side, in the database boot,
-after every model declaration has been recorded -- the server cannot always
-know at render time whether client-side local-DB models exist, so the
-helper embeds "unconfigured" metadata as-is and the server raises only in
-the cases it can detect reliably. Setting BOTH `user_key` and
-`anonymous_only` is also a configuration error -- the framework never picks
-one silently.
+and an opted-in app without either declaration fails during Rails startup.
+The include helper validates again before emitting metadata, and the client
+boot defensively refuses missing identity metadata. Setting BOTH `user_key`
+and `anonymous_only` is also a configuration error -- the framework never
+picks one silently.
 
-The namespace and epoch metadata reach the page through
+The opt-in flag, namespace, and epoch metadata reach the page through
 `picoruby_include_tag` -- the helper every Funicular layout already has --
 as HTML-escaped data attributes, so CSR-only and local-only apps need no
-new helper and no template change.
+new helper and no template change. Without the opt-in attribute, the client
+does not infer an anonymous `"funicular"` namespace.
+
+Turning the feature off does not delete existing IndexedDB snapshots. If the
+application later enables it with the same identity, those snapshots can be
+restored normally.
 
 At boot the client opens only the current namespace's databases. Table
 names, SQL, and your model code are untouched by any of this -- isolation
@@ -939,7 +977,8 @@ client-rendered routes (or behind `Funicular.server?` guards in
 
 ## Configuration
 
-Optional, in `app/funicular/initializer.rb`:
+After the Rails-side opt-in shown in Quick start, runtime DB hooks and tuning
+are optional in `app/funicular/initializer.rb`:
 
 ```ruby
 Funicular::DB.configure do
@@ -951,6 +990,10 @@ Funicular::DB.configure do
   config.on_session_change           = nil    # default behavior: reload page
 end
 ```
+
+`Funicular::DB.configure` itself remains valid while the subsystem is
+disabled, so an `on_boot_error` hook can still receive schema-barrier errors;
+the persistence settings are simply inert until the feature is enabled.
 
 The user/application namespace and session epoch are configured on the
 Rails side (`Funicular.configure` -- see Data isolation), not here. Future

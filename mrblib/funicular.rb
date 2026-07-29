@@ -104,10 +104,10 @@ module Funicular
   #   end
   # EVERY request settles its slot exactly once -- success, HTTP
   # error, or a schema that fails to apply -- so the barrier always
-  # completes. All green: the local database boots, and only then the
-  # completion block runs. Any failure: the block is NEVER invoked,
-  # the errors reach the console and config.on_boot_error, and the
-  # boot is marked failed so nothing can mount later.
+  # completes. All green: an opted-in local database boots before the
+  # completion block; a REST-only app runs the block directly. Any failure:
+  # the block is NEVER invoked and the errors reach the console and
+  # config.on_boot_error. Only an active DB lifecycle is marked failed.
   def self.load_schemas(models, &block)
     # On the server there is no fetch and no need for client-side schemas:
     # SSR injects plain data into component state directly. Just run the
@@ -121,7 +121,8 @@ module Funicular
     # responses are epoch-checked too (docs decision 13). The response
     # gate latches lazily on its own; the explicit call keeps the
     # whole barrier deterministically armed at issue time.
-    Funicular::DB.__latch_page_epoch
+    local_database = Funicular::DB.local_database_enabled?
+    Funicular::DB.__latch_page_epoch if local_database
 
     total = models.size
     settled = 0
@@ -189,18 +190,39 @@ module Funicular
   # only when the boot itself succeeded too), fail loud otherwise.
   def self.__settle_boot_barrier(errors, &block)
     if errors.empty?
-      block.call if Funicular::DB.boot && block
+      if Funicular::DB.local_database_enabled?
+        block.call if Funicular::DB.boot && block
+      else
+        block.call if block
+      end
     else
-      Funicular::DB.__fail_boot(errors)
+      if Funicular::DB.local_database_enabled?
+        Funicular::DB.__fail_boot(errors)
+      else
+        Funicular::DB.__report_boot_errors(errors)
+      end
     end
     nil
   end
 
   # Funicular.start's client-side gate (docs decision 19): apps with
-  # replica models boot inside the schema barrier above; local-only
-  # apps (no load_schemas call) boot right here. Either way nothing
-  # mounts unless the database came up.
+  # opted-in replica models boot inside the schema barrier above; opted-in
+  # local-only apps (no load_schemas call) boot right here. REST-only apps
+  # bypass DB boot, except that an explicit storage :local declaration fails.
   def self.__boot_for_start
+    unless Funicular::DB.local_database_enabled?
+      models = Funicular::Model.__registered_models
+      i = 0
+      models_size = models.size
+      while i < models_size
+        if models[i].local?
+          raise Funicular::DB::ConfigError,
+            "storage :local requires config.local_database = true"
+        end
+        i += 1
+      end
+      return true
+    end
     state = Funicular::DB.boot_state
     return true if state == :ready
     return false unless state == :unbooted
@@ -225,9 +247,9 @@ module Funicular
       return nil
     end
 
-    # The local database comes up before anything mounts (docs
-    # decision 19); a failed boot already reported itself, so start
-    # quietly refuses to mount on top of it.
+    # An opted-in local database comes up before anything mounts. A failed
+    # boot already reported itself, so start quietly refuses to mount on it;
+    # a REST-only application passes this gate without touching the DB.
     unless __boot_for_start
       puts "[Funicular] start aborted: the local database did not boot"
       return nil

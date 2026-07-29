@@ -65,9 +65,41 @@ class ConfigurationTest < Minitest::Test
   # --- local-database namespace settings (docs decisions 12/13) ---------
 
   def test_namespace_defaults
+    assert_equal false, @config.local_database
     assert_equal "funicular", @config.application_id
     assert_nil @config.user_key
     assert_equal false, @config.anonymous_only
+  end
+
+  def test_local_database_setter_normalizes_truthiness
+    @config.local_database = Object.new
+    assert_equal true, @config.local_database
+    @config.local_database = nil
+    assert_equal false, @config.local_database
+  end
+
+  def test_disabled_local_database_needs_no_identity
+    assert_equal true, @config.validate_local_database!
+  end
+
+  def test_enabled_local_database_requires_an_identity_declaration
+    @config.local_database = true
+    error = assert_raises(ArgumentError) do
+      @config.validate_local_database!
+    end
+    assert_includes error.message, "user_key"
+    assert_includes error.message, "anonymous_only"
+  end
+
+  def test_either_identity_declaration_satisfies_local_database
+    @config.local_database = true
+    @config.anonymous_only = true
+    assert_equal true, @config.validate_local_database!
+
+    fresh = Funicular::Configuration.new
+    fresh.local_database = true
+    fresh.user_key = ->(_controller) { nil }
+    assert_equal true, fresh.validate_local_database!
   end
 
   def test_application_id_rejects_empty_values

@@ -6,6 +6,13 @@ of truth. Entries below accumulate as the feature lands.
 
 ### Added
 
+- The SQLite local-database subsystem is now globally opt-in through
+  `config.local_database = true` and defaults off. REST-only applications do
+  not start SQLite, IndexedDB, Web Locks, replica write-through, or session
+  epochs. Opted-in applications must also declare `config.user_key` or
+  `config.anonymous_only = true`; existing snapshots are retained while the
+  feature is disabled.
+
 - Design documentation for the local database layer:
   `docs/local_database.md` is the user-facing API contract (source-of-truth
   contract, `storage`/`refresh` declarations, `migrate` blocks, `.local`
@@ -264,9 +271,9 @@ of truth. Entries below accumulate as the feature lands.
   separates the fields, so a user_key of "anonymous" or one containing
   separators cannot collide. `resolve_namespace` enforces the
   declaration rules client-side (`Funicular::DB::ConfigError`):
-  user_key and anonymous_only are mutually exclusive, and
-  `storage :local` models require a user_key unless anonymous_only
-  explicitly accepts one shared anonymous namespace.
+  user_key and anonymous_only are mutually exclusive, and every opted-in
+  application requires a user_key unless anonymous_only explicitly accepts
+  one shared anonymous namespace.
 - REST is wired to the local database layer: response values decode
   through the shared codec when instances initialize and when `update`
   applies the server row (ISO 8601 strings become `Time`, 1/0 become

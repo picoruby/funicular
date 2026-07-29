@@ -65,20 +65,38 @@ class PicorubyHelperTest < Minitest::Test
 
   # --- page metadata (docs decisions 12/13) -----------------------------
 
-  # The plain Harness has no controller/session: only the always-on
-  # application id rides the tag.
-  def test_include_tag_embeds_the_default_application_id
+  def test_disabled_include_tag_omits_all_local_database_metadata
     html = @view.picoruby_include_tag(source: :local_dist, base_styles: false)
-    assert_includes html, 'data-funicular-application-id="funicular"'
+    refute_includes html, "data-funicular-local-database"
+    refute_includes html, "data-funicular-application-id"
     refute_includes html, "data-funicular-user-key"
     refute_includes html, "data-funicular-anonymous-only"
     refute_includes html, "data-funicular-epoch"
   end
 
+  def test_disabled_include_tag_does_not_call_the_identity_resolver_or_session
+    @config.user_key = ->(_controller) { flunk "resolver was called" }
+    session = DisabledSession.new
+    view = metadata_view(user_key: "u1", session: session)
+    html = view.picoruby_include_tag(source: :local_dist, base_styles: false)
+    refute_includes html, "data-funicular-local-database"
+  end
+
   def test_include_tag_embeds_anonymous_only
+    @config.local_database = true
     @config.anonymous_only = true
     html = @view.picoruby_include_tag(source: :local_dist, base_styles: false)
+    assert_includes html, 'data-funicular-local-database="true"'
+    assert_includes html, 'data-funicular-application-id="funicular"'
     assert_includes html, 'data-funicular-anonymous-only="true"'
+  end
+
+  def test_enabled_include_tag_requires_an_identity_declaration
+    @config.local_database = true
+    error = assert_raises(ArgumentError) do
+      @view.picoruby_include_tag(source: :local_dist, base_styles: false)
+    end
+    assert_includes error.message, "user_key"
   end
 
   # A harness with the controller/session surface a real view has.
@@ -96,6 +114,7 @@ class PicorubyHelperTest < Minitest::Test
   end
 
   def test_include_tag_embeds_user_key_and_epoch
+    @config.local_database = true
     @config.user_key = ->(controller) { controller.current_user_key }
     session = {}
     view = metadata_view(user_key: "u1", session: session)
@@ -124,6 +143,7 @@ class PicorubyHelperTest < Minitest::Test
   end
 
   def test_a_disabled_session_skips_the_epoch_without_breaking
+    @config.local_database = true
     @config.user_key = ->(controller) { controller.current_user_key }
     view = metadata_view(user_key: "u1", session: DisabledSession.new)
     html = view.picoruby_include_tag(source: :local_dist, base_styles: false)
@@ -135,6 +155,7 @@ class PicorubyHelperTest < Minitest::Test
     # A racy resolver (current_user changing between two calls) must
     # not embed user A's namespace while stamping user B's identity
     # into the epoch entry: the helper evaluates it exactly once.
+    @config.local_database = true
     calls = 0
     @config.user_key = lambda do |_controller|
       calls += 1
@@ -150,6 +171,7 @@ class PicorubyHelperTest < Minitest::Test
   end
 
   def test_signed_out_omits_the_user_key_attribute
+    @config.local_database = true
     @config.user_key = ->(controller) { controller.current_user_key }
     view = metadata_view(user_key: nil)
     html = view.picoruby_include_tag(source: :local_dist, base_styles: false)
@@ -158,6 +180,7 @@ class PicorubyHelperTest < Minitest::Test
   end
 
   def test_metadata_values_are_html_escaped
+    @config.local_database = true
     @config.application_id = %q{"><script>alert(1)</script>}
     @config.user_key = ->(controller) { controller.current_user_key }
     view = metadata_view(user_key: %q{"><img src=x>})
@@ -168,6 +191,8 @@ class PicorubyHelperTest < Minitest::Test
   end
 
   def test_caller_data_attributes_survive_alongside_the_metadata
+    @config.local_database = true
+    @config.anonymous_only = true
     html = @view.picoruby_include_tag(source: :local_dist, base_styles: false,
                                       data: { turbo_track: "reload" })
     assert_includes html, 'data-turbo-track="reload"'
@@ -179,6 +204,7 @@ class PicorubyHelperTest < Minitest::Test
     # page disagree with its own responses (instant terminal) or boot
     # the wrong namespace: the framework's values win, in every key
     # spelling that would render as the same HTML attribute.
+    @config.local_database = true
     @config.user_key = ->(controller) { controller.current_user_key }
     session = {}
     view = metadata_view(user_key: "u1", session: session)
@@ -201,6 +227,17 @@ class PicorubyHelperTest < Minitest::Test
     assert_equal 1, html.scan("data-funicular-epoch=").size
     assert_equal 1, html.scan("data-funicular-user-key=").size
     assert_equal 1, html.scan("data-funicular-application-id=").size
+  end
+
+  def test_caller_data_cannot_enable_the_disabled_local_database
+    html = @view.picoruby_include_tag(
+      source: :local_dist, base_styles: false,
+      data: { funicular_local_database: "true",
+              "funicular-application-id" => "injected",
+              funicular_anonymous_only: "true" })
+    refute_includes html, "data-funicular-local-database"
+    refute_includes html, "data-funicular-application-id"
+    refute_includes html, "data-funicular-anonymous-only"
   end
 
   def test_cdn_source_uses_versioned_jsdelivr_url

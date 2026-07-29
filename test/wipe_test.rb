@@ -88,6 +88,7 @@ class WipeTest < Picotest::Test
   }
 
   def setup
+    Funicular::DB.__set_local_database_enabled(true)
     $wipe_pending = []
     $wipe_local_db = SQLite3::Database.new(":memory:")
     $wipe_replica_db = SQLite3::Database.new(":memory:")
@@ -114,6 +115,7 @@ class WipeTest < Picotest::Test
     Funicular::DB.__register_database(:local, nil, [])
     Funicular::DB.__register_database(:replica, nil, [])
     Funicular::DB.__reset_config
+    Funicular::DB.__set_local_database_enabled(false)
     $wipe_local_db.close
     $wipe_replica_db.close
   end

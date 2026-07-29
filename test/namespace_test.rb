@@ -57,21 +57,21 @@ class NamespaceTest < Picotest::Test
     assert_raise(Funicular::DB::ConfigError) do
       db.resolve_namespace(application_id: "a", user_key: "u",
                            user_key_configured: true,
-                           anonymous_only: true, local_models: false)
+                           anonymous_only: true)
     end
     # Detected even while the configured lambda currently resolves nil.
     assert_raise(Funicular::DB::ConfigError) do
       db.resolve_namespace(application_id: "a", user_key: nil,
                            user_key_configured: true,
-                           anonymous_only: true, local_models: false)
+                           anonymous_only: true)
     end
   end
 
-  def test_local_models_require_a_configured_user_key
+  def test_every_enabled_database_requires_an_identity_declaration
     assert_raise(Funicular::DB::ConfigError) do
       db.resolve_namespace(application_id: "a", user_key: nil,
                            user_key_configured: false,
-                           anonymous_only: false, local_models: true)
+                           anonymous_only: false)
     end
   end
 
@@ -80,7 +80,7 @@ class NamespaceTest < Picotest::Test
     assert_equal("[\"v1\",\"a\",\"anonymous\"]",
       db.resolve_namespace(application_id: "a", user_key: nil,
                            user_key_configured: true,
-                           anonymous_only: false, local_models: true))
+                           anonymous_only: false))
   end
 
   def test_empty_resolved_user_key_is_a_config_error
@@ -89,7 +89,7 @@ class NamespaceTest < Picotest::Test
     assert_raise(Funicular::DB::ConfigError) do
       db.resolve_namespace(application_id: "a", user_key: "",
                            user_key_configured: true,
-                           anonymous_only: false, local_models: true)
+                           anonymous_only: false)
     end
   end
 
@@ -97,21 +97,22 @@ class NamespaceTest < Picotest::Test
     assert_equal("[\"v1\",\"a\",\"anonymous\"]",
       db.resolve_namespace(application_id: "a", user_key: nil,
                            user_key_configured: false,
-                           anonymous_only: true, local_models: true))
+                           anonymous_only: true))
   end
 
-  def test_replica_only_apps_default_to_anonymous
-    assert_equal("[\"v1\",\"a\",\"anonymous\"]",
+  def test_replica_only_apps_do_not_default_to_anonymous
+    assert_raise(Funicular::DB::ConfigError) do
       db.resolve_namespace(application_id: "a", user_key: nil,
                            user_key_configured: false,
-                           anonymous_only: false, local_models: false))
+                           anonymous_only: false)
+    end
   end
 
   def test_user_key_resolves_to_the_user_identity
     assert_equal("[\"v1\",\"a\",\"user\",\"u\"]",
       db.resolve_namespace(application_id: "a", user_key: "u",
                            user_key_configured: true,
-                           anonymous_only: false, local_models: true))
+                           anonymous_only: false))
   end
 
   # ---- derived names ----

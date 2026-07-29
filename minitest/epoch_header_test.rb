@@ -15,6 +15,7 @@ class EpochHeaderTest < Minitest::Test
 
   def setup
     @config = Funicular::Configuration.new
+    @config.local_database = true
     Funicular.instance_variable_set(:@configuration, @config)
   end
 
@@ -30,6 +31,16 @@ class EpochHeaderTest < Minitest::Test
     middleware = Funicular::EpochHeader.new(app_returning(200))
     _, headers, = middleware.call({ "funicular.epoch" => "e-ctrl" })
     assert_equal "e-ctrl", headers[HEADER]
+  end
+
+  def test_disabled_local_database_leaves_the_response_untouched
+    @config.local_database = false
+    headers = { HEADER => "inner", "X-Funicular-Epoch" => "legacy" }
+    middleware = Funicular::EpochHeader.new(app_returning(200, headers))
+    _, result, = middleware.call({ "funicular.epoch" => "outer" })
+    assert_same headers, result
+    assert_equal "inner", result[HEADER]
+    assert_equal "legacy", result["X-Funicular-Epoch"]
   end
 
   def test_falls_back_to_the_stored_session_epoch

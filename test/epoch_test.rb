@@ -119,6 +119,7 @@ class EpochTest < Picotest::Test
   end
 
   def setup
+    Funicular::DB.__set_local_database_enabled(true)
     JS.global.eval(LOCKS_JS)
     # The epoch check latches lazily off the page's DOM: no leftover
     # fake document (this suite's or another's) may leak an epoch in.
@@ -361,7 +362,8 @@ class EpochTest < Picotest::Test
     assert_equal(true,
                  Funicular::DB.boot(
                    models: [EpochDraft],
-                   metadata: { application_id: "epoch_app",
+                   metadata: { local_database: true,
+                               application_id: "epoch_app",
                                anonymous_only: true, epoch: "e0" }))
     assert_equal(:persistent_writer, Funicular::DB.durability)
     EpochDraft.local_create(title: "before")
@@ -411,7 +413,8 @@ class EpochTest < Picotest::Test
     assert_equal(true,
                  Funicular::DB.boot(
                    models: [EpochDraft],
-                   metadata: { application_id: "epoch_app",
+                   metadata: { local_database: true,
+                               application_id: "epoch_app",
                                anonymous_only: true, epoch: "e0" }))
     EpochDraft.local_create(title: "inflight")
     Task.new(name: "epoch_flusher") { Funicular::DB.flush }
@@ -456,7 +459,8 @@ class EpochTest < Picotest::Test
     Task.new(name: "epoch_booter") do
       $epoch_boot_result = Funicular::DB.boot(
         models: [EpochDraft],
-        metadata: { application_id: "epoch_app",
+        metadata: { local_database: true,
+                    application_id: "epoch_app",
                     anonymous_only: true, epoch: "e0" })
     end
     pump(50)
@@ -490,7 +494,8 @@ class EpochTest < Picotest::Test
     Task.new(name: "epoch_restore_booter") do
       $epoch_boot_result = Funicular::DB.boot(
         models: [EpochDraft],
-        metadata: { application_id: "epoch_app",
+        metadata: { local_database: true,
+                    application_id: "epoch_app",
                     anonymous_only: true, epoch: "e0" })
     end
     pump(50)
@@ -519,7 +524,8 @@ class EpochTest < Picotest::Test
     assert_equal(true,
                  Funicular::DB.boot(
                    models: [EpochDraft],
-                   metadata: { application_id: "epoch_app",
+                   metadata: { local_database: true,
+                               application_id: "epoch_app",
                                anonymous_only: true, epoch: "e0" }))
     assert_equal(:volatile, Funicular::DB.durability)
     response = get_once(server_url)

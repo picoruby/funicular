@@ -20,7 +20,8 @@ module Funicular
     end
 
     initializer "funicular.epoch" do |app|
-      # Every response carries X-Funicular-Epoch (docs decision 13):
+      # When the local database is enabled, every response carries
+      # X-Funicular-Epoch (docs decision 13):
       # the controller concern rotates the epoch, the middleware writes
       # the header. The middleware sits ABOVE the exception renderer so
       # even a 500 page carries it -- a header-less error response
@@ -37,6 +38,10 @@ module Funicular
         require "funicular/epoch_stamping"
         include Funicular::EpochStamping
       end
+    end
+
+    config.after_initialize do
+      Funicular.configuration.validate_local_database!
     end
 
     rake_tasks do

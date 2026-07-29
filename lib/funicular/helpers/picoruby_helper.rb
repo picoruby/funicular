@@ -18,6 +18,15 @@ module Funicular
         local_dist:  "dist"
       }.freeze
 
+      LOCAL_DATABASE_METADATA_KEYS = %i[
+        funicular_local_database
+        funicular_application_id
+        funicular_user_key
+        funicular_user_key_configured
+        funicular_anonymous_only
+        funicular_epoch
+      ].freeze
+
       # Minimal CSS the gem ships for class names it emits itself (e.g.
       # FormBuilder error states). Read once; see assets/funicular.css.
       BASE_CSS_PATH = File.expand_path("../assets/funicular.css", __dir__)
@@ -40,11 +49,10 @@ module Funicular
       # base_styles: false to skip it. Any extra options become HTML attributes
       # on the <script> tag.
       #
-      # The tag also carries the local-database page metadata as
+      # When opted in, the tag also carries the local-database page metadata as
       # data-funicular-* attributes (docs: local_database.md, data
       # isolation): the application id, the user-key contract, and the
-      # session epoch. The client boot reads them off the page; apps
-      # without the local database just ignore them.
+      # session epoch. With the feature disabled these attributes are omitted.
       def picoruby_include_tag(source: nil, base_styles: true, **options)
         resolved_source = source ? source.to_sym : Funicular.configuration.source_for(Rails.env)
         src = picoruby_src_for(resolved_source)
@@ -55,8 +63,16 @@ module Funicular
         # a string or dashed spelling cannot smuggle in a duplicate of
         # the same HTML attribute either.
         data = {}
-        (options.delete(:data) || {}).each do |key, value|
-          data[key.to_s.tr("-", "_").to_sym] = value
+        caller_data = (options.delete(:data) || {}).to_a
+        i = 0
+        caller_data_size = caller_data.size
+        while i < caller_data_size
+          key, value = caller_data[i]
+          normalized = key.to_s.tr("-", "_").to_sym
+          unless LOCAL_DATABASE_METADATA_KEYS.include?(normalized)
+            data[normalized] = value
+          end
+          i += 1
         end
         data.merge!(funicular_page_metadata)
         script = tag.script("", src: src, data: data, **options)
@@ -125,8 +141,13 @@ module Funicular
       # can never disagree at render time.
       def funicular_page_metadata
         config = Funicular.configuration
+        return {} unless config.local_database
+        config.validate_local_database!
         ctrl = respond_to?(:controller) ? controller : nil
-        meta = { funicular_application_id: config.application_id }
+        meta = {
+          funicular_local_database: "true",
+          funicular_application_id: config.application_id,
+        }
         meta[:funicular_anonymous_only] = "true" if config.anonymous_only
         # ONE resolver evaluation feeds both the page attribute and the
         # epoch identity below: two evaluations could disagree

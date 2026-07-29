@@ -32,6 +32,7 @@ class BootBarrierTest < Picotest::Test
       querySelector(sel) {
         return {
           dataset: {
+            funicularLocalDatabase: "true",
             funicularApplicationId: "bar_app",
             funicularAnonymousOnly: "true",
             funicularEpoch: "epoch-7",
@@ -228,6 +229,101 @@ class BootBarrierTest < Picotest::Test
     assert_equal(true, Funicular.__boot_for_start)
   end
 
+  def test_disabled_start_bypasses_the_database_for_rest_only_models
+    registered = Funicular::Model.instance_variable_get(:@registered_models)
+    JS.global.eval(
+      "globalThis.__disabledLockCalls = 0; " \
+      "globalThis.__funicularLocksApi = { request: () => { " \
+      "globalThis.__disabledLockCalls += 1; throw new Error('lock used') } }; " \
+      "globalThis.document = { querySelector: (s) => null }")
+    Funicular::Model.instance_variable_set(:@registered_models,
+                                           [BarUser, BarPost])
+    begin
+      assert_equal(true, Funicular.__boot_for_start)
+      assert_equal(:unbooted, Funicular::DB.boot_state)
+      assert_equal(:unbooted, Funicular::DB.durability)
+      assert_equal(0, JS.global[:__disabledLockCalls].to_i)
+    ensure
+      Funicular::Model.instance_variable_set(:@registered_models, registered)
+    end
+  end
+
+  def test_disabled_start_rejects_an_explicit_local_model
+    JS.global.eval(
+      "globalThis.document = { querySelector: (s) => null }")
+    assert_raise(Funicular::DB::ConfigError) do
+      Funicular.start(container: "must_not_be_looked_up") { }
+    end
+    assert_equal(:unbooted, Funicular::DB.boot_state)
+  end
+
+  def test_disabled_runtime_local_apis_fail_as_unavailable
+    JS.global.eval(
+      "globalThis.document = { querySelector: (s) => null }")
+    operations = [
+      -> { BarDraft.count },
+      -> { BarDraft.on_change { } },
+      -> { BarDraft.reset_local },
+      -> { Funicular::DB.local },
+      -> { Funicular::DB.replica },
+      -> { Funicular::DB.flush },
+      -> { Funicular::DB.wipe },
+    ]
+    i = 0
+    operations_size = operations.size
+    while i < operations_size
+      assert_raise(Funicular::DB::UnavailableError) do
+        operations[i].call
+      end
+      i += 1
+    end
+    error = nil
+    begin
+      Funicular::DB.local
+    rescue => e
+      error = e
+    end
+    assert_equal(true, error.message.include?("local database is disabled"))
+    assert_equal(true, error.message.include?("config.local_database = true"))
+    # Hook configuration and state inspection remain available.
+    Funicular::DB.configure do
+      config.on_boot_error = ->(_errors) { }
+    end
+    assert_equal(:unbooted, Funicular::DB.boot_state)
+    assert_equal(:unbooted, Funicular::DB.durability)
+  end
+
+  def test_disabled_schema_barrier_loads_rest_schema_without_booting
+    JS.global.eval(
+      "globalThis.document = { querySelector: (s) => null }")
+    $bar_done = 0
+    Funicular.load_schemas({ BarUser => "bar_user" }) do
+      $bar_done += 1
+    end
+    respond("/api/schema/bar_user", ok(USER_SCHEMA))
+    assert_equal(1, $bar_done)
+    assert_equal(:unbooted, Funicular::DB.boot_state)
+    assert_equal(:unbooted, Funicular::DB.durability)
+  end
+
+  def test_disabled_schema_failure_reports_without_failing_db_state
+    JS.global.eval(
+      "globalThis.document = { querySelector: (s) => null }")
+    $bar_done = 0
+    $bar_errors = nil
+    Funicular::DB.configure do
+      config.on_boot_error = ->(errors) { $bar_errors = errors }
+    end
+    Funicular.load_schemas({ BarUser => "bar_user" }) do
+      $bar_done += 1
+    end
+    respond("/api/schema/bar_user", Funicular::HTTP::Response.new(500, nil))
+    assert_equal(0, $bar_done)
+    assert_equal(1, $bar_errors.size)
+    assert_equal(:unbooted, Funicular::DB.boot_state)
+    assert_equal(:unbooted, Funicular::DB.durability)
+  end
+
   def test_page_epoch_is_latched_before_schema_requests
     # A session rotated DURING schema loading must not slip past the
     # check just because DB.boot (the usual latch point) has not run
@@ -253,15 +349,28 @@ class BootBarrierTest < Picotest::Test
       "  funicularUserKeyConfigured: 'true'," \
       "  funicularEpoch: 'e9' } }) }")
     meta = Funicular::DB.read_page_metadata
+    assert_equal(true, meta[:local_database])
     assert_equal("meta_app", meta[:application_id])
     assert_equal("k1", meta[:user_key])
     assert_equal(true, meta[:user_key_configured])
     assert_equal(false, meta[:anonymous_only])
     assert_equal("e9", meta[:epoch])
-    # No include tag on the page: the replica-only anonymous default.
+    # No opt-in tag on the page means that the subsystem is disabled.
     JS.global.eval(
       "globalThis.document = { querySelector: (s) => null }")
     assert_equal({}, Funicular::DB.read_page_metadata)
+  end
+
+  def test_opt_in_flag_is_latched_from_the_page_once
+    JS.global.eval(
+      "globalThis.__metaReads = 0; globalThis.__metaEnabled = false; " \
+      "globalThis.document = { querySelector: (s) => { " \
+      "globalThis.__metaReads += 1; return globalThis.__metaEnabled ? " \
+      "{ dataset: { funicularLocalDatabase: 'true' } } : null } }")
+    assert_equal(false, Funicular::DB.local_database_enabled?)
+    JS.global.eval("globalThis.__metaEnabled = true")
+    assert_equal(false, Funicular::DB.local_database_enabled?)
+    assert_equal(1, JS.global[:__metaReads].to_i)
   end
 
   def test_every_model_subclass_registers_itself

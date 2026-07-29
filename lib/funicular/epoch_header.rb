@@ -4,8 +4,9 @@ require_relative "session_epoch"
 require_relative "epoch_stamping"
 
 module Funicular
-  # Rack middleware writing the X-Funicular-Epoch header onto EVERY
-  # response -- the exception pages ActionDispatch renders included.
+  # With the local database enabled, this Rack middleware writes the
+  # X-Funicular-Epoch header onto EVERY response -- the exception pages
+  # ActionDispatch renders included. Disabled responses are returned untouched.
   # A controller-level after_action cannot guarantee that: it never
   # runs when the action raises, and a header-less 500 reads as an
   # epoch mismatch client-side, terminating a healthy page over a mere
@@ -27,6 +28,7 @@ module Funicular
 
     def call(env)
       status, headers, body = @app.call(env)
+      return [status, headers, body] unless Funicular.configuration.local_database
       epoch = env[EpochStamping::ENV_KEY] || stored_epoch(env)
       if epoch
         # The framework's epoch is AUTHORITATIVE and overwrites

@@ -8,6 +8,7 @@
 
 class EventBusTest < Picotest::Test
   def setup
+    Funicular::DB.__set_local_database_enabled(true)
     $bus_db = SQLite3::Database.new(":memory:")
     $bus_db.execute("CREATE TABLE ev (id INTEGER PRIMARY KEY, n TEXT)")
     @guard = Funicular::DB::GuardedDatabase.new($bus_db)
@@ -27,6 +28,7 @@ class EventBusTest < Picotest::Test
     # Flush anything left in the tick buffer, then restore the default.
     Funicular::DB.__drain_events
     Funicular::DB.__set_tick_scheduler(nil)
+    Funicular::DB.__set_local_database_enabled(false)
     $bus_db.close
   end
 

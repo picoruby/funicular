@@ -356,6 +356,7 @@ module Funicular
         raise Funicular::DB::NoTableError,
           "#{to_s} is storage :ephemeral; it has no local table to watch"
       end
+      Funicular::DB.__ensure_local_database_enabled(:on_change)
       Funicular::DB.subscribe(replica? ? :replica : :local,
                               table_name, &block)
     end

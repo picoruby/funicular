@@ -189,6 +189,10 @@ module Funicular
 
     self.@boot_state: Symbol?
     self.@session_epoch: untyped
+    self.@page_metadata: Hash[Symbol, untyped]?
+    self.@page_metadata_latched: bool?
+    self.@local_database_enabled: bool?
+    self.@local_database_latched: bool?
     self.@local_handle: GuardedDatabase?
     self.@replica_handle: GuardedDatabase?
     self.@schema_lockdown: untyped
@@ -200,7 +204,12 @@ module Funicular
 
     def self.boot: (?models: Array[untyped]?, ?metadata: Hash[Symbol, untyped]?) -> bool
     def self.__fail_boot: (Array[untyped] errors) -> bool
+    def self.__report_boot_errors: (Array[untyped] errors) -> bool
     def self.read_page_metadata: () -> Hash[Symbol, untyped]
+    def self.__page_metadata: () -> Hash[Symbol, untyped]
+    def self.local_database_enabled?: () -> bool
+    def self.__set_local_database_enabled: (untyped value) -> bool
+    def self.__ensure_local_database_enabled: (untyped operation) -> bool
 
     self.@session_terminated: bool?
     self.@page_epoch_latched: bool?
@@ -235,7 +244,7 @@ module Funicular
     private def self.drop_all_tables: (untyped db) -> nil
 
     def self.namespace_identity: (untyped application_id, untyped user_key, bool anonymous) -> String
-    def self.resolve_namespace: (application_id: untyped, user_key: untyped, user_key_configured: bool, anonymous_only: bool, local_models: bool) -> String
+    def self.resolve_namespace: (application_id: untyped, user_key: untyped, user_key_configured: bool, anonymous_only: bool) -> String
     def self.snapshot_key: (String identity, Symbol role) -> String
     def self.lock_name: (String identity) -> String
 
