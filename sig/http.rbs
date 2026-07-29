@@ -19,5 +19,7 @@ module Funicular
 
     private def self.parse_response_body: (untyped text) -> untyped
     private def self.request: (String method, String url, Hash[untyped, untyped]? body) { (Response) -> void } -> void
+    private def self.session_changed_response: () -> Response
+    private def self.response_epoch: (untyped response) -> String?
   end
 end

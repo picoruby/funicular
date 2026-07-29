@@ -1755,8 +1755,10 @@ module Funicular
       # election is already won: a snapshot now would overwrite the
       # stored data with an empty image. The boot itself never
       # persists, so :booting refuses at this FINAL entry -- flush and
-      # the debounce path funnel through here.
+      # the debounce path funnel through here. A terminated session
+      # (docs decision 13) never persists again either.
       return false if boot_state == :booting
+      return false if session_terminated?
       return false unless durability == :persistent_writer
       db = __registered_database(role)
       return false unless db
@@ -1785,7 +1787,19 @@ module Funicular
         # The store put suspends this Task; a wipe that advanced the
         # generation since this image was captured must win over it.
         return false unless mutation_generation == generation
-        store[snapshot_key(identity, role)] = encoded
+        # Counted so a terminal step-down (docs decision 13) can wait
+        # for a put that already passed the checks above: the writer
+        # lock must not free the slot while an old-session image is
+        # still landing in the store.
+        @persist_inflight = persist_inflight + 1
+        begin
+          store[snapshot_key(identity, role)] = encoded
+        ensure
+          # Clamped: __reset_boot zeroes the counter while a test's
+          # put may still be in flight, and ITS decrement must not
+          # push the fresh state negative.
+          @persist_inflight = 0 < persist_inflight ? persist_inflight - 1 : 0
+        end
         true
       rescue => e
         report_persist_error(e)
@@ -1903,6 +1917,28 @@ module Funicular
         i += 1
       end
       nil
+    end
+
+    class << self
+      private def persist_inflight
+        @persist_inflight || 0
+      end
+
+      # Decision 13's "serialize with in-flight persist": a put that
+      # already passed persist_snapshot's checks keeps running inside
+      # the store across an await, beyond any flag's reach. A terminal
+      # step-down waits here BEFORE releasing the writer lock --
+      # otherwise a fresh tab could win the election and restore while
+      # the old session's image is still landing over its store.
+      private def await_inflight_persists
+        return nil unless Object.const_defined?(:JS)
+        while 0 < persist_inflight
+          # @type var global: untyped
+          global = JS.global
+          global.eval("new Promise((r) => setTimeout(r, 10))").await
+        end
+        nil
+      end
     end
 
     # Immediate snapshot of both databases (docs decision 11). On a
@@ -2030,6 +2066,9 @@ module Funicular
     # a persistent_reader); volatile is fine too -- the only tab, all
     # memory, no snapshots to delete.
     def self.wipe
+      # The terminal latch first: on a terminated volatile page the
+      # durability checks below would still let this raw path through.
+      ensure_session_not_terminated(:wipe)
       # Like reset_local, wipe reaches the RAW databases, so a
       # mid-boot wipe must be kept out (durability is already elected
       # then). :failed stays allowed: wiping from on_boot_error IS the
@@ -2110,6 +2149,18 @@ module Funicular
         @tick_order = []
         @tick_events = {}
         nil
+      end
+
+      # Decision 13's terminal latch is independent of durability: a
+      # terminated VOLATILE page keeps :volatile (only a writer steps
+      # down to :persistent_reader), so the raw rebuild paths -- wipe
+      # and reset_local -- need their own refusal on top of the
+      # read-only proxies.
+      private def ensure_session_not_terminated(operation)
+        return nil unless session_terminated?
+        raise ReadOnlyTabError,
+          "#{operation} refused: the session changed; this page is " \
+          "terminal (reload to continue)"
       end
 
       private def ensure_not_in_transaction(role)
@@ -2285,6 +2336,95 @@ module Funicular
       }
     end
 
+    # ---- session epoch: the terminal latch (docs decision 13) -----------
+    #
+    # The Rails side stamps X-Funicular-Epoch on every REST/schema
+    # response and rotates it when the session's user changes. A
+    # mismatch means this page belongs to a session that no longer
+    # exists: NOTHING may be applied, written, or persisted again for
+    # the life of the page.
+
+    # Test/boot seam; the boot fills it from the page metadata.
+    def self.__set_session_epoch(value)
+      @session_epoch = value
+    end
+
+    # Reads the page's epoch attribute ONCE and holds the result --
+    # nil included, so an epoch-less page never re-reads the DOM per
+    # response. The schema barrier calls this BEFORE its first request
+    # leaves, and __session_epoch_ok? latches lazily for everything
+    # else: pre-boot HTTP (an ephemeral model's REST call, a direct
+    # HTTP.get at app init) is epoch-checked too, not only traffic
+    # after DB.boot -- the boot alone would latch too late.
+    def self.__latch_page_epoch
+      epoch = @session_epoch
+      return epoch if epoch
+      return nil if @page_epoch_latched
+      @page_epoch_latched = true
+      @session_epoch = metadata_value(read_page_metadata, :epoch, nil)
+    end
+
+    def self.session_terminated?
+      !!@session_terminated
+    end
+
+    # The gate every Funicular::HTTP response passes through (http.rb):
+    # true = the response may be delivered and applied. No page epoch
+    # means the feature is off (no Rails integration yet). With one
+    # expected, a MISSING header counts as a mismatch too. The
+    # expected value latches lazily right here, so the very first
+    # response a page ever receives is already checked.
+    def self.__session_epoch_ok?(header)
+      expected = __latch_page_epoch
+      return true unless expected
+      return false if session_terminated?
+      unless header == expected
+        __terminate_session(header)
+        return false
+      end
+      true
+    end
+
+    # Irreversible. A writer steps down completely: no pending or new
+    # persist survives, the lock frees the writer slot for a fresh tab,
+    # and both connections remain only as a non-persistent read view.
+    def self.__terminate_session(header)
+      return nil if @session_terminated
+      @session_terminated = true
+      puts "[Funicular] session epoch mismatch (expected " \
+           "#{@session_epoch.inspect}, got #{header.inspect}): this " \
+           "page is terminal; reload to continue"
+      cancel_persist_timers
+      # The handles close BEFORE the wait below suspends this Task:
+      # nothing may write into the read view through that window.
+      handle = @local_handle
+      handle.__become_read_only if handle
+      handle = @replica_handle
+      handle.__become_read_only if handle
+      # A put that already passed persist_snapshot's terminal check
+      # keeps running inside the store; the lock frees the writer slot
+      # only once it landed (docs decision 13: a terminal writer
+      # serializes with the in-flight persist).
+      await_inflight_persists
+      release_writer_lock
+      hook = config.on_session_change
+      if hook
+        begin
+          hook.call
+        rescue => e
+          puts "[Funicular] on_session_change hook raised: " \
+               "#{e.class}: #{e.message}"
+        end
+      elsif Object.const_defined?(:JS)
+        # Default behavior: reload into the new session.
+        # @type var global: untyped
+        global = JS.global
+        global.eval(
+          "typeof location === 'undefined' ? null : location.reload()")
+      end
+      nil
+    end
+
     class << self
       private def __boot_steps(models, metadata)
         # @type var local_models: Array[untyped]
@@ -2312,15 +2452,25 @@ module Funicular
           local_models: !local_models.empty?)
         __set_snapshot_identity(identity)
         @session_epoch = metadata_value(metadata, :epoch, nil)
+        # A mismatch detected before the boot even started (the schema
+        # barrier latches the epoch first) must not boot a stale page.
+        ensure_boot_not_terminated
         elect_writer(lock_name(identity))
+        # The election suspended this Task: a response landing in that
+        # window found no lock and no handles to tear down, so the
+        # boot itself notices and aborts -- __fail_boot releases the
+        # lock the election acquired AFTER the termination.
+        ensure_boot_not_terminated
         # Availability errors drop to volatile inside; anything else
         # re-raises and fails the boot (docs decision 16).
         open_snapshot_store
+        ensure_boot_not_terminated
         local_db = SQLite3::Database.new(":memory:")
         replica_db = SQLite3::Database.new(":memory:")
         __register_database(:local, local_db, local_models)
         __register_database(:replica, replica_db, replica_models)
         restore_snapshot(:local)
+        ensure_boot_not_terminated
         begin
           i = 0
           local_size = local_models.size
@@ -2335,11 +2485,28 @@ module Funicular
           engage_schema_lockdown(local_db, e)
         end
         restore_snapshot(:replica)
+        ensure_boot_not_terminated
         build_replica_tables(replica_db, replica_models)
         __install_handles(local_db, replica_db)
         request_persistent_storage unless local_models.empty?
+        # The storage request was the last await before :ready; a
+        # termination inside it already closed the fresh handles, and
+        # the abort here keeps the page off :ready entirely.
+        ensure_boot_not_terminated
         __install_visibility_hook
         nil
+      end
+
+      # __boot_steps suspends at the election and at every storage
+      # await: an epoch mismatch detected by a response landing in one
+      # of those windows (docs decision 13) had nothing to tear down
+      # yet, so every suspension re-checks and aborts the boot through
+      # the ordinary failure funnel.
+      private def ensure_boot_not_terminated
+        return nil unless session_terminated?
+        raise Error,
+          "the session changed during boot; this page is terminal " \
+          "(reload to continue)"
       end
 
       private def metadata_value(metadata, key, default)
@@ -2379,14 +2546,20 @@ module Funicular
       end
 
       private def __install_handles(local_db, replica_db)
-        read_only = durability == :persistent_reader
+        # Defense in depth for decision 13: the boot aborts on a
+        # mid-boot termination before ever landing here, but if it DID
+        # land here terminal, the handles must come up as the
+        # non-persistent read view, never writable.
+        terminated = session_terminated?
+        read_only = durability == :persistent_reader || terminated
         # Belt (the proxy refuses at every execution entry) and braces
         # (SQLite itself refuses): docs decision 15. The replica handle
         # stays memory-writable even on a reader -- fetch-through
         # revalidation works there.
         local_db.execute("PRAGMA query_only = ON") if read_only
         @local_handle = GuardedDatabase.new(local_db, :local, read_only)
-        @replica_handle = GuardedDatabase.new(replica_db, :replica, false)
+        @replica_handle = GuardedDatabase.new(replica_db, :replica,
+                                              terminated)
         nil
       end
     end
@@ -2465,6 +2638,9 @@ module Funicular
     # per-table nuance, so the lockdown lifts only when every table
     # passes again.
     def self.reset_local_table(model)
+      # The terminal latch first: on a terminated volatile page the
+      # durability check below would still let this raw path through.
+      ensure_session_not_terminated(:reset_local)
       # Same :ready gate as the handles: this path reaches the RAW
       # database, so hiding the proxies alone would not keep a
       # mid-boot (or failed-boot) rebuild out.
@@ -2538,7 +2714,12 @@ module Funicular
       @replica_handle = nil
       @schema_lockdown = nil
       @session_epoch = nil
+      @page_epoch_latched = false
+      @session_terminated = false
       @databases = nil
+      # A put still in flight from the torn-down state must not make
+      # the next terminal step-down wait on it.
+      @persist_inflight = 0
       cancel_persist_timers
       __set_snapshot_store(nil)
       __set_snapshot_identity(nil)

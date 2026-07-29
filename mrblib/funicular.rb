@@ -117,6 +117,12 @@ module Funicular
       return
     end
 
+    # Arm the page's epoch before the first request leaves: schema
+    # responses are epoch-checked too (docs decision 13). The response
+    # gate latches lazily on its own; the explicit call keeps the
+    # whole barrier deterministically armed at issue time.
+    Funicular::DB.__latch_page_epoch
+
     total = models.size
     settled = 0
     # @type var errors: Array[untyped]

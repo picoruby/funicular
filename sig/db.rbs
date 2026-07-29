@@ -151,6 +151,7 @@ module Funicular
     self.@persist_timers: Hash[Symbol, untyped]?
     self.@persist_timer_tokens: Hash[Symbol, Integer]?
     self.@persist_deferred: Hash[Symbol, bool]?
+    self.@persist_inflight: Integer?
     self.@mutation_generation: Integer?
     self.@visibility_hook_installed: bool?
 
@@ -177,6 +178,8 @@ module Funicular
     def self.__persist_timer_token: (Symbol role) -> Integer?
     private def self.resume_deferred_persist: (Symbol role) -> nil
     def self.cancel_persist_timers: () -> nil
+    private def self.persist_inflight: () -> Integer
+    private def self.await_inflight_persists: () -> nil
     def self.flush: () -> bool
     def self.__install_visibility_hook: () -> bool
     def self.__visibility_flush: () -> nil
@@ -198,7 +201,17 @@ module Funicular
     def self.boot: (?models: Array[untyped]?, ?metadata: Hash[Symbol, untyped]?) -> bool
     def self.__fail_boot: (Array[untyped] errors) -> bool
     def self.read_page_metadata: () -> Hash[Symbol, untyped]
+
+    self.@session_terminated: bool?
+    self.@page_epoch_latched: bool?
+
+    def self.__set_session_epoch: (untyped value) -> untyped
+    def self.__latch_page_epoch: () -> untyped
+    def self.session_terminated?: () -> bool
+    def self.__session_epoch_ok?: (String? header) -> bool
+    def self.__terminate_session: (String? header) -> nil
     private def self.__boot_steps: (Array[untyped] models, Hash[Symbol, untyped] metadata) -> nil
+    private def self.ensure_boot_not_terminated: () -> nil
     private def self.metadata_value: (Hash[Symbol, untyped]? metadata, Symbol key, untyped default) -> untyped
     private def self.report_boot_error: (Array[untyped] errors) -> nil
     private def self.__install_handles: (untyped local_db, untyped replica_db) -> nil
@@ -215,6 +228,7 @@ module Funicular
     def self.wipe: () -> bool
     private def self.tick_generation: () -> Integer
     private def self.clear_tick_events: () -> nil
+    private def self.ensure_session_not_terminated: (Symbol operation) -> nil
     private def self.ensure_not_in_transaction: (Symbol role) -> nil
     private def self.wipe_role: (Symbol role) -> nil
     private def self.notify_wiped: (Symbol role) -> nil

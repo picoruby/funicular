@@ -145,6 +145,42 @@ of truth. Entries below accumulate as the feature lands.
   right in start, and nothing mounts on top of a failed boot. An
   empty schema set with a schema-less replica model declared fails
   the boot loud instead of running on missing tables.
+- The session-epoch terminal latch (docs decision 13, client half)
+  and HTTP's exactly-once settle. Every `Funicular::HTTP` request now
+  settles its callback exactly once: a rejected fetch (network
+  failure, invalid URL) delivers a status-0 error response instead of
+  hanging the schema barrier and every REST caller, and an exception
+  out of the caller's own block never settles twice. When the page
+  carried a session epoch, every response's `X-Funicular-Epoch` is
+  checked -- a rotated value OR a missing header means this page
+  belongs to a session that no longer exists: the response is
+  discarded (the caller settles with an error, nothing is applied)
+  and the page goes TERMINAL, irreversibly. From then on the page
+  refuses to ISSUE requests as well -- every verb settles immediately
+  with the same session-changed error before any fetch, since a
+  request executed under the new session's cookies could mutate
+  another user's data. A terminal writer steps
+  down completely: pending persist timers are cancelled, the final
+  persistence entry refuses forever, the writer lock frees the slot
+  for a fresh tab -- but only after an in-flight snapshot write has
+  landed, so a new writer can never race the old session's image --
+  and both database handles become a non-persistent read view. The
+  latch is independent of durability: `wipe` and `Model.reset_local`
+  -- the raw paths that bypass the read-only proxies -- refuse on ANY
+  terminated page, including a volatile one, which never steps down
+  to reader. A mismatch landing MID-BOOT (the boot suspends at the
+  writer election and at every storage read, with nothing to tear
+  down yet) aborts the boot through the ordinary failure funnel,
+  releasing a writer lock the election acquired after the
+  termination; as defense in depth, handles installed on a terminal
+  page come up read-only. `config.on_session_change` runs
+  once (default: `location.reload()`). The schema barrier arms the
+  page's epoch BEFORE its first request leaves, and the check itself
+  latches lazily off the page otherwise -- pre-boot HTTP (an
+  ephemeral model's REST call, a direct `HTTP.get` at app init) is
+  covered too, not only traffic after `DB.boot`, which alone would
+  latch too late. Pages without an epoch (no Rails integration yet)
+  are unaffected.
 - `Funicular::DB.wipe` and the mutation generation (docs decision 17):
   one call drops every table in both databases of the current
   namespace, deletes its two snapshot keys, rebuilds the replica DDL +

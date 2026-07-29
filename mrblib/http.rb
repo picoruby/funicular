@@ -68,6 +68,16 @@ module Funicular
       end
 
       def request(method, url, body, &block)
+        # A terminal page must not TALK to the server either (docs
+        # decision 13): discarding the response is not enough, because
+        # the request itself would already have executed under the NEW
+        # session's cookies -- an old screen's click could mutate
+        # another user's data. Refused BEFORE the fetch; the callback
+        # still settles exactly once.
+        if Funicular::DB.session_terminated?
+          block.call(session_changed_response) if block
+          return nil
+        end
         # @type var options: Hash[Symbol, String | Hash[String, String]]
         options = { method: method, credentials: "include" }
 
@@ -85,15 +95,57 @@ module Funicular
 
         options[:headers] = headers unless headers.empty?
 
-        JS.global.fetch(url, options) do |response|
-          status = response.status.to_i
-          json_text = response.to_binary
-          data = parse_response_body(json_text)
-          # @type var status: Integer
-          http_response = Response.new(status, data)
-
-          block.call(http_response) if block
+        settled = false
+        begin
+          JS.global.fetch(url, options) do |response|
+            status = response.status.to_i
+            json_text = response.to_binary
+            data = parse_response_body(json_text)
+            # @type var status: Integer
+            if Funicular::DB.__session_epoch_ok?(response_epoch(response))
+              http_response = Response.new(status, data)
+            else
+              # The session changed under this page (docs decision 13):
+              # the response is DISCARDED, and the caller settles with
+              # an error instead of applying stale-session data.
+              http_response = session_changed_response
+            end
+            settled = true
+            block.call(http_response) if block
+          end
+        rescue => e
+          # Exactly-once settle: a rejected fetch (network failure,
+          # invalid URL) must still deliver a response -- a hanging
+          # callback would hang the schema barrier and every REST
+          # caller. An exception out of the caller's OWN block must
+          # NOT settle a second time.
+          raise e if settled
+          settled = true
+          if block
+            block.call(Response.new(0,
+              { "error" => "network error: #{e.class}: #{e.message}" }))
+          end
         end
+      end
+
+      def session_changed_response
+        Response.new(0,
+          { "error" => "the session changed; this page is " \
+                       "terminal (reload to continue)" })
+      end
+
+      # The X-Funicular-Epoch response header, nil when absent (no
+      # headers surface, no such header, or a null value through the
+      # JS bridge).
+      def response_epoch(response)
+        # @type var raw: untyped
+        raw = response
+        value = raw[:headers].get("X-Funicular-Epoch").to_s
+        return nil if value.empty?
+        return nil if value == "null" || value == "undefined"
+        value
+      rescue
+        nil
       end
     end
   end

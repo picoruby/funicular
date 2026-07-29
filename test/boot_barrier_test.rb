@@ -9,6 +9,10 @@ module Funicular
   module HTTP
     class << self
       def get(url, &block)
+        # Recorded at ISSUE time: the epoch must already be latched
+        # when the first schema request leaves.
+        log = $bar_epoch_log
+        log << Funicular::DB.session_epoch if log
         $bar_pending << [url, block]
       end
     end
@@ -50,6 +54,7 @@ class BootBarrierTest < Picotest::Test
   def setup
     JS.global.eval(FAKE_JS)
     $bar_pending = []
+    $bar_epoch_log = []
     define_models
   end
 
@@ -206,6 +211,23 @@ class BootBarrierTest < Picotest::Test
     assert_equal(:ready, Funicular::DB.boot_state)
     # Already booted: the gate is a cheap true, not a second boot.
     assert_equal(true, Funicular.__boot_for_start)
+  end
+
+  def test_page_epoch_is_latched_before_schema_requests
+    # A session rotated DURING schema loading must not slip past the
+    # check just because DB.boot (the usual latch point) has not run
+    # yet: the barrier arms the page's epoch first.
+    Funicular.load_schemas({ BarUser => "bar_user" }) { }
+    assert_equal(["epoch-7"], $bar_epoch_log)
+    # A page WITHOUT an epoch latches nothing -- the checks stay off,
+    # which is distinct from "merely not booted yet".
+    Funicular::DB.__reset_boot
+    JS.global.eval(
+      "globalThis.document = { querySelector: (s) => ({ dataset: {" \
+      "  funicularApplicationId: 'bar_app'," \
+      "  funicularAnonymousOnly: 'true' } }) }")
+    Funicular.load_schemas({ BarUser => "bar_user" }) { }
+    assert_equal(["epoch-7", nil], $bar_epoch_log)
   end
 
   def test_read_page_metadata_contract
