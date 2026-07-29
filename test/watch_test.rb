@@ -178,6 +178,51 @@ class WatchTest < Picotest::Test
     assert_equal(1, @component.state[:items].size)
   end
 
+  # ---- replica fetch-through drives a watch ----
+
+  # The chat-style flow: watch a REPLICA model's relation, then apply a
+  # REST collection through the write-through batch entry (what
+  # Model.all does after a fetch). The one post-commit event must
+  # re-evaluate the watch and land the rows in state.
+  def test_replica_fetch_through_reevaluates_a_watch
+    define_replica_model
+    @component.watch(:posts) { WatchPost.local.order(:id) }
+    assert_equal([], @component.state[:posts])
+    WatchPost.__write_through_upsert_all(
+      [{ "id" => 1, "title" => "first" },
+       { "id" => 2, "title" => "second" }])
+    assert_equal([], @component.state[:posts])
+    tick
+    assert_equal(["first", "second"], titles(@component.state[:posts]))
+  end
+
+  def define_replica_model
+    unless Object.const_defined?(:WatchPost)
+      Object.const_set(:WatchPost, Class.new(Funicular::Model))
+      WatchPost.class_eval do
+        table_name "watch_posts"
+
+        def self.local_db
+          $watch_replica_guard
+        end
+
+        def self.replica_db
+          $watch_replica_guard
+        end
+      end
+    end
+    WatchPost.load_schema(
+      "attributes" => {
+        "id" => { "type" => "integer", "readonly" => true },
+        "title" => { "type" => "string", "readonly" => false },
+      },
+      "endpoints" => {})
+    $watch_replica_db = SQLite3::Database.new(":memory:")
+    $watch_replica_guard =
+      Funicular::DB::GuardedDatabase.new($watch_replica_db, :replica)
+    $watch_replica_db.execute(Funicular::DB.replica_table_ddl(WatchPost))
+  end
+
   # ---- materialization failures ----
 
   def test_failed_initial_materialization_leaves_no_subscription
