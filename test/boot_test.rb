@@ -222,6 +222,52 @@ class BootTest < Picotest::Test
     assert_equal(nil, Funicular::DB.snapshot_store)
   end
 
+  class BootOpenError < StandardError; end
+
+  # Swaps the real IndexedDB::KVS.open for a stub raising a
+  # NON-availability error: exactly what quota or an unknown
+  # DOMException at open looks like.
+  def self.break_kvs_open
+    kvs = IndexedDB::KVS
+    kvs.singleton_class.alias_method(:__funicular_test_open, :open)
+    kvs.define_singleton_method(:open) do |_name, fallback: true|
+      raise BootTest::BootOpenError, "quota exceeded during open"
+    end
+  end
+
+  def self.restore_kvs_open
+    IndexedDB::KVS.singleton_class.alias_method(:open,
+                                                :__funicular_test_open)
+  end
+
+  def test_a_non_availability_open_error_fails_the_boot
+    # Availability errors mean "no storage BY DESIGN" and go volatile
+    # (the test above); ANY other failure at the store open fails the
+    # boot per docs decision 16 -- and the writer lock, already won by
+    # then, is released so the next tab is not condemned to reader.
+    $boot_errors = nil
+    Funicular::DB.configure do
+      config.on_boot_error = ->(errors) { $boot_errors = errors }
+    end
+    BootTest.break_kvs_open
+    begin
+      # No injected store: the boot must reach the real open path.
+      result = Funicular::DB.boot(models: [BootDraft, BootNote],
+                                  metadata: META)
+    ensure
+      BootTest.restore_kvs_open
+    end
+    assert_equal(false, result)
+    assert_equal(:failed, Funicular::DB.boot_state)
+    assert_equal(1, $boot_errors.size)
+    assert_equal(BootOpenError, $boot_errors[0].class)
+    # Release is what steps the durability down from the won election.
+    assert_equal(:persistent_reader, Funicular::DB.durability)
+    assert_raise(Funicular::DB::UnavailableError) do
+      Funicular::DB.local
+    end
+  end
+
   def test_boot_fails_loud_on_config_errors
     $boot_errors = nil
     Funicular::DB.configure do

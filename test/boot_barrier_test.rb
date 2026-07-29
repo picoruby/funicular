@@ -159,6 +159,21 @@ class BootBarrierTest < Picotest::Test
     assert_equal(false, Funicular.__boot_for_start)
   end
 
+  def test_start_mounts_nothing_on_a_failed_boot
+    # The whole point of the gate: after a failed boot, start returns
+    # nil BEFORE any DOM work -- no container lookup, no listener, no
+    # mount. The fake document here has no getElementById, so slipping
+    # past the gate would raise instead of quietly passing.
+    Funicular::DB.configure do
+      config.on_boot_error = ->(_errors) {}
+    end
+    Funicular.load_schemas({ BarUser => "bar_user" }) { }
+    respond("/api/schema/bar_user",
+            Funicular::HTTP::Response.new(500, nil))
+    assert_equal(:failed, Funicular::DB.boot_state)
+    assert_equal(nil, Funicular.start(container: "bar_missing"))
+  end
+
   def test_unappliable_schema_settles_as_a_failure
     $bar_done = 0
     $bar_errors = nil

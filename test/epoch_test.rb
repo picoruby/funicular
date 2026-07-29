@@ -149,6 +149,12 @@ class EpochTest < Picotest::Test
         end
       end
     end
+
+    # A replica model for the real-fetch barrier test below.
+    Object.const_set(:EpochNote, Class.new(Funicular::Model))
+    EpochNote.class_eval do
+      table_name "epoch_notes"
+    end
   end
 
   # Sliced awaits: the Node runner exits after ~100 fully idle
@@ -188,6 +194,31 @@ class EpochTest < Picotest::Test
     response = get_once("http://127.0.0.1:1/unreachable")
     assert_equal(0, response.status)
     assert_equal(true, !response.error_message.nil?)
+  end
+
+  def test_a_rejected_schema_fetch_settles_the_barrier_and_fails_the_boot
+    # The schema barrier over the REAL fetch: under Node the relative
+    # schema URL rejects outright, and before the exactly-once settle
+    # a rejection would hang the barrier forever. Instead the slot
+    # settles, the boot fails loud, the completion block never runs,
+    # and the aggregated error names the schema, the model, and the
+    # network failure.
+    $epoch_barrier_errors = nil
+    $epoch_barrier_done = 0
+    Funicular::DB.configure do
+      config.on_boot_error = ->(errors) { $epoch_barrier_errors = errors }
+    end
+    Funicular.load_schemas({ EpochNote => "epoch_note" }) do
+      $epoch_barrier_done += 1
+    end
+    assert_equal(0, $epoch_barrier_done)
+    assert_equal(:failed, Funicular::DB.boot_state)
+    assert_equal(1, $epoch_barrier_errors.size)
+    message = $epoch_barrier_errors[0].message
+    assert_equal(true, message.include?("epoch_note"))
+    assert_equal(true, message.include?("EpochNote"))
+    assert_equal(true, message.include?("HTTP 0"))
+    assert_equal(true, message.include?("network error"))
   end
 
   def test_an_exception_in_the_callers_block_never_settles_twice
