@@ -35,21 +35,31 @@ module Funicular
 
     private
 
+    # request.session, never the controller's session accessor: an
+    # application action named "session" SHADOWS the accessor, and
+    # calling it from here would invoke the action itself (rendering
+    # twice). The ensure re-reads request.session instead of reusing
+    # the pre-action object because reset_session (a logout) replaces
+    # it mid-action.
     def stamp_funicular_epoch
       local_database = Funicular.configuration.local_database
       return yield unless local_database
-      unless Funicular::SessionEpoch.session_available?(session)
+      sess = request.session
+      unless Funicular::SessionEpoch.session_available?(sess)
         # No session middleware (API-only Rails): there is no cookie
         # identity for the epoch to protect, so the feature stays off
         # instead of breaking every action with a disabled-session
         # error.
         return yield
       end
-      request.env[ENV_KEY] = Funicular::SessionEpoch.stamp!(session, self)
+      request.env[ENV_KEY] = Funicular::SessionEpoch.stamp!(sess, self)
       yield
     ensure
-      if local_database && Funicular::SessionEpoch.session_available?(session)
-        request.env[ENV_KEY] = Funicular::SessionEpoch.stamp!(session, self)
+      if local_database
+        sess = request.session
+        if Funicular::SessionEpoch.session_available?(sess)
+          request.env[ENV_KEY] = Funicular::SessionEpoch.stamp!(sess, self)
+        end
       end
     end
   end

@@ -99,18 +99,41 @@ class PicorubyHelperTest < Minitest::Test
     assert_includes error.message, "user_key"
   end
 
-  # A harness with the controller/session surface a real view has.
+  # A harness with the controller/request surface a real view has. The
+  # helper reads the session through request.session (the view's own
+  # session helper delegates to the controller, where an action named
+  # "session" shadows it).
   class MetadataHarness < Harness
-    attr_accessor :controller, :session
+    attr_accessor :controller, :request
   end
 
   FakeController = Struct.new(:current_user_key)
+  FakeViewRequest = Struct.new(:session)
 
   def metadata_view(user_key: nil, session: {})
     view = MetadataHarness.new
     view.controller = FakeController.new(user_key)
-    view.session = session
+    view.request = FakeViewRequest.new(session)
     view
+  end
+
+  # A view rendered by a controller that routes an action named
+  # "session": the view's session delegate would invoke that action.
+  # The helper must go through request.session and never notice.
+  class SessionShadowedHarness < MetadataHarness
+    def session
+      raise "the session delegate was invoked instead of request.session"
+    end
+  end
+
+  def test_the_helper_never_calls_the_view_session_delegate
+    @config.local_database = true
+    @config.user_key = ->(controller) { controller.current_user_key }
+    view = SessionShadowedHarness.new
+    view.controller = FakeController.new("u1")
+    view.request = FakeViewRequest.new({})
+    html = view.picoruby_include_tag(source: :local_dist, base_styles: false)
+    assert_includes html, "data-funicular-epoch"
   end
 
   def test_include_tag_embeds_user_key_and_epoch

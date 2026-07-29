@@ -210,7 +210,11 @@ of truth. Entries below accumulate as the feature lands.
   ABOVE ActionDispatch's exception renderer: a controller-set header
   dies with the controller's response when the action raises, and a
   header-less 500 would read as an epoch mismatch client-side,
-  terminating a healthy page over a mere server error. Session-less
+  terminating a healthy page over a mere server error. Both the
+  concern and the include-tag helper read the session through
+  `request.session`, never the controller/view `session` accessor: an
+  application action named "session" shadows that accessor, and
+  calling it would invoke the action itself. Session-less
   Rails API apps stay unbroken: a disabled session leaves the epoch
   feature off (no cookie identity exists to protect) instead of
   raising on every action. `picoruby_include_tag` embeds

@@ -159,10 +159,14 @@ module Funicular
           key = Funicular::SessionEpoch.user_key(ctrl)
           meta[:funicular_user_key] = key if key
         end
-        if respond_to?(:session) &&
-           Funicular::SessionEpoch.session_available?(session)
+        # The view's session helper delegates to the controller, where
+        # an action named "session" shadows the accessor -- go through
+        # request.session, which cannot be shadowed.
+        req = respond_to?(:request) ? request : nil
+        sess = req && req.session
+        if sess && Funicular::SessionEpoch.session_available?(sess)
           meta[:funicular_epoch] = Funicular::SessionEpoch.stamp_identity!(
-            session, Funicular::SessionEpoch.identity_for(key))
+            sess, Funicular::SessionEpoch.identity_for(key))
         end
         meta
       end

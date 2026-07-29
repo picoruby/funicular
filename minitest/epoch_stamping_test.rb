@@ -12,10 +12,11 @@ require "funicular/epoch_header"
 # a truthful header on the exception page.
 class EpochStampingTest < Minitest::Test
   class FakeRequest
-    attr_reader :env
+    attr_reader :env, :session
 
-    def initialize(env = {})
+    def initialize(env = {}, session = nil)
       @env = env
+      @session = session
     end
   end
 
@@ -31,7 +32,7 @@ class EpochStampingTest < Minitest::Test
     attr_reader :request, :session
 
     def initialize(session, env = {})
-      @request = FakeRequest.new(env)
+      @request = FakeRequest.new(env, session)
       @session = session
     end
 
@@ -96,6 +97,32 @@ class EpochStampingTest < Minitest::Test
 
   def test_including_registers_the_around_action
     assert_includes StampedController.around_actions, :stamp_funicular_epoch
+  end
+
+  # An application may route an action named "session" (a schema
+  # endpoint, say): that action SHADOWS the controller's session
+  # accessor. The concern must read request.session and never notice.
+  # (Not a StampedController subclass: the fake around_action registry
+  # is a class ivar and does not inherit.)
+  class SessionShadowedController < FakeControllerBase
+    include Funicular::EpochStamping
+
+    attr_accessor :current_user_key
+
+    def session
+      raise "the session action was invoked instead of the accessor"
+    end
+  end
+
+  def test_the_stamp_never_calls_the_controller_session_accessor
+    env = {}
+    controller = SessionShadowedController.new(@session, env)
+    controller.current_user_key = "u1"
+    ran = false
+    controller.process { ran = true }
+    assert ran
+    refute_nil env["funicular.epoch"]
+    assert_equal session_epoch, env["funicular.epoch"]
   end
 
   def test_disabled_local_database_does_not_touch_the_session_or_resolver
