@@ -101,12 +101,20 @@ namespace :funicular do
 
       FileUtils.cp(source_js,          dest_js)
       FileUtils.cp(source_css,         dest_css)
-      FileUtils.cp(source_initializer, dest_initializer)
 
       puts "Installed Funicular debug assets:"
       puts "  - #{dest_js}"
       puts "  - #{dest_css}"
-      puts "  - #{dest_initializer}"
+
+      # The initializer belongs to the application once it exists:
+      # re-running the installer must never clobber its configuration
+      # (source choice, local_database opt-in, user_key).
+      if File.exist?(dest_initializer)
+        puts "Skipped #{dest_initializer} (exists; delete it first to reinstall the template)"
+      else
+        FileUtils.cp(source_initializer, dest_initializer)
+        puts "  - #{dest_initializer}"
+      end
     end
 
     desc "Install vendored PicoRuby.wasm artifacts (dist + debug) into public/picoruby/"
