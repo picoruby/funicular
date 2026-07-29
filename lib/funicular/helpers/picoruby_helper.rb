@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "funicular/session_epoch"
+
 module Funicular
   module Helpers
     # View helpers exposed to ActionView through Funicular::Railtie.
@@ -37,10 +39,27 @@ module Funicular
       # such as form error states render without host-CSS setup); pass
       # base_styles: false to skip it. Any extra options become HTML attributes
       # on the <script> tag.
+      #
+      # The tag also carries the local-database page metadata as
+      # data-funicular-* attributes (docs: local_database.md, data
+      # isolation): the application id, the user-key contract, and the
+      # session epoch. The client boot reads them off the page; apps
+      # without the local database just ignore them.
       def picoruby_include_tag(source: nil, base_styles: true, **options)
         resolved_source = source ? source.to_sym : Funicular.configuration.source_for(Rails.env)
         src = picoruby_src_for(resolved_source)
-        script = tag.script("", src: src, **options)
+        # Caller extras survive, but the framework's contract values
+        # always win: a data: override of the epoch or the user key
+        # would make the page disagree with its own responses (instant
+        # terminal) or boot the wrong namespace. Keys are normalized so
+        # a string or dashed spelling cannot smuggle in a duplicate of
+        # the same HTML attribute either.
+        data = {}
+        (options.delete(:data) || {}).each do |key, value|
+          data[key.to_s.tr("-", "_").to_sym] = value
+        end
+        data.merge!(funicular_page_metadata)
+        script = tag.script("", src: src, data: data, **options)
         return script unless base_styles
 
         style = tag.style(PicorubyHelper.base_css.html_safe, "data-funicular-base": "")
@@ -95,6 +114,37 @@ module Funicular
       end
 
       private
+
+      # The namespace + epoch metadata the client boot reads
+      # (DB.read_page_metadata): attribute values are HTML-escaped by
+      # the tag helper, so hostile application ids or user keys cannot
+      # break out of the attribute. The user-key attribute is OMITTED
+      # for signed-out visitors (the client boots the anonymous
+      # namespace), and the epoch is stamped through the same session
+      # entry the response header uses -- the page and its responses
+      # can never disagree at render time.
+      def funicular_page_metadata
+        config = Funicular.configuration
+        ctrl = respond_to?(:controller) ? controller : nil
+        meta = { funicular_application_id: config.application_id }
+        meta[:funicular_anonymous_only] = "true" if config.anonymous_only
+        # ONE resolver evaluation feeds both the page attribute and the
+        # epoch identity below: two evaluations could disagree
+        # mid-transition and stamp one user's epoch onto another
+        # user's page namespace.
+        key = nil
+        if config.user_key
+          meta[:funicular_user_key_configured] = "true"
+          key = Funicular::SessionEpoch.user_key(ctrl)
+          meta[:funicular_user_key] = key if key
+        end
+        if respond_to?(:session) &&
+           Funicular::SessionEpoch.session_available?(session)
+          meta[:funicular_epoch] = Funicular::SessionEpoch.stamp_identity!(
+            session, Funicular::SessionEpoch.identity_for(key))
+        end
+        meta
+      end
 
       def picoruby_src_for(source)
         if source == :cdn

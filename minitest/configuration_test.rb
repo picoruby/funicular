@@ -61,4 +61,50 @@ class ConfigurationTest < Minitest::Test
       assert_equal vendored, @config.cdn_version
     end
   end
+
+  # --- local-database namespace settings (docs decisions 12/13) ---------
+
+  def test_namespace_defaults
+    assert_equal "funicular", @config.application_id
+    assert_nil @config.user_key
+    assert_equal false, @config.anonymous_only
+  end
+
+  def test_application_id_rejects_empty_values
+    error = assert_raises(ArgumentError) { @config.application_id = "" }
+    assert_includes error.message, "application_id"
+    error = assert_raises(ArgumentError) { @config.application_id = nil }
+    assert_includes error.message, "application_id"
+  end
+
+  def test_application_id_is_canonicalized_with_to_s
+    @config.application_id = :chat_app
+    assert_equal "chat_app", @config.application_id
+  end
+
+  def test_user_key_must_be_callable
+    error = assert_raises(ArgumentError) { @config.user_key = "not callable" }
+    assert_includes error.message, "callable"
+  end
+
+  def test_user_key_and_anonymous_only_are_mutually_exclusive
+    # The reliably-detectable server-side config error: whichever
+    # setter comes second raises, in both orders.
+    @config.user_key = ->(controller) { nil }
+    error = assert_raises(ArgumentError) { @config.anonymous_only = true }
+    assert_includes error.message, "mutually exclusive"
+
+    fresh = Funicular::Configuration.new
+    fresh.anonymous_only = true
+    error = assert_raises(ArgumentError) do
+      fresh.user_key = ->(controller) { nil }
+    end
+    assert_includes error.message, "mutually exclusive"
+  end
+
+  def test_anonymous_only_false_never_conflicts
+    @config.user_key = ->(controller) { nil }
+    @config.anonymous_only = false
+    assert_equal false, @config.anonymous_only
+  end
 end

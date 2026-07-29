@@ -26,6 +26,7 @@ module Funicular
     SOURCES = %i[local_debug local_dist cdn].freeze
 
     attr_reader :development_source, :test_source, :production_source
+    attr_reader :application_id, :user_key, :anonymous_only
     attr_writer :cdn_version
 
     def initialize
@@ -33,6 +34,49 @@ module Funicular
       @test_source        = :local_debug
       @production_source  = :local_dist
       @cdn_version        = nil
+      @application_id     = "funicular"
+      @user_key           = nil
+      @anonymous_only     = false
+    end
+
+    # The application's namespace id (docs: local_database.md, data
+    # isolation). Give each Funicular app sharing an origin a distinct
+    # one; it keys the client's snapshot/lock namespace AND the epoch
+    # entry in the Rails session.
+    def application_id=(value)
+      id = value.to_s
+      if id.empty?
+        raise ArgumentError, "Funicular application_id cannot be empty"
+      end
+      @application_id = id
+    end
+
+    # A callable receiving the controller and returning a stable,
+    # non-reusable identifier for the signed-in user (nil when signed
+    # out). Mandatory for apps that declare local-database models,
+    # unless anonymous_only says the app genuinely has no users.
+    def user_key=(value)
+      unless value.respond_to?(:call)
+        raise ArgumentError,
+              "Funicular user_key must be callable (a lambda receiving the controller)"
+      end
+      if @anonymous_only
+        raise ArgumentError,
+              "Funicular user_key and anonymous_only are mutually exclusive; declare one or the other"
+      end
+      @user_key = value
+    end
+
+    # The explicit opt-out for apps without authentication: every
+    # visitor shares the anonymous namespace ON PURPOSE. Mutually
+    # exclusive with user_key -- the framework never picks silently.
+    def anonymous_only=(value)
+      flag = value ? true : false
+      if flag && @user_key
+        raise ArgumentError,
+              "Funicular user_key and anonymous_only are mutually exclusive; declare one or the other"
+      end
+      @anonymous_only = flag
     end
 
     def development_source=(value)

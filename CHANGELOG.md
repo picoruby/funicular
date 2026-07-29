@@ -181,6 +181,41 @@ of truth. Entries below accumulate as the feature lands.
   covered too, not only traffic after `DB.boot`, which alone would
   latch too late. Pages without an epoch (no Rails integration yet)
   are unaffected.
+- The Rails half of data isolation and the session epoch (docs
+  decisions 12/13). `Funicular.configure` gains `application_id`
+  (default `"funicular"`; give each app sharing an origin its own),
+  `user_key` (a lambda receiving the controller and returning a
+  stable identifier, nil when signed out), and `anonymous_only` (the
+  explicit opt-out for apps without users) -- setting both is a
+  configuration error raised straight from the initializer. The
+  Railtie now stamps `X-Funicular-Epoch` on every response (emitted
+  lowercase, as the Rack 3 spec requires; HTTP header names are
+  case-insensitive on the wire): the epoch
+  lives in the Rails session PER application_id
+  (`session["funicular_epochs"]`) and rotates whenever the computed
+  user key changes, so login, logout, and direct user switches all
+  rotate it with no application code. Rotation runs in a controller
+  around_action (the user_key lambda needs its controller) that
+  stamps BEFORE the action and re-stamps in its ensure with the
+  post-action identity -- the login/logout actions flip the identity
+  mid-request, and their own response must already carry the rotated
+  epoch. The header itself is written by a Rack middleware sitting
+  ABOVE ActionDispatch's exception renderer: a controller-set header
+  dies with the controller's response when the action raises, and a
+  header-less 500 would read as an epoch mismatch client-side,
+  terminating a healthy page over a mere server error. Session-less
+  Rails API apps stay unbroken: a disabled session leaves the epoch
+  feature off (no cookie identity exists to protect) instead of
+  raising on every action. `picoruby_include_tag` embeds
+  the namespace + epoch metadata as HTML-escaped `data-funicular-*`
+  attributes on the bootstrap script tag -- exactly the contract
+  `DB.read_page_metadata` reads client-side -- with the user-key
+  attribute omitted for signed-out visitors and the epoch drawn from
+  the same session entry the response header uses; the user-key
+  attribute and the epoch identity come from ONE resolver evaluation,
+  so a racy `current_user` cannot embed one user's namespace with
+  another user's epoch. A `user_key` that resolves to an empty string
+  fails loud server-side.
 - `Funicular::DB.wipe` and the mutation generation (docs decision 17):
   one call drops every table in both databases of the current
   namespace, deletes its two snapshot keys, rebuilds the replica DDL +

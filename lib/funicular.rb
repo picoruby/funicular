@@ -2,6 +2,7 @@
 
 require_relative "funicular/version"
 require_relative "funicular/configuration"
+require_relative "funicular/session_epoch"
 require_relative "funicular/compiler"
 require_relative "funicular/plugin"
 require_relative "funicular/schema"

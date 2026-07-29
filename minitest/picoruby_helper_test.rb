@@ -63,6 +63,146 @@ class PicorubyHelperTest < Minitest::Test
     assert_includes html, "defer"
   end
 
+  # --- page metadata (docs decisions 12/13) -----------------------------
+
+  # The plain Harness has no controller/session: only the always-on
+  # application id rides the tag.
+  def test_include_tag_embeds_the_default_application_id
+    html = @view.picoruby_include_tag(source: :local_dist, base_styles: false)
+    assert_includes html, 'data-funicular-application-id="funicular"'
+    refute_includes html, "data-funicular-user-key"
+    refute_includes html, "data-funicular-anonymous-only"
+    refute_includes html, "data-funicular-epoch"
+  end
+
+  def test_include_tag_embeds_anonymous_only
+    @config.anonymous_only = true
+    html = @view.picoruby_include_tag(source: :local_dist, base_styles: false)
+    assert_includes html, 'data-funicular-anonymous-only="true"'
+  end
+
+  # A harness with the controller/session surface a real view has.
+  class MetadataHarness < Harness
+    attr_accessor :controller, :session
+  end
+
+  FakeController = Struct.new(:current_user_key)
+
+  def metadata_view(user_key: nil, session: {})
+    view = MetadataHarness.new
+    view.controller = FakeController.new(user_key)
+    view.session = session
+    view
+  end
+
+  def test_include_tag_embeds_user_key_and_epoch
+    @config.user_key = ->(controller) { controller.current_user_key }
+    session = {}
+    view = metadata_view(user_key: "u1", session: session)
+    html = view.picoruby_include_tag(source: :local_dist, base_styles: false)
+    assert_includes html, 'data-funicular-user-key="u1"'
+    assert_includes html, 'data-funicular-user-key-configured="true"'
+    # The epoch on the page is THE session entry the response header
+    # stamps: page and responses cannot disagree at render time.
+    epoch = session["funicular_epochs"]["funicular"]["epoch"]
+    assert_includes html, %(data-funicular-epoch="#{epoch}")
+  end
+
+  # What request.session looks like in a session-less Rails API app.
+  class DisabledSession
+    def enabled?
+      false
+    end
+
+    def [](_key)
+      raise "sessions are disabled in this application"
+    end
+
+    def []=(_key, _value)
+      raise "sessions are disabled in this application"
+    end
+  end
+
+  def test_a_disabled_session_skips_the_epoch_without_breaking
+    @config.user_key = ->(controller) { controller.current_user_key }
+    view = metadata_view(user_key: "u1", session: DisabledSession.new)
+    html = view.picoruby_include_tag(source: :local_dist, base_styles: false)
+    refute_includes html, "data-funicular-epoch"
+    assert_includes html, 'data-funicular-user-key="u1"'
+  end
+
+  def test_the_resolver_feeds_attribute_and_epoch_from_one_evaluation
+    # A racy resolver (current_user changing between two calls) must
+    # not embed user A's namespace while stamping user B's identity
+    # into the epoch entry: the helper evaluates it exactly once.
+    calls = 0
+    @config.user_key = lambda do |_controller|
+      calls += 1
+      "u#{calls}"
+    end
+    session = {}
+    view = metadata_view(user_key: "ignored", session: session)
+    html = view.picoruby_include_tag(source: :local_dist, base_styles: false)
+    assert_equal 1, calls
+    assert_includes html, 'data-funicular-user-key="u1"'
+    assert_equal '["v1","funicular","user","u1"]',
+                 session["funicular_epochs"]["funicular"]["identity"]
+  end
+
+  def test_signed_out_omits_the_user_key_attribute
+    @config.user_key = ->(controller) { controller.current_user_key }
+    view = metadata_view(user_key: nil)
+    html = view.picoruby_include_tag(source: :local_dist, base_styles: false)
+    refute_includes html, "data-funicular-user-key="
+    assert_includes html, 'data-funicular-user-key-configured="true"'
+  end
+
+  def test_metadata_values_are_html_escaped
+    @config.application_id = %q{"><script>alert(1)</script>}
+    @config.user_key = ->(controller) { controller.current_user_key }
+    view = metadata_view(user_key: %q{"><img src=x>})
+    html = view.picoruby_include_tag(source: :local_dist, base_styles: false)
+    refute_includes html, "<script>alert(1)</script>"
+    refute_includes html, "<img src=x>"
+    assert_includes html, "&quot;&gt;"
+  end
+
+  def test_caller_data_attributes_survive_alongside_the_metadata
+    html = @view.picoruby_include_tag(source: :local_dist, base_styles: false,
+                                      data: { turbo_track: "reload" })
+    assert_includes html, 'data-turbo-track="reload"'
+    assert_includes html, 'data-funicular-application-id="funicular"'
+  end
+
+  def test_caller_data_cannot_override_the_framework_metadata
+    # A data: override of the epoch or the user key would make the
+    # page disagree with its own responses (instant terminal) or boot
+    # the wrong namespace: the framework's values win, in every key
+    # spelling that would render as the same HTML attribute.
+    @config.user_key = ->(controller) { controller.current_user_key }
+    session = {}
+    view = metadata_view(user_key: "u1", session: session)
+    html = view.picoruby_include_tag(
+      source: :local_dist, base_styles: false,
+      data: { funicular_epoch: "evil-symbol",
+              "funicular_user_key" => "evil-string",
+              "funicular-application-id" => "evil-dashed",
+              turbo_track: "reload" })
+    refute_includes html, "evil-symbol"
+    refute_includes html, "evil-string"
+    refute_includes html, "evil-dashed"
+    assert_includes html, 'data-funicular-user-key="u1"'
+    assert_includes html, 'data-funicular-application-id="funicular"'
+    epoch = session["funicular_epochs"]["funicular"]["epoch"]
+    assert_includes html, %(data-funicular-epoch="#{epoch}")
+    # The caller's unrelated attribute still rides along, and no
+    # attribute is emitted twice.
+    assert_includes html, 'data-turbo-track="reload"'
+    assert_equal 1, html.scan("data-funicular-epoch=").size
+    assert_equal 1, html.scan("data-funicular-user-key=").size
+    assert_equal 1, html.scan("data-funicular-application-id=").size
+  end
+
   def test_cdn_source_uses_versioned_jsdelivr_url
     @config.cdn_version = "1.2.3"
     html = @view.picoruby_include_tag(source: :cdn, base_styles: false)
