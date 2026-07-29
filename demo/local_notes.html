@@ -7,7 +7,13 @@
 <body>
   <div><a href="../index.html">Back</a></div>
   <h1>Local Notes (Funicular local database)</h1>
-  <div id="app"></div>
+  <!-- A page declaring storage :local models must choose its
+       namespace explicitly (docs decision 12) or the boot fails
+       loud. A Rails app gets these attributes from
+       picoruby_include_tag; this static page carries them by hand. -->
+  <div id="app"
+       data-funicular-application-id="local_notes_demo"
+       data-funicular-anonymous-only="true"></div>
 
   <div class="explain">
     <p>A server-less demo of the local database layer:
@@ -57,7 +63,7 @@
         }
       end
 
-      def component_did_mount
+      def component_mounted
         watch(:notes) { Note.local.order(created_at: :desc) }
       end
 
@@ -127,8 +133,11 @@
     end
 
     # No load_schemas round: a local-only app boots right inside
-    # start's gate, on the anonymous "funicular" namespace (this page
-    # carries no include-tag metadata).
+    # start's gate. The namespace comes from the hand-written
+    # data-funicular-* attributes on the #app container above: pages
+    # with storage :local models must declare anonymous_only (or a
+    # user key) explicitly -- a silent shared default would merge
+    # every user's data, so the boot fails loud without it.
     Funicular.start(NotesApp, container: 'app')
   </script>
   <script src="../init.iife.js"></script>
