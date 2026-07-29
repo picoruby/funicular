@@ -300,11 +300,11 @@ module Funicular
       derived
     end
 
-    # The handle local queries run against: the guarded local proxy
-    # installed by Funicular::DB.boot. Before the boot every
-    # materializer fails loud (UnavailableError -- SSR included), and
-    # a SchemaTooNew lockdown raises here, the funnel every
-    # model-level local operation passes through.
+    # The handle local queries run against: the guarded proxy for this
+    # model's storage role, installed by Funicular::DB.boot. Before the boot
+    # every materializer fails loud (UnavailableError -- SSR included).
+    # Storage-local models also encounter the SchemaTooNew lockdown here,
+    # the funnel every model-level local operation passes through.
     def self.local_db
       Funicular::DB.__model_local_db(self)
     end
@@ -463,6 +463,16 @@ module Funicular
     # models"): returns the instance -- persisted with its assigned id,
     # or unsaved (id nil) with errors when validation fails.
     def self.local_create(attrs = {})
+      unless local?
+        if replica?
+          raise Funicular::DB::ReplicaWriteError,
+            "#{to_s}.local_create is not available on replica models; " \
+            "the server owns replica rows (use #{to_s}.create)"
+        end
+        raise Funicular::DB::NoTableError,
+          "#{to_s} has no local table; local_create is available only on " \
+          "storage :local models"
+      end
       record = new(attrs)
       return record unless record.valid?
       record.__local_insert

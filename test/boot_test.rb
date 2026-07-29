@@ -152,6 +152,22 @@ class BootTest < Picotest::Test
                  Funicular::DB.replica.class)
   end
 
+  def test_booted_replica_model_local_query_uses_the_replica_database
+    boot
+    Funicular::DB.replica.execute(
+      "INSERT INTO boot_notes (id, body) VALUES (7, 'replicated')")
+    note = BootNote.local.find(7)
+    assert_equal("replicated", note.body)
+  end
+
+  def test_replica_model_local_create_cannot_forge_a_replica_row
+    boot
+    assert_raise(Funicular::DB::ReplicaWriteError) do
+      BootNote.local_create(id: 9, body: "forged")
+    end
+    assert_equal(0, BootNote.local.count)
+  end
+
   def test_boot_restores_previous_snapshots
     boot
     BootDraft.local_create(title: "persisted")
@@ -363,10 +379,12 @@ class BootTest < Picotest::Test
   end
 
   def test_schema_too_new_locks_down_and_reset_local_recovers
-    boot([BootDraft], META)
+    boot([BootDraft, BootNote], META)
     raw = Funicular::DB.__registered_database(:local)
     # Simulate a deploy rollback: the stored version outruns the code.
     Funicular::DB.store_table_version(raw, "boot_drafts", 99)
+    Funicular::DB.replica.execute(
+      "INSERT INTO boot_notes (id, body) VALUES (8, 'still readable')")
     assert_equal(true, Funicular::DB.flush)
     store = $boot_store
     Funicular::DB.__reset_boot
@@ -374,12 +392,16 @@ class BootTest < Picotest::Test
     Funicular::DB.__set_snapshot_store(store)
     # The boot COMPLETES -- locked down, not failed.
     assert_equal(true,
-                 Funicular::DB.boot(models: [BootDraft], metadata: META))
+                 Funicular::DB.boot(models: [BootDraft, BootNote],
+                                    metadata: META))
     assert_equal(:ready, Funicular::DB.boot_state)
     # Model-level operations raise...
     assert_raise(Funicular::DB::SchemaTooNewError) do
       BootDraft.count
     end
+    # The lockdown belongs to the client-only database; replica reads use
+    # their own handle and remain available.
+    assert_equal("still readable", BootNote.local.find(8).body)
     # ...while the raw SELECT export path survives...
     assert_equal([[0]],
                  Funicular::DB.local.execute(

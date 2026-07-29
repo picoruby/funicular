@@ -2644,15 +2644,20 @@ module Funicular
     end
 
     # The funnel every Model-level local operation goes through
-    # (Model.local_db): ready check, then the SchemaTooNew latch.
+    # (Model.local_db): select the database for the model's storage role,
+    # check readiness, then apply the local-only SchemaTooNew latch.
     def self.__model_local_db(model)
       __ensure_local_database_enabled(model.to_s)
-      handle = boot_state == :ready ? @local_handle : nil
+      replica = model.replica?
+      handle = if boot_state == :ready
+        replica ? @replica_handle : @local_handle
+      end
       unless handle
         raise UnavailableError,
-          "#{model.to_s}: the local database is not booted"
+          "#{model.to_s}: the #{replica ? 'replica' : 'local'} database " \
+          "is not booted"
       end
-      __check_schema_lockdown(model.to_s)
+      __check_schema_lockdown(model.to_s) unless replica
       handle
     end
 
