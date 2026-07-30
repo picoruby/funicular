@@ -229,7 +229,7 @@ module Funicular
 
       # Setup beforeunload handler to persist pending commands
       def setup_beforeunload_handler
-        @beforeunload_callback_id = JS.global.addEventListener("beforeunload") do
+        @beforeunload_callback_id = JS.global.addEventListener("beforeunload", sync: true) do
           save_pending_to_storage
         end
       end
