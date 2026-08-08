@@ -98,11 +98,18 @@ module Funicular
         settled = false
         begin
           JS.global.fetch(url, options) do |response|
-            status = response.status.to_i
-            json_text = response.to_binary
-            data = parse_response_body(json_text)
-            # @type var status: Integer
+            # The epoch decides BEFORE the body is touched. fetch
+            # resolves once the headers arrive -- which is all this
+            # check needs -- but to_binary can still fail on an
+            # interrupted body stream, and the rescue below would then
+            # settle with a network error without ever processing the
+            # mismatch: the page would stay non-terminal and free to
+            # issue another request under the NEW session.
             if Funicular::DB.__session_epoch_ok?(response_epoch(response))
+              # @type var status: Integer
+              status = response.status.to_i
+              json_text = response.to_binary
+              data = parse_response_body(json_text)
               http_response = Response.new(status, data)
             else
               # The session changed under this page (docs decision 13):

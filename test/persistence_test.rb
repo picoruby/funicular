@@ -76,6 +76,10 @@ class PersistenceTest < Picotest::Test
     Funicular::DB.snapshot_key($per_identity, :local)
   end
 
+  def replica_key
+    Funicular::DB.snapshot_key($per_identity, :replica)
+  end
+
   def pump(ms)
     JS.global.eval("new Promise((r) => setTimeout(r, #{ms}))").await
   end
@@ -216,6 +220,34 @@ class PersistenceTest < Picotest::Test
     end
     pump(60)
     assert_equal(1, $per_store.put_count)
+  end
+
+  def test_flush_reports_false_when_one_role_did_not_persist
+    # Both databases registered, one of them deferred by an open
+    # transaction: the replica image still goes out, but flush must
+    # NOT report success -- a caller about to navigate away would
+    # otherwise believe the unpersisted local data was safe.
+    Funicular::DB.configure do
+      config.local_debounce_ms = 20
+    end
+    replica = SQLite3::Database.new(":memory:")
+    replica.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY)")
+    Funicular::DB.__register_database(:replica, replica, [])
+    guarded = Funicular::DB::GuardedDatabase.new($per_db, :local)
+    guarded.transaction do
+      $per_db.execute("INSERT INTO items (name) VALUES ('deferred')")
+      assert_equal(false, Funicular::DB.flush)
+      # The replica went out all the same: flush never short-circuits.
+      assert_equal(1, $per_store.put_count)
+      assert_equal(true, $per_store.data.has_key?(replica_key))
+      assert_equal(false, $per_store.data.has_key?(local_key))
+    end
+    # The commit settle re-arms the deferred local snapshot.
+    pump(60)
+    assert_equal(true, $per_store.data.has_key?(local_key))
+    Funicular::DB.cancel_persist_timers
+    Funicular::DB.__register_database(:replica, nil, [])
+    replica.close
   end
 
   def test_rolled_back_rows_never_reach_a_snapshot

@@ -1953,9 +1953,28 @@ module Funicular
       end
       return false unless state == :persistent_writer
       cancel_persist_timers
-      wrote_replica = persist_snapshot(:replica)
-      wrote_local = persist_snapshot(:local)
-      wrote_replica || wrote_local
+      # Every REGISTERED database, and never short-circuiting: a local
+      # snapshot that defers (transaction) or fails must not skip the
+      # replica, and the pair reports success only when all of it
+      # landed. A caller about to navigate away reads this return
+      # value as "the data is safe" -- one deferred role makes that a
+      # lie. A role with no database behind it (a page with no local
+      # models, say) is nothing to persist and does not count.
+      roles = [:replica, :local]
+      wrote = 0
+      missed = 0
+      i = 0
+      while i < roles.size
+        role = roles[i]
+        i += 1
+        next unless __registered_database(role)
+        if persist_snapshot(role)
+          wrote += 1
+        else
+          missed += 1
+        end
+      end
+      0 < wrote && missed == 0
     end
 
     # The tab-hidden backstop (docs decision 11): debounce alone would

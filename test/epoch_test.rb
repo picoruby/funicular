@@ -19,6 +19,18 @@ class EpochTest < Picotest::Test
           if (globalThis.__epochSend) {
             headers["X-Funicular-Epoch"] = globalThis.__epochHeader;
           }
+          // Headers arrive intact, the body stream dies mid-flight:
+          // the epoch is knowable, reading the body is not. The
+          // destroy is delayed so the client's fetch RESOLVES on the
+          // headers first -- killing the socket right away rejects
+          // the fetch itself, which is a different failure.
+          if (globalThis.__epochAbortBody) {
+            headers["Content-Length"] = "100";
+            res.writeHead(200, headers);
+            res.write('{"id": 1,');
+            setTimeout(() => { res.socket.destroy(); }, 50);
+            return;
+          }
           res.writeHead(200, headers);
           res.end(JSON.stringify({ "id": 1, "title": "from server" }));
         });
@@ -127,7 +139,7 @@ class EpochTest < Picotest::Test
     $epoch_port = JS.global.eval(SERVER_JS).await.to_s.to_i
     JS.global.eval(
       "globalThis.__epochHeader = 'e1'; globalThis.__epochSend = true;" \
-      " globalThis.__epochHits = 0")
+      " globalThis.__epochAbortBody = false; globalThis.__epochHits = 0")
     define_models
   end
 
@@ -337,6 +349,25 @@ class EpochTest < Picotest::Test
     pump(100)
     assert_equal(hits,
                  JS.global.eval("globalThis.__epochHits").to_s.to_i)
+  end
+
+  def test_a_broken_body_still_processes_the_epoch_mismatch
+    # The headers (epoch included) arrived, the body stream did not.
+    # Checked after the body read, the failure would surface as a
+    # plain network error and the rotated session would go unnoticed:
+    # the page stays live and its next click talks to the server under
+    # someone else's session. The epoch verdict comes first.
+    $epoch_changed = 0
+    Funicular::DB.configure do
+      config.on_session_change = -> { $epoch_changed += 1 }
+    end
+    Funicular::DB.__set_session_epoch("e0")
+    JS.global.eval("globalThis.__epochAbortBody = true")
+    response = get_once(server_url)
+    assert_equal(0, response.status)
+    assert_equal(true, response.error_message.include?("session"))
+    assert_equal(true, Funicular::DB.session_terminated?)
+    assert_equal(1, $epoch_changed)
   end
 
   def test_missing_header_counts_as_a_mismatch
