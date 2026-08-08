@@ -36,6 +36,7 @@ module Funicular
       @endpoints = schema_data["endpoints"]
       # Replica column metadata derives from the schema; drop any cache.
       @local_columns = nil
+      __assert_no_association_conflict(@schema.keys)
 
       # Generate attr_accessor dynamically based on schema
       @schema.each do |name, config|
@@ -230,6 +231,176 @@ module Funicular
       @refresh_mode || :manual
     end
 
+    # ---- associations (docs/local_database.md, "Associations") ----------
+    #
+    # Local-query sugar over the <name>_id convention, and nothing more:
+    #
+    #   post.user      -> User.local.find_by(id: post.user_id)
+    #   post.comments  -> Comment.local.where(post_id: post.id)
+    #
+    # Readers only. The foreign key is assigned the plain way
+    # (post.user_id = user.id), so there is no second, hidden path into
+    # the column and no dirty-tracking special case.
+
+    def self.belongs_to(name, class_name: nil, foreign_key: nil, **rest)
+      __reject_association_options(:belongs_to, name, rest)
+      key = name.to_sym
+      target = (class_name || __camelize(key.to_s)).to_s
+      fk = (foreign_key || "#{key}_id").to_s
+      __register_association(key)
+      define_method(key) do
+        # @type self: Model
+        value = send(fk)
+        if value.nil?
+          # No foreign key, no target row -- and no query to run.
+          nil
+        else
+          self.class.__association_target(key, target).local.find_by(id: value)
+        end
+      end
+      nil
+    end
+
+    def self.has_many(name, class_name: nil, foreign_key: nil, **rest)
+      __reject_association_options(:has_many, name, rest)
+      key = name.to_sym
+      target = (class_name || __camelize(__singularize(key.to_s))).to_s
+      fk = (foreign_key || "#{demodulized_snake_name}_id").to_s
+      __register_association(key)
+      define_method(key) do
+        # @type self: Model
+        # An unsaved parent owns nothing: the empty-array condition
+        # compiles to 1=0, where a nil would read as IS NULL and hand
+        # this record every orphan row in the table.
+        none = [] #: Array[untyped]
+        value = id.nil? ? none : id
+        self.class.__association_target(key, target).local.where(fk => value)
+      end
+      nil
+    end
+
+    def self.__reject_association_options(kind, name, rest)
+      return nil if rest.empty?
+      raise ArgumentError,
+        "#{kind} #{name.to_sym.inspect}: #{rest.keys.inspect} not supported " \
+        "in v1 (only class_name: and foreign_key:; through, eager loading, " \
+        "and polymorphic associations are not implemented)"
+    end
+
+    # The registry exists for two readers: the memoized target class,
+    # and the column/attribute collision guard.
+    def self.__register_association(key)
+      registry = (@associations ||= {}) # steep:ignore UnannotatedEmptyCollection
+      # Last-one-wins would be the same silent shrug as ignoring
+      # through:: the reader defined first is simply gone.
+      if registry.has_key?(key)
+        raise ArgumentError,
+          "#{self}: the association #{key.inspect} is already declared"
+      end
+      __assert_association_name_free(key)
+      registry[key] = { klass: nil }
+      nil
+    end
+
+    # Unlike every other generated accessor, an association reader is
+    # defined unconditionally -- so `has_many :errors` would replace
+    # Validations#errors, and valid? (which calls errors.clear) would
+    # die on a Relation, at neither declaration nor first read.
+    #
+    # The reserved set is Funicular::Model's OWN instance API: a
+    # subclass's column accessors live on the subclass, so they can
+    # never appear here, whenever they are generated. Subtracting
+    # Object's keeps generic names (hash, send) out of it. A method the
+    # model itself hand-wrote is deliberately NOT covered -- catching
+    # it would only work when the `def` precedes the declaration.
+    def self.__assert_association_name_free(key)
+      # One fixed set per process; the framework's API stops changing
+      # once mrblib is loaded, well before any app model declares.
+      reserved = Funicular::Model.instance_variable_get(:@reserved_names) ||
+        Funicular::Model.instance_variable_set(
+          :@reserved_names,
+          Funicular::Model.instance_methods - Object.instance_methods)
+      return nil unless reserved.include?(key)
+      raise ArgumentError,
+        "#{self}: the association #{key.inspect} would replace " \
+        "Funicular::Model##{key}; pick another name"
+    end
+
+    def self.__associations
+      @associations || {}
+    end
+
+    # Resolved lazily, at first read: model files load in sorted filename
+    # order, so `belongs_to :user` in post.rb must not demand the User
+    # constant while user.rb is still unloaded. Only successes are
+    # memoized -- a class that loads later still resolves.
+    def self.__association_target(key, class_name)
+      entry = __associations[key]
+      cached = entry && entry[:klass]
+      return cached if cached
+      klass = __resolve_association_constant(key, class_name)
+      entry[:klass] = klass if entry
+      klass
+    end
+
+    # Convention-derived target names never carry "::", so the walk is
+    # here for class_name: strings alone.
+    def self.__resolve_association_constant(key, class_name)
+      parts = class_name.split("::")
+      # @type var owner: untyped
+      owner = Object
+      i = 0
+      while i < parts.size
+        part = parts[i].to_sym
+        # inherit: false. A class used as a namespace inherits from
+        # Object, so the default lookup would answer "Admin::User" with
+        # the top-level ::User when Admin carries no User of its own --
+        # a typo resolving to a DIFFERENT model, in the one path whose
+        # job is to fail clearly. const_get takes no such argument here
+        # (picoruby: one argument only), but it does not need one: an
+        # own constant wins the lookup, and the check below is what
+        # decides whether there is one.
+        unless owner.is_a?(Module) && owner.const_defined?(part, false)
+          raise NameError, __unresolvable_association(key, class_name)
+        end
+        owner = owner.const_get(part)
+        i += 1
+      end
+      # A module or a plain value has no `.local` behind it; same
+      # verdict, same message.
+      unless owner.is_a?(Class)
+        raise NameError, __unresolvable_association(key, class_name)
+      end
+      owner
+    end
+
+    def self.__unresolvable_association(key, class_name)
+      "#{self}: association #{key.inspect} cannot resolve the model " \
+      "class #{class_name}; declare class_name:, or make sure the model " \
+      "is one the client carries"
+    end
+
+    # A column (or REST attribute) named like a declared association:
+    # the association reader would shadow it silently while the
+    # generated writer kept writing the column. Raised where the two
+    # first meet -- the accessor generation, which is the first instance
+    # path on local models and the schema load on the others.
+    def self.__assert_no_association_conflict(names)
+      registry = @associations
+      return nil unless registry
+      i = 0
+      while i < names.size
+        name = names[i]
+        if registry.has_key?(name.to_sym)
+          raise ArgumentError,
+            "#{self}: the association #{name.to_sym.inspect} and the " \
+            "attribute of the same name would shadow each other; rename one"
+        end
+        i += 1
+      end
+      nil
+    end
+
     # Reader and override in one: `table_name` returns the table name
     # (naive pluralization of the class name: +s, y->ies),
     # `table_name "things"` overrides it.
@@ -242,6 +413,12 @@ module Funicular
     end
 
     def self.derive_table_name
+      __pluralize(demodulized_snake_name)
+    end
+
+    # "Admin::BlogPost" -> "blog_post". The singular half of
+    # derive_table_name; has_many reuses it for the foreign key.
+    def self.demodulized_snake_name
       parts = to_s.split("::")
       base = parts[parts.size - 1] || ""
       snake = ""
@@ -257,11 +434,43 @@ module Funicular
         end
         i += 1
       end
-      if snake.end_with?("y")
-        "#{snake[0, snake.length - 1]}ies"
+      snake
+    end
+
+    def self.__pluralize(name)
+      if name.end_with?("y")
+        "#{name[0, name.length - 1]}ies"
       else
-        "#{snake}s"
+        "#{name}s"
       end
+    end
+
+    # The exact inverse of __pluralize. Irregular names are the caller's
+    # job, through class_name: -- the same deal table_name offers.
+    def self.__singularize(name)
+      if name.end_with?("ies")
+        "#{name[0, name.length - 3]}y"
+      elsif name.end_with?("s")
+        name[0, name.length - 1].to_s
+      else
+        name
+      end
+    end
+
+    def self.__camelize(name)
+      parts = name.split("_")
+      out = ""
+      i = 0
+      while i < parts.size
+        part = parts[i]
+        head = part[0]
+        if head
+          out += head.upcase
+          out += part[1, part.length - 1].to_s
+        end
+        i += 1
+      end
+      out
     end
 
     # The marked local/cache view (source-of-truth contract): a Relation
@@ -420,6 +629,7 @@ module Funicular
     def self.define_local_accessors(columns)
       existing = instance_methods
       names = columns.keys
+      __assert_no_association_conflict(names)
       names_size = names.size
       i = 0
       while i < names_size

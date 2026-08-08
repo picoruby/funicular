@@ -42,4 +42,37 @@ class SSRDatabaseTest < Minitest::Test
       model.local_create(title: "nope")
     end
   end
+
+  def test_association_declarations_evaluate_but_reading_raises
+    # Named constants, because the conventions read the class name:
+    # SsrPost -> ssr_post_id, :ssr_comment -> SsrComment.
+    Object.const_set(:SsrComment, Class.new(Funicular::Model) do
+      storage :local do
+        migrate 1 do |t|
+          t.integer :ssr_post_id
+        end
+      end
+    end)
+    Object.const_set(:SsrPost, Class.new(Funicular::Model))
+    # Declared after the constant exists, the way a `class SsrPost <
+    # Funicular::Model` body reads: has_many derives its foreign key
+    # from the declaring class name.
+    SsrPost.class_eval do
+      storage :local do
+        migrate 1 do |t|
+          t.integer :ssr_comment_id
+        end
+      end
+      belongs_to :ssr_comment
+      has_many :ssr_comments
+    end
+    # The declaration side worked: nothing resolved, no SQLite touched.
+    record = SsrPost.new(ssr_comment_id: 1)
+    # Reading one is a local query, and the server has no local database.
+    assert_raises(Funicular::DB::UnavailableError) { record.ssr_comment }
+    assert_raises(Funicular::DB::UnavailableError) { record.ssr_comments.to_a }
+  ensure
+    Object.send(:remove_const, :SsrPost) if Object.const_defined?(:SsrPost)
+    Object.send(:remove_const, :SsrComment) if Object.const_defined?(:SsrComment)
+  end
 end

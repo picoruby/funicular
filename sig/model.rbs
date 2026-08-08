@@ -14,6 +14,7 @@ module Funicular
     self.@collecting_migrations: bool?
     self.@refresh_mode: Symbol?
     self.@table_name: String?
+    self.@associations: Hash[Symbol, Hash[Symbol, untyped]]?
     self.@local_columns: Hash[String, Symbol]?
 
     def self.schema: () -> Hash[String, Hash[String, untyped]]
@@ -42,8 +43,26 @@ module Funicular
     def self.validate_local_migrations: () -> void
     def self.refresh: (Symbol mode) -> Symbol
     def self.refresh_mode: () -> Symbol
+
+    # Associations: declaration-time metadata plus lazily resolved
+    # targets. The generated readers are dynamic, like the accessors.
+    def self.belongs_to: (Symbol | String name, ?class_name: (String | Symbol)?, ?foreign_key: (String | Symbol)?, **untyped rest) -> nil
+    def self.has_many: (Symbol | String name, ?class_name: (String | Symbol)?, ?foreign_key: (String | Symbol)?, **untyped rest) -> nil
+    def self.__reject_association_options: (Symbol kind, Symbol | String name, Hash[Symbol, untyped] rest) -> nil
+    def self.__register_association: (Symbol key) -> nil
+    def self.__assert_association_name_free: (Symbol key) -> nil
+    def self.__associations: () -> Hash[Symbol, Hash[Symbol, untyped]]
+    def self.__association_target: (Symbol key, String class_name) -> untyped
+    def self.__resolve_association_constant: (Symbol key, String class_name) -> untyped
+    def self.__unresolvable_association: (Symbol key, String class_name) -> String
+    def self.__assert_no_association_conflict: (Array[String] names) -> nil
+
     def self.table_name: (?(String | Symbol)? explicit) -> String
     def self.derive_table_name: () -> String
+    def self.demodulized_snake_name: () -> String
+    def self.__pluralize: (String name) -> String
+    def self.__singularize: (String name) -> String
+    def self.__camelize: (String name) -> String
     def self.local: () -> Relation
 
     # Relation protocol (mrblib/relation.rb)

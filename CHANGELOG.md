@@ -41,6 +41,16 @@ of truth. Entries below accumulate as the feature lands.
   column metadata derives from the server schema (binary attributes
   excluded); materializing a query before `Funicular::DB.boot` (a later
   change) raises `Funicular::DB::UnavailableError`.
+- Associations: `belongs_to :user` and `has_many :comments` as local-query
+  sugar over the `<name>_id` convention -- `post.user` reads
+  `User.local.find_by(id: post.user_id)`, `post.comments` returns the
+  chainable `Comment.local.where(post_id: post.id)` Relation (usable in
+  `watch`). `class_name:` and `foreign_key:` override the conventions;
+  `through:`, eager loading, and polymorphic associations raise as
+  unsupported in v1. Targets resolve lazily at first read, so model files
+  may load in any order, and a declaration whose name collides with a
+  column, a REST attribute, another declaration, or a `Funicular::Model`
+  instance method is refused instead of silently shadowing it.
 - The client-only-table migration machinery: `Funicular::DB::TableBuilder`
   (the `t` in migrate blocks -- string/text/integer/float/boolean/datetime
   columns with `default:`/`null:`, `timestamps`, `index`/`remove_index`,
