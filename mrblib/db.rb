@@ -1012,11 +1012,16 @@ module Funicular
     # via Statement#readonly? -- a statement prepared while writable is
     # still refused once the handle went read-only.
 
+    TRANSACTION_CONTROL_WORDS = [
+      "begin", "commit", "end", "rollback", "savepoint", "release"
+    ].freeze
+
     # Statements that subvert framework control are rejected in every
-    # state: ATTACH/DETACH escape to other database files, and
-    # PRAGMA query_only would lift (or fake) the read-only lockdown.
-    # sqlite3_stmt_readonly classifies all three as read-only, so the
-    # statement-level check alone would let them through.
+    # state: ATTACH/DETACH escape to other database files, PRAGMA
+    # query_only would lift (or fake) the read-only lockdown, and
+    # transaction control would move the boundary the deferral hangs
+    # off. sqlite3_stmt_readonly classifies all of them as read-only,
+    # so the statement-level check alone would let them through.
     def self.guard_statement_sql(sql)
       s = sql.to_s
       i = skip_sql_blanks(s, 0)
@@ -1034,6 +1039,21 @@ module Funicular
         raise ArgumentError,
           "PRAGMA query_only is managed by the framework and cannot be " \
           "issued through the guarded database handle"
+      end
+      # Transaction control belongs to the handle's own transaction /
+      # commit / rollback, which pair every boundary with the event and
+      # persistence deferral (docs decisions 10/11). Issued as raw SQL
+      # the deferral is simply skipped: an execute("BEGIN") lets change
+      # events reach watchers before the commit, and an
+      # execute("ROLLBACK") neither discards the events an open
+      # deferral parked nor resumes the snapshot it postponed. END is
+      # SQLite's synonym for COMMIT, and the savepoint verbs open and
+      # close nested boundaries the same bookkeeping would miss.
+      if TRANSACTION_CONTROL_WORDS.include?(word)
+        raise ArgumentError,
+          "transaction control (#{word.upcase}) is managed by the " \
+          "framework; use the guarded handle's #transaction, #commit " \
+          "and #rollback so change events and snapshots settle with it"
       end
     end
 
@@ -1340,7 +1360,7 @@ module Funicular
         else
           raise ArgumentError, "invalid transaction mode #{mode.inspect}"
         end
-        execute("BEGIN #{mode_sql} TRANSACTION")
+        __execute_control("BEGIN #{mode_sql} TRANSACTION")
         # Deferral starts with the transaction ITSELF, block or not:
         # change events raised before COMMIT coalesce and fire only
         # after it -- or vanish with the rollback (docs decision 10).
@@ -1363,15 +1383,30 @@ module Funicular
       end
 
       def commit
-        execute("COMMIT TRANSACTION")
+        __execute_control("COMMIT TRANSACTION")
         DB.__commit_deferral(@role)
         true
       end
 
       def rollback
-        execute("ROLLBACK TRANSACTION")
+        __execute_control("ROLLBACK TRANSACTION")
         DB.__rollback_deferral(@role)
         true
+      end
+
+      # The framework's own transaction boundaries: the same guarded
+      # statement path #execute uses (read-only enforcement included),
+      # minus the guard that refuses these very statements to callers.
+      # Everything that moves a boundary funnels through here, so the
+      # deferral hooks above it always run.
+      private def __execute_control(sql)
+        stmt = GuardedStatement.new(@db.prepare(sql), self)
+        begin
+          stmt.execute
+        ensure
+          stmt.close unless stmt.closed?
+        end
+        nil
       end
     end
 

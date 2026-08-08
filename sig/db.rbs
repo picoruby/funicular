@@ -106,8 +106,10 @@ module Funicular
       def transaction: (?Symbol mode) ?{ (GuardedDatabase proxy) -> untyped } -> untyped
       def commit: () -> bool
       def rollback: () -> bool
+      private def __execute_control: (String sql) -> nil
     end
 
+    TRANSACTION_CONTROL_WORDS: Array[String]
     def self.guard_statement_sql: (untyped sql) -> void
     private def self.statement_head: (untyped sql) -> String
     private def self.pragma_name: (String s, Integer pos) -> String

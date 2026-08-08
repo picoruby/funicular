@@ -75,6 +75,26 @@ class EpochHeaderTest < Minitest::Test
     refute headers.key?(HEADER)
   end
 
+  def test_an_inner_header_is_dropped_when_no_epoch_is_available
+    # No env value and no session: the contract is "no authoritative
+    # epoch, no header". An inner layer's leftover would otherwise
+    # survive as the page's only epoch signal -- and one stamped
+    # before the session rotated would read as a MATCH, keeping a page
+    # alive that decision 13 wants terminal.
+    middleware = Funicular::EpochHeader.new(
+      app_returning(200, { HEADER => "stale-pre-login" }))
+    _, headers, = middleware.call({})
+    refute headers.key?(HEADER)
+  end
+
+  def test_a_legacy_cased_inner_header_is_dropped_without_an_epoch_too
+    middleware = Funicular::EpochHeader.new(
+      app_returning(200, { "X-Funicular-Epoch" => "stale-pre-login" }))
+    _, headers, = middleware.call({})
+    refute headers.key?("X-Funicular-Epoch")
+    refute headers.key?(HEADER)
+  end
+
   def test_respects_the_configured_application_id
     @config.application_id = "second_app"
     session = {

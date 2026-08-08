@@ -22,6 +22,9 @@ module Funicular
   # session and no env value the header is simply absent, exactly as
   # before the request.
   class EpochHeader
+    # Every spelling of the header this middleware owns.
+    OWNED_HEADERS = [EpochStamping::HEADER, "X-Funicular-Epoch"].freeze
+
     def initialize(app)
       @app = app
     end
@@ -29,19 +32,19 @@ module Funicular
     def call(env)
       status, headers, body = @app.call(env)
       return [status, headers, body] unless Funicular.configuration.local_database
+      # This header is the framework's to write, so an inner layer's
+      # value is dropped FIRST and unconditionally: a stale one
+      # (stamped before a login/logout rotated the epoch) would let an
+      # old page read the post-transition response as a match --
+      # exactly the boundary decision 13 exists to keep closed. Leaving
+      # it in place when no authoritative epoch is available would be
+      # the same hole with none of the excuses. Both spellings go:
+      # plain header hashes are case-sensitive, so a legacy-cased
+      # duplicate would otherwise ride out alongside our lowercase
+      # (Rack 3) name.
+      OWNED_HEADERS.each { |name| headers.delete(name) }
       epoch = env[EpochStamping::ENV_KEY] || stored_epoch(env)
-      if epoch
-        # The framework's epoch is AUTHORITATIVE and overwrites
-        # whatever an inner layer set: a stale value there (stamped
-        # before a login/logout rotated the epoch) would let an old
-        # page apply the post-transition response as a match --
-        # exactly the boundary decision 13 exists to keep closed. The
-        # capitalized spelling goes too: plain header hashes are
-        # case-sensitive, and a legacy-cased duplicate would otherwise
-        # ride out alongside our lowercase (Rack 3) name.
-        headers.delete("X-Funicular-Epoch")
-        headers[EpochStamping::HEADER] = epoch
-      end
+      headers[EpochStamping::HEADER] = epoch if epoch
       [status, headers, body]
     end
 

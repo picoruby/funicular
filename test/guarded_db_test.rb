@@ -107,6 +107,48 @@ class GuardedDbTest < Picotest::Test
     assert_raise(ArgumentError) { @reader.execute("pragma QUERY_ONLY") }
   end
 
+  def test_transaction_control_is_rejected_on_the_public_sql_path
+    # Raw boundaries skip the deferral: a BEGIN here would let change
+    # events reach watchers before the commit, and a ROLLBACK would
+    # leave an open deferral's events parked and its postponed
+    # snapshot asleep. Savepoints move the same boundary, and END is
+    # SQLite's synonym for COMMIT.
+    assert_raise(ArgumentError) { @writer.execute("BEGIN") }
+    assert_raise(ArgumentError) { @writer.execute("begin immediate") }
+    assert_raise(ArgumentError) { @writer.execute("COMMIT") }
+    assert_raise(ArgumentError) { @writer.execute("END TRANSACTION") }
+    assert_raise(ArgumentError) { @writer.execute("ROLLBACK") }
+    assert_raise(ArgumentError) { @writer.execute("SAVEPOINT sp1") }
+    assert_raise(ArgumentError) { @writer.execute("RELEASE sp1") }
+    assert_raise(ArgumentError) { @writer.execute("ROLLBACK TO sp1") }
+    # Every entry point, in every state.
+    assert_raise(ArgumentError) { @writer.query("BEGIN") }
+    assert_raise(ArgumentError) { @writer.prepare("BEGIN") }
+    assert_raise(ArgumentError) { @reader.execute("BEGIN") }
+    assert_raise(ArgumentError) do
+      @writer.execute("  /* sneak */ begin deferred")
+    end
+  end
+
+  def test_the_frameworks_own_boundaries_still_run
+    # The refusal above must not reach transaction/commit/rollback,
+    # which pair each boundary with the deferral.
+    @writer.transaction do |db|
+      db.execute("INSERT INTO gk (name) VALUES ('inside')")
+    end
+    assert_equal(2, @writer.execute("SELECT COUNT(*) FROM gk")[0][0])
+    @writer.transaction
+    @writer.execute("INSERT INTO gk (name) VALUES ('rolled back')")
+    @writer.rollback
+    assert_equal(2, @writer.execute("SELECT COUNT(*) FROM gk")[0][0])
+  end
+
+  def test_only_the_leading_keyword_decides
+    # A table named after a transaction verb stays queryable.
+    @raw.execute("CREATE TABLE release (id INTEGER PRIMARY KEY)")
+    assert_equal([], @writer.execute("SELECT * FROM release"))
+  end
+
   def test_comment_prefixes_do_not_smuggle_forbidden_statements
     assert_raise(ArgumentError) do
       @writer.execute("  /* sneak */ attach database 'f' as y")
