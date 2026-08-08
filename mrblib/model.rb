@@ -98,6 +98,20 @@ module Funicular
     # boot, in the migration runner.
 
     def self.storage(kind, &block)
+      # refresh is a replica-only axis: a local table has no server to
+      # refresh from, and an ephemeral model has no table at all. The
+      # check lives in BOTH declarations because either can come
+      # first in the class body.
+      # The message reads the kind through an unnarrowed alias: inside
+      # the branch below the comparisons leave `kind` with no type
+      # steep will call #inspect on.
+      # @type var declared: Symbol
+      declared = kind
+      if @refresh_mode && (kind == :local || kind == :ephemeral)
+        raise ArgumentError,
+          "storage #{declared.inspect} cannot follow a refresh " \
+          "declaration (refresh applies to replica models only)"
+      end
       # A storage change invalidates cached column metadata.
       @local_columns = nil
       if kind == :local
@@ -192,6 +206,12 @@ module Funicular
     # v1 implements only the default :manual (freshness is explicit fetch);
     # :auto and :live are reserved and rejected at class-definition time.
     def self.refresh(mode)
+      kind = @storage_kind
+      if kind == :local || kind == :ephemeral
+        raise ArgumentError,
+          "refresh does not apply to storage #{storage_kind.inspect} " \
+          "(refresh applies to replica models only)"
+      end
       if mode == :auto
         raise NotImplementedError,
           "refresh :auto is not yet supported (v1 is :manual only)"

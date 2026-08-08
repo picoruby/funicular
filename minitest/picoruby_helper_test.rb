@@ -263,6 +263,42 @@ class PicorubyHelperTest < Minitest::Test
     refute_includes html, "data-funicular-anonymous-only"
   end
 
+  def test_top_level_options_cannot_override_the_framework_metadata
+    # The contract values can bypass the data: hash entirely and arrive
+    # as top-level options, in any spelling the tag builder accepts.
+    @config.local_database = true
+    @config.user_key = ->(controller) { controller.current_user_key }
+    session = {}
+    view = metadata_view(user_key: "u1", session: session)
+    html = view.picoruby_include_tag(
+      source: :local_dist, base_styles: false,
+      **{ "data-funicular-epoch" => "evil-dashed",
+          :"data-funicular-user-key" => "evil-symbol",
+          data_funicular_application_id: "evil-underscored",
+          "data-turbo-track" => "reload" })
+    refute_includes html, "evil-dashed"
+    refute_includes html, "evil-symbol"
+    refute_includes html, "evil-underscored"
+    assert_includes html, 'data-funicular-user-key="u1"'
+    assert_includes html, 'data-funicular-application-id="funicular"'
+    epoch = session["funicular_epochs"]["funicular"]["epoch"]
+    assert_includes html, %(data-funicular-epoch="#{epoch}")
+    # Unrelated top-level data attributes are the caller's business.
+    assert_includes html, 'data-turbo-track="reload"'
+    assert_equal 1, html.scan("data-funicular-epoch=").size
+    assert_equal 1, html.scan("data-funicular-user-key=").size
+    assert_equal 1, html.scan("data-funicular-application-id=").size
+  end
+
+  def test_top_level_options_cannot_enable_the_disabled_local_database
+    html = @view.picoruby_include_tag(
+      source: :local_dist, base_styles: false,
+      **{ "data-funicular-local-database" => "true",
+          data_funicular_application_id: "injected" })
+    refute_includes html, "data-funicular-local-database"
+    refute_includes html, "injected"
+  end
+
   def test_cdn_source_uses_versioned_jsdelivr_url
     @config.cdn_version = "1.2.3"
     html = @view.picoruby_include_tag(source: :cdn, base_styles: false)

@@ -75,6 +75,14 @@ module Funicular
           i += 1
         end
         data.merge!(funicular_page_metadata)
+        # The same contract values can arrive as TOP-LEVEL options too
+        # ("data-funicular-epoch" => ..., or data_funicular_epoch:).
+        # Left in options they reach the tag builder unfiltered and
+        # emit a second copy of an attribute the metadata owns -- or,
+        # with the feature disabled, the only copy.
+        options.keys.each do |key|
+          options.delete(key) if reserved_metadata_option?(key)
+        end
         script = tag.script("", src: src, data: data, **options)
         return script unless base_styles
 
@@ -130,6 +138,18 @@ module Funicular
       end
 
       private
+
+      # True for every top-level spelling of a key the page metadata
+      # owns: "data-funicular-epoch", :"data-funicular-epoch", and the
+      # underscored data_funicular_epoch the tag builder dasherizes.
+      # Other data- attributes are the caller's business and survive.
+      def reserved_metadata_option?(key)
+        normalized = key.to_s.tr("-", "_")
+        return false unless normalized.start_with?("data_")
+
+        LOCAL_DATABASE_METADATA_KEYS.include?(
+          normalized.delete_prefix("data_").to_sym)
+      end
 
       # The namespace + epoch metadata the client boot reads
       # (DB.read_page_metadata): attribute values are HTML-escaped by

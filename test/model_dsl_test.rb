@@ -200,6 +200,50 @@ class ModelDslTest < Picotest::Test
     end
   end
 
+  def test_refresh_is_a_replica_only_axis
+    # Nothing to refresh FROM on a local table, and no table at all on
+    # an ephemeral model: the declaration is meaningless, so it fails
+    # at class-definition time rather than quietly succeeding.
+    assert_raise(ArgumentError) do
+      Class.new(Funicular::Model) do
+        storage(:local) { migrate(1) { |t| t.string :title } }
+        refresh :manual
+      end
+    end
+    assert_raise(ArgumentError) do
+      Class.new(Funicular::Model) do
+        storage :ephemeral
+        refresh :manual
+      end
+    end
+  end
+
+  def test_refresh_before_storage_is_caught_too
+    # The reverse declaration order reaches the same verdict: whichever
+    # of the two comes second raises.
+    assert_raise(ArgumentError) do
+      Class.new(Funicular::Model) do
+        refresh :manual
+        storage(:local) { migrate(1) { |t| t.string :title } }
+      end
+    end
+    assert_raise(ArgumentError) do
+      Class.new(Funicular::Model) do
+        refresh :manual
+        storage :ephemeral
+      end
+    end
+  end
+
+  def test_refresh_and_storage_replica_coexist
+    klass = Class.new(Funicular::Model) do
+      refresh :manual
+      storage :replica
+    end
+    assert_equal(:manual, klass.refresh_mode)
+    assert_equal(:replica, klass.storage_kind)
+  end
+
   # ---- table_name ----
 
   def test_table_name_naive_pluralization

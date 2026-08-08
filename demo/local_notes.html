@@ -110,6 +110,9 @@
             "durability: #{state[:durability]} | notes: #{notes.size}"
           end
           div(class: "composer") do
+            # A placeholder disappears as soon as text is typed, so it
+            # cannot be the field's accessible name.
+            label(for: "note-title") { "Note title" }
             input(type: "text", id: "note-title",
                   placeholder: "What to remember?")
             button(onclick: :handle_add) { "Add" }
