@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "funicular/session_epoch"
+
 module Funicular
   module Helpers
     # View helpers exposed to ActionView through Funicular::Railtie.
@@ -15,6 +17,15 @@ module Funicular
         local_debug: "debug",
         local_dist:  "dist"
       }.freeze
+
+      LOCAL_DATABASE_METADATA_KEYS = %i[
+        funicular_local_database
+        funicular_application_id
+        funicular_user_key
+        funicular_user_key_configured
+        funicular_anonymous_only
+        funicular_epoch
+      ].freeze
 
       # Minimal CSS the gem ships for class names it emits itself (e.g.
       # FormBuilder error states). Read once; see assets/funicular.css.
@@ -37,10 +48,42 @@ module Funicular
       # such as form error states render without host-CSS setup); pass
       # base_styles: false to skip it. Any extra options become HTML attributes
       # on the <script> tag.
+      #
+      # When opted in, the tag also carries the local-database page metadata as
+      # data-funicular-* attributes (docs: local_database.md, data
+      # isolation): the application id, the user-key contract, and the
+      # session epoch. With the feature disabled these attributes are omitted.
       def picoruby_include_tag(source: nil, base_styles: true, **options)
         resolved_source = source ? source.to_sym : Funicular.configuration.source_for(Rails.env)
         src = picoruby_src_for(resolved_source)
-        script = tag.script("", src: src, **options)
+        # Caller extras survive, but the framework's contract values
+        # always win: a data: override of the epoch or the user key
+        # would make the page disagree with its own responses (instant
+        # terminal) or boot the wrong namespace. Keys are normalized so
+        # a string or dashed spelling cannot smuggle in a duplicate of
+        # the same HTML attribute either.
+        data = {}
+        caller_data = (options.delete(:data) || {}).to_a
+        i = 0
+        caller_data_size = caller_data.size
+        while i < caller_data_size
+          key, value = caller_data[i]
+          normalized = key.to_s.tr("-", "_").to_sym
+          unless LOCAL_DATABASE_METADATA_KEYS.include?(normalized)
+            data[normalized] = value
+          end
+          i += 1
+        end
+        data.merge!(funicular_page_metadata)
+        # The same contract values can arrive as TOP-LEVEL options too
+        # ("data-funicular-epoch" => ..., or data_funicular_epoch:).
+        # Left in options they reach the tag builder unfiltered and
+        # emit a second copy of an attribute the metadata owns -- or,
+        # with the feature disabled, the only copy.
+        options.keys.each do |key|
+          options.delete(key) if reserved_metadata_option?(key)
+        end
+        script = tag.script("", src: src, data: data, **options)
         return script unless base_styles
 
         style = tag.style(PicorubyHelper.base_css.html_safe, "data-funicular-base": "")
@@ -95,6 +138,58 @@ module Funicular
       end
 
       private
+
+      # True for every top-level spelling of a key the page metadata
+      # owns: "data-funicular-epoch", :"data-funicular-epoch", and the
+      # underscored data_funicular_epoch the tag builder dasherizes.
+      # Other data- attributes are the caller's business and survive.
+      def reserved_metadata_option?(key)
+        normalized = key.to_s.tr("-", "_")
+        return false unless normalized.start_with?("data_")
+
+        LOCAL_DATABASE_METADATA_KEYS.include?(
+          normalized.delete_prefix("data_").to_sym)
+      end
+
+      # The namespace + epoch metadata the client boot reads
+      # (DB.read_page_metadata): attribute values are HTML-escaped by
+      # the tag helper, so hostile application ids or user keys cannot
+      # break out of the attribute. The user-key attribute is OMITTED
+      # for signed-out visitors (the client boots the anonymous
+      # namespace), and the epoch is stamped through the same session
+      # entry the response header uses -- the page and its responses
+      # can never disagree at render time.
+      def funicular_page_metadata
+        config = Funicular.configuration
+        return {} unless config.local_database
+        config.validate_local_database!
+        ctrl = respond_to?(:controller) ? controller : nil
+        meta = {
+          funicular_local_database: "true",
+          funicular_application_id: config.application_id,
+        }
+        meta[:funicular_anonymous_only] = "true" if config.anonymous_only
+        # ONE resolver evaluation feeds both the page attribute and the
+        # epoch identity below: two evaluations could disagree
+        # mid-transition and stamp one user's epoch onto another
+        # user's page namespace.
+        key = nil
+        if config.user_key
+          meta[:funicular_user_key_configured] = "true"
+          key = Funicular::SessionEpoch.user_key(ctrl)
+          meta[:funicular_user_key] = key if key
+        end
+        # The view's session helper delegates to the controller, where
+        # an action named "session" shadows the accessor -- go through
+        # request.session, which cannot be shadowed.
+        req = respond_to?(:request) ? request : nil
+        sess = req && req.session
+        if sess && Funicular::SessionEpoch.session_available?(sess)
+          meta[:funicular_epoch] = Funicular::SessionEpoch.stamp_identity!(
+            sess, Funicular::SessionEpoch.identity_for(key))
+        end
+        meta
+      end
 
       def picoruby_src_for(source)
         if source == :cdn

@@ -1,10 +1,5 @@
 module Funicular
   module HTTP
-    CACHE_DB_NAME: String
-    CACHE_STORE: String
-
-    self.@cache: IndexedDB::KVS?
-
     class Response
       attr_reader data: untyped
       attr_reader status: Integer
@@ -15,24 +10,16 @@ module Funicular
       def error_message: () -> String?
     end
 
-    def self.cache_init!: () -> IndexedDB::KVS
-    def self.cache_purge: (String url) -> nil
-    def self.cache_clear: () -> nil
-    def self.cache_lookup: (String url) -> untyped
-    def self.cache_write: (String url, Hash[String, untyped] entry) -> nil
-
-    def self.get: (String url, ?cache: Integer?) { (Response) -> void } -> void
-    def self.post: (String url, ?Hash[untyped, untyped]? body, ?cache: Integer?) { (Response) -> void } -> void
-    def self.patch: (String url, ?Hash[untyped, untyped]? body, ?cache: Integer?) { (Response) -> void } -> void
-    def self.delete: (String url, ?cache: Integer?) { (Response) -> void } -> void
-    def self.put: (String url, ?Hash[untyped, untyped]? body, ?cache: Integer?) { (Response) -> void } -> void
+    def self.get: (String url) { (Response) -> void } -> void
+    def self.post: (String url, ?Hash[untyped, untyped]? body) { (Response) -> void } -> void
+    def self.patch: (String url, ?Hash[untyped, untyped]? body) { (Response) -> void } -> void
+    def self.delete: (String url) { (Response) -> void } -> void
+    def self.put: (String url, ?Hash[untyped, untyped]? body) { (Response) -> void } -> void
     def self.csrf_token: () -> String?
 
-    private def self.warn_unsupported_cache: (String verb) -> void
-    private def self.now_seconds: () -> Integer
-    private def self.cache_hit?: (untyped entry, Integer ttl) -> bool
-    private def self.serve_from_cache: (Hash[String, untyped] entry) { (Response) -> void } -> void
     private def self.parse_response_body: (untyped text) -> untyped
-    private def self.request: (String method, String url, Hash[untyped, untyped]? body, ?cache: Integer?) { (Response) -> void } -> void
+    private def self.request: (String method, String url, Hash[untyped, untyped]? body) { (Response) -> void } -> void
+    private def self.session_changed_response: () -> Response
+    private def self.response_epoch: (untyped response) -> String?
   end
 end

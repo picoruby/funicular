@@ -170,14 +170,15 @@ class ValidationsTest < Minitest::Test
     m = k.new("name" => "ok")
     m.instance_variable_set("@id", 1)
 
-    got_success = :unset
     got_result = :unset
-    m.update("name" => "") do |success, result|
-      got_success = success
+    got_error = :unset
+    m.update("name" => "") do |result, error|
       got_result = result
+      got_error = error
     end
 
-    assert_equal false, got_success
-    assert_equal ["can't be blank"], got_result[:name]
+    # Unified 0.5.0 callback contract: (result, error), result nil on failure
+    assert_nil got_result
+    assert_equal ["can't be blank"], got_error[:name]
   end
 end

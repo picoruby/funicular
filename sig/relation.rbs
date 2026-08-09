@@ -1,0 +1,44 @@
+module Funicular
+  class Relation
+    @model: untyped
+    @where_sql: Array[String]
+    @where_binds: Array[untyped]
+    @order_sql: Array[String]
+    @limit: Integer?
+    @offset: Integer?
+
+    def initialize: (untyped model, ?Array[String] where_sql,
+                     ?Array[untyped] where_binds, ?Array[String] order_sql,
+                     ?Integer? limit, ?Integer? offset) -> void
+
+    def where: (?Hash[untyped, untyped] | String | nil conditions, *untyped binds) -> Relation
+    def order: (*untyped args) -> Relation
+    def limit: (Integer? n) -> Relation
+    def offset: (Integer? n) -> Relation
+
+    def to_a: () -> Array[untyped]
+    def each: () { (untyped record) -> void } -> Array[untyped]
+    def first: () -> untyped
+    def count: () -> Integer
+    def exists?: () -> bool
+    def find: (untyped id) -> untyped
+    def find_by: (Hash[untyped, untyped] conditions) -> untyped
+    def delete_all: () -> Integer
+    def to_sql: () -> String
+    def __event_source: () -> [Symbol, String]
+
+    private def append_condition: (Array[String] w, Array[untyped] b, untyped col, untyped value) -> void
+    private def order_term: (untyped col, untyped dir) -> String
+    private def validate_column: (untyped col) -> String
+    private def quote: (String name) -> String
+    private def quoted_table: () -> String
+    private def select_sql: () -> String
+    private def where_clause: () -> String
+    private def order_clause: () -> String
+    private def slice_clause: () -> String
+    private def slice_arg: (Integer? n, String label) -> Integer?
+    private def decode_row: (Array[String] cols, untyped row) -> Hash[String, untyped]
+    private def single_value: (String sql) -> untyped
+    private def model_label: () -> untyped
+  end
+end
