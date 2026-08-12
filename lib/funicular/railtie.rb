@@ -9,6 +9,11 @@ module Funicular
     initializer "funicular.middleware" do |app|
       if Rails.env.development?
         app.middleware.use Funicular::Middleware
+        # The middleware recompiles the client bundle on change; SSR
+        # must reload the same sources, or server-rendered markup goes
+        # stale until a restart while hydration is already fresh.
+        require "funicular/ssr/runtime"
+        Funicular::SSR::Runtime.auto_reload = true
       end
     end
 
