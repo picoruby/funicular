@@ -340,6 +340,19 @@ of truth. Entries below accumulate as the feature lands.
 - `Model#initialize` uses key-presence lookups instead of `||`, so a
   string-keyed `false` (boolean columns) no longer collapses to nil.
 
+- `Schema::RegexpTranslator` unescapes Ruby's `\#` identity escape, which
+  survives in `Regexp#source` but is rejected by the JS RegExp engine under
+  the `u` flag (`URI::MailTo::EMAIL_REGEXP` is the common casualty: one such
+  validator used to fail the whole client boot).
+
+- `Schema.serialize` now carries `allow_nil` / `allow_blank` through to the
+  client, so a format validator on an optional attribute no longer rejects
+  the blank value the server accepts.
+
+- A schema `format` regex the client runtime cannot compile downgrades to a
+  console warning and drops that one validator instead of failing the whole
+  schema load.
+
 ### Removed
 
 - The IndexedDB-backed HTTP response cache (`Funicular::HTTP` `cache:`

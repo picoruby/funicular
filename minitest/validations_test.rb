@@ -30,6 +30,21 @@ class ValidationsTest < Minitest::Test
     assert_equal true, k.new("name" => "Alice").valid?
   end
 
+  def test_uncompilable_format_regex_is_skipped_not_fatal
+    k = model_class
+    k.register_schema_validations(
+      "name" => {
+        "format" => { "with" => "[", "flags" => "" },
+        "presence" => true
+      }
+    )
+    # The broken format validator is dropped; the rest still applies and
+    # schema registration does not raise.
+    blank = k.new("name" => "")
+    assert_equal false, blank.valid?
+    assert_equal true, k.new("name" => "Alice").valid?
+  end
+
   def test_length_maximum_and_minimum
     k = model_class
     k.class_eval { validates :name, length: { minimum: 2, maximum: 5 } }
