@@ -8,7 +8,7 @@ module Funicular
   def self.env: () -> EnvironmentInquirer
   def self.env=: (EnvironmentInquirer | String environment) -> EnvironmentInquirer?
   def self.router: () -> Router?
-  def self.confirm_handler=: (^(String) -> boolish | nil handler) -> void
+  def self.confirm_handler=: ((^(String) -> boolish)? handler) -> (^(String) -> boolish)?
   def self.confirm: (String message) -> bool
 
   # SSR / hydration support

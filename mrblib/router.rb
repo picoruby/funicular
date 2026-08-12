@@ -63,10 +63,14 @@ module Funicular
 
       @hydrate_initial = hydrate
 
-      # Clean up existing listener if any (prevents duplicate registration)
+      # Clean up existing listeners if any (prevents duplicate registration)
       if @popstate_callback_id
         JS::Object.removeEventListener(@popstate_callback_id)
         @popstate_callback_id = nil
+      end
+      if @beforeunload_callback_id
+        JS::Object.removeEventListener(@beforeunload_callback_id)
+        @beforeunload_callback_id = nil
       end
 
       # Set up popstate listener. The history entry has already moved by
