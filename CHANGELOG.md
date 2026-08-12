@@ -364,6 +364,10 @@ of truth. Entries below accumulate as the feature lands.
   console warning and drops that one validator instead of failing the whole
   schema load.
 
+- `FileUpload.upload_with_formdata` attaches the CSRF token from the
+  page's meta tag (Rails forgery protection rejected every upload) and
+  accepts a `method:` keyword instead of hard-coding PATCH.
+
 ### Removed
 
 - The IndexedDB-backed HTTP response cache (`Funicular::HTTP` `cache:`

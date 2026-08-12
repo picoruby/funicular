@@ -16,8 +16,9 @@ module Funicular
         if (window.funicularFormDataUpload) {
           return;
         }
-        // FormData upload helper
-        window.funicularFormDataUpload = function(url, fieldsObj, fileFieldName, fileRefId) {
+        // FormData upload helper. The CSRF token is read fresh per
+        // request (Rails rotates it), matching Funicular::HTTP.
+        window.funicularFormDataUpload = function(url, fieldsObj, fileFieldName, fileRefId, method) {
           const formData = new FormData();
           for (const [key, value] of Object.entries(fieldsObj)) {
             formData.append(key, String(value));
@@ -28,8 +29,14 @@ module Funicular
               formData.append(fileFieldName, file);
             }
           }
+          const headers = {};
+          const meta = document.querySelector('meta[name="csrf-token"]');
+          if (meta) {
+            headers['X-CSRF-Token'] = meta.getAttribute('content');
+          }
           return fetch(url, {
-            method: 'PATCH',
+            method: method || 'PATCH',
+            headers: headers,
             body: formData
           }).then(response => response.json());
         };
@@ -83,8 +90,9 @@ module Funicular
     # @param fields [Hash] Form fields to include
     # @param file_field [String] Name of the file field
     # @param file [JS::Object] File object from input element
+    # @param method [String] HTTP method; PATCH is the historical default
     # @param block [Proc] Callback with response data
-    def self.upload_with_formdata(url, fields: {}, file_field: nil, file: nil, &block)
+    def self.upload_with_formdata(url, fields: {}, file_field: nil, file: nil, method: "PATCH", &block)
       # Store file and callback ID
       @callback_counters ||= [] # steep:ignore UnannotatedEmptyCollection
       callback_id = _ = nil
@@ -116,7 +124,8 @@ module Funicular
             '#{url}',
             fieldsObj,
             #{file_field ? "'#{file_field}'" : 'null'},
-            fileRefId
+            fileRefId,
+            '#{method}'
           ).then(function(data) {
             // Store as JSON string for easy Ruby parsing
             window._funicularUploadResult_#{callback_id} = JSON.stringify(data);
