@@ -79,18 +79,34 @@ module Funicular
     end
 
     def self.serialize(kind, options)
-      case kind
-      when :presence, :absence, :acceptance, :confirmation
-        true
-      when :length
-        serialize_length(options)
-      when :numericality
-        serialize_numericality(options)
-      when :inclusion, :exclusion
-        serialize_set(options)
-      when :format
-        RegexpTranslator.translate(options[:with])
-      end
+      serialized =
+        case kind
+        when :presence, :absence, :acceptance, :confirmation
+          true
+        when :length
+          serialize_length(options)
+        when :numericality
+          serialize_numericality(options)
+        when :inclusion, :exclusion
+          serialize_set(options)
+        when :format
+          RegexpTranslator.translate(options[:with])
+        end
+      attach_shared_options(serialized, options)
+    end
+
+    # allow_nil / allow_blank change what the client may skip; without them
+    # a format validator on an optional attribute rejects the blank value
+    # that the server happily accepts. Kinds that serialize to a bare true
+    # (presence, or numericality without constraints) upgrade to a Hash so
+    # the flags survive for them too.
+    def self.attach_shared_options(serialized, options)
+      return serialized unless options[:allow_nil] || options[:allow_blank]
+      serialized = {} if serialized == true
+      return serialized unless serialized.is_a?(Hash)
+      serialized["allow_nil"] = true if options[:allow_nil]
+      serialized["allow_blank"] = true if options[:allow_blank]
+      serialized
     end
 
     def self.serialize_length(options)
@@ -149,6 +165,11 @@ module Funicular
         end
 
         js_source = source.gsub('\\A', '^').gsub('\\z', '$').gsub('\\Z', '$')
+        # Ruby regexp literals escape "#" to suppress interpolation and the
+        # escape survives in Regexp#source, but "\#" is an invalid identity
+        # escape for a JS RegExp under the u flag. "#" never needs escaping
+        # in JS source (x mode is already rejected above), so unescape it.
+        js_source = js_source.gsub('\\#', '#')
 
         flags = +''
         flags << 'i' if (regexp.options & Regexp::IGNORECASE) != 0

@@ -66,6 +66,10 @@ module Funicular
         next unless rules.is_a?(Hash)
         rules.each do |kind, opts|
           options = normalize_validation_options(kind, opts)
+          # nil means the options could not be materialized on this runtime
+          # (e.g. a format regex the JS RegExp engine rejects): drop that one
+          # validator instead of failing the whole schema load.
+          next if options.nil?
           add_schema_validator(attribute, kind, options)
         end
       end
@@ -82,7 +86,21 @@ module Funicular
         bits = 0
         bits |= Regexp::IGNORECASE if flags.include?("i")
         bits |= Regexp::MULTILINE if flags.include?("m")
-        { with: Regexp.new(opts["with"], bits) }
+        begin
+          normalized = { with: Regexp.new(opts["with"], bits) }
+          normalized[:allow_nil] = true if opts["allow_nil"]
+          normalized[:allow_blank] = true if opts["allow_blank"]
+          normalized
+        rescue => e
+          # Schema regex translation is best-effort; a source this engine
+          # cannot compile must not take down the whole boot sequence.
+          # Name the pattern (truncated) so the offending model/attribute
+          # can be found among many schemas loading at boot.
+          source = opts["with"].to_s
+          source = "#{source[0, 60]}..." if 60 < source.length
+          puts "[Funicular] Skipping format validator (#{e.class}: #{e.message}; pattern: #{source})"
+          nil
+        end
       else
         opts
       end

@@ -30,6 +30,35 @@ class ValidationsTest < Minitest::Test
     assert_equal true, k.new("name" => "Alice").valid?
   end
 
+  def test_uncompilable_format_regex_is_skipped_not_fatal
+    k = model_class
+    out, _err = capture_io do
+      k.register_schema_validations(
+        "name" => {
+          "format" => { "with" => "[", "flags" => "" },
+          "presence" => true
+        }
+      )
+    end
+    # The warning names the rejected pattern so it can be found among
+    # many schemas loading at boot.
+    assert_match(/Skipping format validator/, out)
+    assert_match(/pattern: \[/, out)
+    # The broken format validator is dropped; the rest still applies and
+    # schema registration does not raise.
+    blank = k.new("name" => "")
+    assert_equal false, blank.valid?
+    assert_equal true, k.new("name" => "Alice").valid?
+  end
+
+  def test_schema_numericality_with_allow_nil_skips_nil
+    k = model_class({ "age" => false })
+    k.register_schema_validations("age" => { "numericality" => { "allow_nil" => true } })
+
+    assert_equal true, k.new("age" => nil).valid?
+    assert_equal false, k.new("age" => "abc").valid?
+  end
+
   def test_length_maximum_and_minimum
     k = model_class
     k.class_eval { validates :name, length: { minimum: 2, maximum: 5 } }
