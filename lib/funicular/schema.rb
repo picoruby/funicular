@@ -97,8 +97,12 @@ module Funicular
 
     # allow_nil / allow_blank change what the client may skip; without them
     # a format validator on an optional attribute rejects the blank value
-    # that the server happily accepts.
+    # that the server happily accepts. Kinds that serialize to a bare true
+    # (presence, or numericality without constraints) upgrade to a Hash so
+    # the flags survive for them too.
     def self.attach_shared_options(serialized, options)
+      return serialized unless options[:allow_nil] || options[:allow_blank]
+      serialized = {} if serialized == true
       return serialized unless serialized.is_a?(Hash)
       serialized["allow_nil"] = true if options[:allow_nil]
       serialized["allow_blank"] = true if options[:allow_blank]

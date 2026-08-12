@@ -99,6 +99,19 @@ class SchemaDerivationTest < Minitest::Test
     assert_equal({ "minimum" => 2, "maximum" => 10 }, result["bio"]["length"])
   end
 
+  def test_bare_numericality_keeps_allow_nil
+    # numericality with no constraints serializes to a bare true; the
+    # allow_nil flag must upgrade it to a Hash instead of being dropped.
+    klass = Class.new do
+      include ActiveModel::Validations
+      def self.name = "Aged"
+      attr_accessor :age
+      validates :age, numericality: true, allow_nil: true
+    end
+    result = Funicular::Schema.validations_for(klass, ["age"])
+    assert_equal({ "allow_nil" => true }, result["age"]["numericality"])
+  end
+
   def test_format_unescapes_ruby_hash_escape
     # Ruby regexp literals escape "#" to suppress interpolation and the escape
     # survives in Regexp#source; JS RegExp under the u flag rejects "\#" as an

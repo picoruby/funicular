@@ -346,8 +346,10 @@ of truth. Entries below accumulate as the feature lands.
   validator used to fail the whole client boot).
 
 - `Schema.serialize` now carries `allow_nil` / `allow_blank` through to the
-  client, so a format validator on an optional attribute no longer rejects
-  the blank value the server accepts.
+  client -- including kinds that serialize to a bare `true`, such as
+  `presence` and unconstrained `numericality`, which upgrade to a Hash --
+  so a validator on an optional attribute no longer rejects the nil or
+  blank value the server accepts.
 
 - A schema `format` regex the client runtime cannot compile downgrades to a
   console warning and drops that one validator instead of failing the whole

@@ -94,7 +94,11 @@ module Funicular
         rescue => e
           # Schema regex translation is best-effort; a source this engine
           # cannot compile must not take down the whole boot sequence.
-          puts "[Funicular] Skipping format validator (#{e.message})"
+          # Name the pattern (truncated) so the offending model/attribute
+          # can be found among many schemas loading at boot.
+          source = opts["with"].to_s
+          source = "#{source[0, 60]}..." if 60 < source.length
+          puts "[Funicular] Skipping format validator (#{e.class}: #{e.message}; pattern: #{source})"
           nil
         end
       else
