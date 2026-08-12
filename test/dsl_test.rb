@@ -171,7 +171,12 @@ class DSLTest < Picotest::Test
     assert_equal("field-base col-span-2", vnode.props[:class])
 
     value = klass.new.styles.field
-    assert_equal("field-base!", (value + "!").to_s)
+    combined = value + "!"
+    assert_equal(Funicular::StyleValue, combined.class)
+    assert_equal("field-base!", combined.to_s)
+    assert_equal("field-basefield-base", (value + value).to_s)
+    # Like String#+: non-String operands raise instead of being to_s-ed.
+    assert_raise(TypeError) { value + 123 }
     # String#+ on this VM never coerces via to_str; the reversed form
     # raises here exactly like it does on the CRuby SSR side.
     assert_raise(TypeError) { "prefix " + value }

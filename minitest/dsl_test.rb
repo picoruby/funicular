@@ -179,7 +179,12 @@ class DSLTest < Minitest::Test
     assert_equal "field-base col-span-2", vnode.props[:class]
 
     value = klass.new.styles.field
-    assert_kind_of Funicular::StyleValue, value + "!"
+    combined = value + "!"
+    assert_kind_of Funicular::StyleValue, combined
+    assert_equal "field-base!", combined.to_s
+    assert_equal "field-basefield-base", (value + value).to_s
+    # Like String#+: non-String operands raise instead of being to_s-ed.
+    assert_raises(TypeError) { value + 123 }
     # No to_str on purpose: the mruby client's String#+ never coerces,
     # so CRuby must reject the reversed form the same way the browser
     # does instead of letting SSR accept code the client raises on.
