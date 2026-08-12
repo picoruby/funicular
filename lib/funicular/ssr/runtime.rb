@@ -15,6 +15,7 @@ module Funicular
     # (Funicular.start, Router#start, FileUpload.mount, Debug) no-ops.
     module Runtime
       MRBLIB_DIR = File.expand_path("../../../mrblib", __dir__)
+      BOOT_MUTEX = Mutex.new
 
       # Load order is by dependency at *class-body* evaluation time. Most
       # files reference JS / other classes only inside methods, so only a
@@ -73,32 +74,74 @@ module Funicular
         # In that case we rescue and continue: the AR constant is already defined
         # and is all that load_schemas needs (it ignores the hash on the server).
         #
-        # Loaded once per process. Restart the server to pick up changes.
+        # Loaded once per process. With auto_reload (the railtie enables
+        # it in development), edited sources are picked up on the next
+        # render: reloading re-runs the initializer, and the server-side
+        # Funicular.start builds a fresh router, so routes refresh too.
+        # Without it, restart the server to pick up changes.
         def boot!(source_dir)
-          load_framework!
-          return if @app_loaded
+          # Fast path for the steady production/test state: everything
+          # loaded and nobody watching for changes, no lock to take.
+          return if @framework_loaded && @app_loaded && !auto_reload
 
-          files = Funicular::Compiler.source_files(source_dir.to_s)
-          files.each do |file|
-            begin
-              Kernel.load(file)
-            rescue TypeError => e
-              # Funicular model name conflicts with an already-loaded AR model.
-              # The constant is already defined; safe to skip.
-              warn "[Funicular SSR] Skipped #{File.basename(file)}: #{e.message}"
+          # Concurrent renders (Puma threads in development) must not
+          # interleave two reloads: constants and the router would pass
+          # through inconsistent states mid-request.
+          BOOT_MUTEX.synchronize do
+            load_framework!
+            if @app_loaded
+              next unless auto_reload && sources_changed?(source_dir)
             end
+
+            files = Funicular::Compiler.source_files(source_dir.to_s)
+            files.each do |file|
+              begin
+                Kernel.load(file)
+              rescue TypeError => e
+                # Funicular model name conflicts with an already-loaded AR model.
+                # The constant is already defined; safe to skip.
+                warn "[Funicular SSR] Skipped #{File.basename(file)}: #{e.message}"
+              end
+            end
+            @app_loaded = true
+            @sources_snapshot = sources_snapshot(source_dir)
           end
-          @app_loaded = true
+        end
+
+        # Reload edited app sources on the next boot! instead of
+        # requiring a server restart (meant for development).
+        attr_accessor :auto_reload
+
+        def sources_changed?(source_dir)
+          @sources_snapshot != sources_snapshot(source_dir)
+        end
+
+        def sources_snapshot(source_dir)
+          Funicular::Compiler.source_files(source_dir.to_s).map do |file|
+            [ file, mtime_or_nil(file) ]
+          end
         end
 
         # Test/escape hatch: forget loaded application state so a different
         # app (or a reload) can be booted. Does not unload the framework.
         def reset_app!
           @app_loaded = false
+          @sources_snapshot = nil
         end
 
         def framework_loaded?
           !!@framework_loaded
+        end
+
+        private
+
+        # The mtime read races with editors deleting or renaming files
+        # mid-edit; a vanished file counts as nil instead of breaking
+        # the render.
+        def mtime_or_nil(file)
+          File.mtime(file).to_f
+        rescue SystemCallError
+          nil
         end
       end
     end
