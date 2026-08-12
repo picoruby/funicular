@@ -164,6 +164,33 @@ class DSLTest < Minitest::Test
     assert_equal "btn btn--on extra", vnode.children[2].props[:class]
   end
 
+  def test_style_value_behaves_like_the_string_it_wraps
+    klass = Class.new(Funicular::Component) do
+      styles do
+        field "field-base"
+      end
+
+      def render
+        div(class: styles.field + " col-span-2") { "x" }
+      end
+    end
+
+    vnode = klass.new.build_vdom
+    assert_equal "field-base col-span-2", vnode.props[:class]
+
+    value = klass.new.styles.field
+    combined = value + "!"
+    assert_kind_of Funicular::StyleValue, combined
+    assert_equal "field-base!", combined.to_s
+    assert_equal "field-basefield-base", (value + value).to_s
+    # Like String#+: non-String operands raise instead of being to_s-ed.
+    assert_raises(TypeError) { value + 123 }
+    # No to_str on purpose: the mruby client's String#+ never coerces,
+    # so CRuby must reject the reversed form the same way the browser
+    # does instead of letting SSR accept code the client raises on.
+    assert_raises(TypeError) { "prefix " + value }
+  end
+
   def test_unknown_style_raises
     klass = Class.new(Funicular::Component) do
       styles do

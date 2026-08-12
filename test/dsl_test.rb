@@ -156,6 +156,32 @@ class DSLTest < Picotest::Test
     assert_equal("btn btn--on extra", vnode.children[2].props[:class])
   end
 
+  def test_style_value_behaves_like_the_string_it_wraps
+    klass = Class.new(Funicular::Component) do
+      styles do
+        field "field-base"
+      end
+
+      def render
+        div(class: styles.field + " col-span-2") { "x" }
+      end
+    end
+
+    vnode = klass.new.build_vdom
+    assert_equal("field-base col-span-2", vnode.props[:class])
+
+    value = klass.new.styles.field
+    combined = value + "!"
+    assert_equal(Funicular::StyleValue, combined.class)
+    assert_equal("field-base!", combined.to_s)
+    assert_equal("field-basefield-base", (value + value).to_s)
+    # Like String#+: non-String operands raise instead of being to_s-ed.
+    assert_raise(TypeError) { value + 123 }
+    # String#+ on this VM never coerces via to_str; the reversed form
+    # raises here exactly like it does on the CRuby SSR side.
+    assert_raise(TypeError) { "prefix " + value }
+  end
+
   def test_unknown_style_raises
     klass = Class.new(Funicular::Component) do
       styles do

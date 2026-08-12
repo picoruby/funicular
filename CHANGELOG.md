@@ -6,6 +6,17 @@ of truth. Entries below accumulate as the feature lands.
 
 ### Added
 
+- `Funicular::StyleValue#+`: styles now support one-off class
+  additions (`styles.field + " col-span-2"`) instead of raising
+  NoMethodError. `+` concatenates verbatim like String#+, accepts
+  String or StyleValue, and raises TypeError for anything else
+  (matching String#+ instead of silently to_s-ing mistakes); `|`
+  remains the space-joining combinator. `to_str` is deliberately not
+  defined: the mruby client's String#+ never coerces implicitly, so
+  defining it on CRuby would let SSR accept `"base " + styles.field`
+  while the browser raises; both VMs reject that form identically
+  instead.
+
 - Navigation guard: a component can veto leaving by overriding
   `navigation_guard` to return a confirmation message (nil allows).
   The router consults it before `navigate` (including `link_to
