@@ -60,6 +60,23 @@ module Funicular
     @router
   end
 
+  # Confirmation dialog used by the router's navigation guard. The
+  # default asks through window.confirm; tests (and apps wanting a
+  # custom dialog) can replace it with a proc taking the message and
+  # returning true to leave, false to stay.
+  @confirm_handler = nil
+
+  def self.confirm_handler=(handler)
+    @confirm_handler = handler
+  end
+
+  def self.confirm(message)
+    handler = @confirm_handler
+    return !!handler.call(message) if handler
+    return true if server?
+    !!JS.global.confirm(message)
+  end
+
   # Read the SSR state embedded by the server (funicular_state_tag) as a
   # Ruby Hash with string keys. Returns {} when absent or on the server.
   # Goes through JSON.stringify/parse for a reliable JS->Ruby conversion.

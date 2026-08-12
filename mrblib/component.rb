@@ -548,6 +548,22 @@ module Funicular
       end
     end
 
+    # Navigation guard: return a String message to ask the user for
+    # confirmation before this component is navigated away from (router
+    # navigation, browser back/forward, reload, tab close), or nil to
+    # allow leaving freely. Consulted by the router and its beforeunload
+    # listener; override in components with unsaved work:
+    #
+    #   def navigation_guard
+    #     state[:dirty] ? "Unsaved changes will be lost. Leave?" : nil
+    #   end
+    #
+    # Must not suspend (no fetch/HTTP): the beforeunload path runs it on
+    # the synchronous JS event dispatch stack.
+    def navigation_guard
+      nil
+    end
+
     # Unmount component from DOM
     def unmount
       return unless @mounted
