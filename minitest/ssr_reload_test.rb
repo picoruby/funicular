@@ -70,6 +70,18 @@ class SSRReloadTest < Minitest::Test
     end
   end
 
+  def test_reset_app_discards_the_snapshot
+    Dir.mktmpdir do |dir|
+      build_app(dir)
+      Funicular::SSR::Runtime.reset_app!
+      quietly { render_probe(dir) }
+      refute Funicular::SSR::Runtime.sources_changed?(dir)
+
+      Funicular::SSR::Runtime.reset_app!
+      assert Funicular::SSR::Runtime.sources_changed?(dir)
+    end
+  end
+
   def test_unchanged_sources_are_not_reloaded
     Dir.mktmpdir do |dir|
       build_app(dir)
