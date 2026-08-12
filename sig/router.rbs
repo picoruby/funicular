@@ -21,6 +21,7 @@ module Funicular
     def start: (?hydrate: bool) -> void
     def stop: () -> void
     def navigate: (String path) -> void
+    def leave_allowed?: () -> bool
     def current_location_path: () -> String
 
     private def add_route_with_method: (Symbol method, String path, singleton(Component) component_class, String? name, ?route_constraints_t? constraints) -> void

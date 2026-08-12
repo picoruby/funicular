@@ -6,6 +6,15 @@ of truth. Entries below accumulate as the feature lands.
 
 ### Added
 
+- Navigation guard: a component can veto leaving by overriding
+  `navigation_guard` to return a confirmation message (nil allows).
+  The router consults it before `navigate` (including `link_to
+  navigate: true`), on browser back/forward (restoring the history
+  entry when the user stays), and through a synchronous `beforeunload`
+  listener for reload / tab close via the browser's native dialog.
+  `Funicular.confirm_handler=` injects the dialog for tests or custom
+  UIs; SSR never blocks. The guard must not suspend.
+
 - The SQLite local-database subsystem is now globally opt-in through
   `config.local_database = true` and defaults off. REST-only applications do
   not start SQLite, IndexedDB, Web Locks, replica write-through, or session

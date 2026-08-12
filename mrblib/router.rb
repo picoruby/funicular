@@ -9,6 +9,7 @@ module Funicular
       @current_component = nil
       @current_path = nil
       @popstate_callback_id = nil
+      @beforeunload_callback_id = nil
       @url_helpers = Module.new
       @route_helpers = Object.new
       @route_helpers.extend(@url_helpers)
@@ -62,15 +63,36 @@ module Funicular
 
       @hydrate_initial = hydrate
 
-      # Clean up existing listener if any (prevents duplicate registration)
+      # Clean up existing listeners if any (prevents duplicate registration)
       if @popstate_callback_id
         JS::Object.removeEventListener(@popstate_callback_id)
         @popstate_callback_id = nil
       end
+      if @beforeunload_callback_id
+        JS::Object.removeEventListener(@beforeunload_callback_id)
+        @beforeunload_callback_id = nil
+      end
 
-      # Set up popstate listener
+      # Set up popstate listener. The history entry has already moved by
+      # the time popstate fires; when the current component's navigation
+      # guard vetoes leaving, push the guarded path back (the one thing
+      # popstate cannot cancel).
       @popstate_callback_id = JS.global.addEventListener('popstate') do |event|
-        handle_route_change
+        if leave_allowed?
+          handle_route_change
+        elsif @current_path
+          JS.global.history.pushState(JS::Bridge.to_js({}), '', @current_path)
+        end
+      end
+
+      # Reload / tab close: ask through the browser's native dialog when
+      # a guard is active. sync: the decision must be made on the JS
+      # event dispatch stack, so the guard must not suspend.
+      @beforeunload_callback_id = JS.global.addEventListener('beforeunload', sync: true) do |event|
+        if @current_component&.navigation_guard
+          event.preventDefault
+          event[:returnValue] = ''
+        end
       end
 
       # Handle initial route. Skip the default-route redirect when hydrating
@@ -90,14 +112,31 @@ module Funicular
         @popstate_callback_id = nil
       end
 
+      if @beforeunload_callback_id
+        JS::Object.removeEventListener(@beforeunload_callback_id)
+        @beforeunload_callback_id = nil
+      end
+
       unmount_current_component
     end
 
-    # Navigate to a path programmatically using History API
+    # Navigate to a path programmatically using History API. A vetoing
+    # navigation guard on the current component cancels the navigation
+    # before any history change.
     def navigate(path)
+      return unless leave_allowed?
       JS.global.history.pushState(JS::Bridge.to_js({}), '', path)
       # Manually trigger route change because pushState doesn't fire popstate
       handle_route_change
+    end
+
+    # Ask the current component's navigation guard whether leaving is
+    # allowed; a String from the guard prompts the user via
+    # Funicular.confirm. True when no component or no guard.
+    def leave_allowed?
+      message = @current_component&.navigation_guard
+      return true unless message
+      Funicular.confirm(message)
     end
 
     # Get current path from location
