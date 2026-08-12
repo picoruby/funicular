@@ -34,10 +34,22 @@ module Funicular
     def self.build(model_class, attributes:, endpoints: {}, except: {})
       merged = {}
       attributes.each do |name, definition|
+        # Readonly attributes are server-managed: the client never
+        # submits them, so validating their (nil) client-side value
+        # against e.g. a presence validator would reject every create.
+        # Skip validator introspection for them entirely.
+        if readonly?(definition)
+          merged[name] = definition
+          next
+        end
         rules = rules_for(model_class, name, except_kinds(except, name))
         merged[name] = rules.empty? ? definition : definition.merge(validations: rules)
       end
       { attributes: merged, endpoints: endpoints }
+    end
+
+    def self.readonly?(definition)
+      definition.is_a?(Hash) && !!(definition[:readonly] || definition["readonly"])
     end
 
     # Returns { "attr" => { "presence" => true, "length" => { "maximum" => 30 } } }
