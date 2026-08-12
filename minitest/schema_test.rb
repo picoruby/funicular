@@ -88,6 +88,26 @@ class SchemaDerivationTest < Minitest::Test
     assert_equal({ "update" => { method: "PATCH", path: "/x/:id" } }, schema[:endpoints])
   end
 
+  def test_build_skips_validators_for_readonly_attributes
+    schema = Funicular::Schema.build(
+      Account,
+      attributes: {
+        # name has a presence validator, but a readonly (server-managed)
+        # attribute is never submitted by the client, so its validators
+        # must not be inlined at all.
+        "name" => { type: "string", readonly: true }
+      }
+    )
+    assert_equal({ type: "string", readonly: true }, schema[:attributes]["name"])
+
+    # String keys behave the same.
+    schema = Funicular::Schema.build(
+      Account,
+      attributes: { "name" => { "type" => "string", "readonly" => true } }
+    )
+    refute schema[:attributes]["name"].key?(:validations)
+  end
+
   def test_length_range_is_serialized_as_min_and_max
     klass = Class.new do
       include ActiveModel::Validations
