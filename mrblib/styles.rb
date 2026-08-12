@@ -20,6 +20,16 @@ module Funicular
       end
     end
 
+    # String-like concatenation: styles.field + " col-span-2". No space
+    # is inserted, matching String#+; use | to join with a space.
+    # to_str is deliberately not defined: the mruby client's String#+
+    # never coerces (no implicit to_str call), so defining it on CRuby
+    # would let SSR accept "base " + styles.field while the browser
+    # raises. Both VMs reject the reversed form the same way instead.
+    def +(other)
+      StyleValue.new("#{@value}#{other}")
+    end
+
     def to_s
       @value
     end

@@ -4,6 +4,7 @@ module Funicular
     attr_reader value: String
     def initialize: (String | untyped value) -> void
     def |: (StyleValue | String | nil other) -> StyleValue
+    def +: (untyped other) -> StyleValue
     def to_s: () -> String
   end
 
