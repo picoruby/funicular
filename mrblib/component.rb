@@ -656,6 +656,7 @@ module Funicular
             begin
               self.send(value, event)
             rescue => e
+              report_handler_error(event_name, "##{value}", e)
               component_raised(e) if respond_to?(:component_raised)
               raise e
             end
@@ -672,6 +673,7 @@ module Funicular
                 value.call(event)
               end
             rescue => e
+              report_handler_error(event_name, "##{value.name}", e)
               component_raised(e) if respond_to?(:component_raised)
               raise e
             end
@@ -688,6 +690,7 @@ module Funicular
                 value.call(event)
               end
             rescue => e
+              report_handler_error(event_name, "(proc)", e)
               component_raised(e) if respond_to?(:component_raised)
               raise e
             end
@@ -718,6 +721,18 @@ module Funicular
           end
         end
       end
+    end
+
+    # Name the culprit before an event handler error is re-raised into
+    # the JS bridge, where "Callback <id>: ArgumentError: ..." carries no
+    # hint of which component or handler it came from. Uses puts so the
+    # message reaches the browser console (same idiom as the
+    # ErrorBoundary logger). Never raises itself.
+    def report_handler_error(event_name, handler, error)
+      puts "[Funicular] #{self.class}#{handler} (on#{event_name}) raised " \
+           "#{error.class}: #{error.message}"
+    rescue
+      nil
     end
 
     # Collect ref elements from VDOM

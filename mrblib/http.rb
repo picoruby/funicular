@@ -3,6 +3,10 @@ module Funicular
     class Response
       attr_reader :data, :status, :ok
 
+      # Every mainstream HTTP client calls the payload `body`; keep
+      # that name working alongside `data`.
+      alias body data
+
       def initialize(status, data)
         @status = status
         @ok = @status >= 200 && @status < 300
@@ -125,8 +129,16 @@ module Funicular
           # invalid URL) must still deliver a response -- a hanging
           # callback would hang the schema barrier and every REST
           # caller. An exception out of the caller's OWN block must
-          # NOT settle a second time.
-          raise e if settled
+          # NOT settle a second time. It is re-raised into the JS
+          # bridge, where it can vanish silently, so name the culprit
+          # on the console first: a swallowed typo in a response
+          # handler otherwise just freezes the page in its loading
+          # state.
+          if settled
+            puts "[Funicular::HTTP] #{method} #{url} callback raised " \
+                 "#{e.class}: #{e.message}"
+            raise e
+          end
           settled = true
           if block
             block.call(Response.new(0,
