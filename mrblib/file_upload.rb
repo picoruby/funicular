@@ -29,16 +29,17 @@ module Funicular
               formData.append(fileFieldName, file);
             }
           }
-          const headers = {};
-          const meta = document.querySelector('meta[name="csrf-token"]');
-          if (meta) {
-            headers['X-CSRF-Token'] = meta.getAttribute('content');
-          }
-          return fetch(url, {
+          const options = {
             method: method || 'PATCH',
-            headers: headers,
+            credentials: 'include',
             body: formData
-          }).then(response => response.json());
+          };
+          const meta = document.querySelector('meta[name="csrf-token"]');
+          const token = meta && meta.getAttribute('content');
+          if (token) {
+            options.headers = { 'X-CSRF-Token': token };
+          }
+          return fetch(url, options).then(response => response.json());
         };
         console.log('Funicular helpers mounted');
       })();
@@ -125,7 +126,7 @@ module Funicular
             fieldsObj,
             #{file_field ? "'#{file_field}'" : 'null'},
             fileRefId,
-            '#{method}'
+            #{JSON.generate(method.to_s)}
           ).then(function(data) {
             // Store as JSON string for easy Ruby parsing
             window._funicularUploadResult_#{callback_id} = JSON.stringify(data);
