@@ -52,6 +52,10 @@ module Funicular
       raise "Funicular router is not configured; check app/funicular/initializer.rb" unless router
 
       component_class = Object.const_get(component_name.to_s)
+      unless component_class.is_a?(Class) && component_class < Funicular::Component
+        raise ArgumentError, "#{component_name} is not a Funicular::Component subclass"
+      end
+
       instance = component_class.new(symbolize_keys(props))
       instance.runtime = Funicular::Runtime.new(router)
       instance.seed_state(state)

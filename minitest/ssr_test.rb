@@ -124,7 +124,7 @@ class SSRTest < Minitest::Test
 
   # --- Single-component render (no route lookup) ------------------------
 
-  def test_render_component_renders_by_name_with_props_and_state
+  def test_render_component_renders_by_name_without_a_route
     html = Funicular::SSR.render_component(
       "GreetingComponent",
       state: { title: "Embedded" },
@@ -132,6 +132,17 @@ class SSRTest < Minitest::Test
     )
     assert_includes html, "<h1>Embedded</h1>"
     assert_includes html, 'class="greeting"'
+  end
+
+  def test_render_component_passes_props_and_state
+    html = Funicular::SSR.render_component(
+      "ProbeComponent",
+      props: { "label" => "From Props" },
+      state: { note: "injected note" },
+      source_dir: APP_DIR
+    )
+    assert_includes html, "<h2>From Props</h2>"
+    assert_includes html, "<p>injected note</p>"
   end
 
   def test_render_component_uses_initialize_state_without_injection
@@ -143,6 +154,13 @@ class SSRTest < Minitest::Test
     assert_raises(NameError) do
       Funicular::SSR.render_component("NoSuchComponent", source_dir: APP_DIR)
     end
+  end
+
+  def test_render_component_rejects_a_non_component_constant
+    error = assert_raises(ArgumentError) do
+      Funicular::SSR.render_component("String", source_dir: APP_DIR)
+    end
+    assert_match(/not a Funicular::Component/, error.message)
   end
 
   def test_symbolize_keys_handles_nil_and_string_keys
