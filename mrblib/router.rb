@@ -80,8 +80,10 @@ module Funicular
       @popstate_callback_id = JS.global.addEventListener('popstate') do |event|
         if leave_allowed?
           handle_route_change
-        elsif @current_path
-          JS.global.history.pushState(JS::Bridge.to_js({}), '', @current_path)
+        elsif (guarded_path = @current_path)
+          # Local binding: the type checker does not narrow ivars
+          # through elsif.
+          JS.global.history.pushState(JS::Bridge.to_js({}), '', guarded_path)
         end
       end
 

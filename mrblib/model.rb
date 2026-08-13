@@ -87,7 +87,9 @@ module Funicular
         bits |= Regexp::IGNORECASE if flags.include?("i")
         bits |= Regexp::MULTILINE if flags.include?("m")
         begin
-          normalized = { with: Regexp.new(opts["with"], bits) }
+          # Annotated so the record type {with: Regexp} does not reject
+          # the boolean flags added below.
+          normalized = { with: Regexp.new(opts["with"], bits) } #: Hash[Symbol, untyped]
           normalized[:allow_nil] = true if opts["allow_nil"]
           normalized[:allow_blank] = true if opts["allow_blank"]
           normalized

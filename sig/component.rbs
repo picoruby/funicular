@@ -69,6 +69,7 @@ module Funicular
     def build_vdom: () -> (VDOM::VNode | VDOM::Text | nil)
 
     def bind_events: (JS::Element dom_element, VDOM::VNode | VDOM::Text | nil vnode) -> void
+    def report_handler_error: (String event_name, String handler, StandardError error) -> void
     def collect_refs: (JS::Element dom_element, VDOM::VNode | VDOM::Text | nil vnode, ?Hash[Symbol, JS::Element] refs_map) -> Hash[Symbol, JS::Element]
     def normalize_vnode_for_view: (untyped value) -> (VDOM::Element | VDOM::Text | VDOM::Component | nil)
     def __view__: () -> ViewContext
