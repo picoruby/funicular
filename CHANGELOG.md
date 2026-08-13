@@ -1,8 +1,9 @@
-## [0.5.0] - Unreleased
+## [0.5.0] - 2026-08-13
 
 The local database release: an ActiveRecord-like, reactive local store on
 in-browser SQLite (picoruby-sqlite3), with the Rails server as the source
-of truth. Entries below accumulate as the feature lands.
+of truth. Plus the first round of fixes and API gaps surfaced by building
+a real shop on the framework.
 
 ### Added
 
@@ -25,6 +26,30 @@ of truth. Entries below accumulate as the feature lands.
   listener for reload / tab close via the browser's native dialog.
   `Funicular.confirm_handler=` injects the dialog for tests or custom
   UIs; SSR never blocks. The guard must not suspend.
+
+- `Funicular::SSR.render_component(component_name, props:, state:)`:
+  render one component to static HTML with no route lookup, so a
+  server-rendered (ERB) page can embed a Funicular component -- a shared
+  site header, say -- instead of duplicating its markup. The component
+  is named by string and resolved after `boot!` (host apps keep
+  app/funicular out of Rails autoloading); a constant that is not a
+  `Funicular::Component` subclass is rejected with ArgumentError. No
+  hydration and no handler binding: links work, onclick does not.
+
+- `Funicular::Testing::DOMTest` gains the negative assertions
+  `assert_no_selector` / `assert_no_text` and a `selector_count` helper;
+  "this must NOT render" was previously untestable without hand-rolled
+  JS.eval node counting.
+
+- `Funicular::Testing.ensure_compiled!`: one call in a test helper that
+  syncs plugin assets and recompiles app.mrb when sources are newer,
+  replacing the boilerplate every host app grew by hand. Plain
+  controller tests that render `funicular_plugin_include_tags` no
+  longer fail order-dependently on unsynced plugin CSS.
+
+- `Funicular::HTTP::Response#body` as an alias of `#data`: components
+  reach for the universal name first, and the resulting NoMethodError
+  used to vanish inside the JS bridge as a silently frozen page.
 
 - The SQLite local-database subsystem is now globally opt-in through
   `config.local_database = true` and defaults off. REST-only applications do
@@ -359,6 +384,20 @@ of truth. Entries below accumulate as the feature lands.
 
 - `Model#initialize` uses key-presence lookups instead of `||`, so a
   string-keyed `false` (boolean columns) no longer collapses to nil.
+
+- Dev-mode SSR reloads edited component sources instead of caching them
+  per process (the railtie enables it in development): SSR markup no
+  longer goes stale behind the middleware's recompiled app.mrb until a
+  server restart. Concurrent renders serialize the reload, and a file
+  vanishing mid-edit does not break the mtime check.
+
+- Event-handler and HTTP-callback exceptions name the component and
+  handler on the console before re-raising, instead of an anonymous
+  "Callback <id>" line -- or, for HTTP callbacks, nothing at all.
+
+- `Schema.build` skips validator introspection for `readonly: true`
+  attributes: server-managed columns no longer fail client-side
+  validation against values the client never edits.
 
 - `Schema::RegexpTranslator` unescapes Ruby's `\#` identity escape, which
   survives in `Regexp#source` but is rejected by the JS RegExp engine under
