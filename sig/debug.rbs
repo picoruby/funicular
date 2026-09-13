@@ -20,7 +20,12 @@ module Funicular
     def self.last_error: () -> Hash[Symbol, untyped]?
     def self.error_count: () -> Integer
 
+    INSPECT_MAX_DEPTH: Integer
+    INSPECT_MAX_ITEMS: Integer
+
     private def self.error_registry: () -> Array[Hash[Symbol, untyped]]
+    private def self.safe_inspect: (untyped value, ?Integer depth) -> String
+    private def self.safe_inspect_object: (untyped value, Integer depth) -> String
     private def self.get_state_keys: (Funicular::Component) -> Array[String]
     private def self.get_child_ids: (Funicular::Component) -> Array[Integer]
     private def self.collect_direct_children: (Funicular::VDOM::VNode, Array[Funicular::Component]) -> void
