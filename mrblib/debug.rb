@@ -136,11 +136,7 @@ module Funicular
         state = component.instance_variable_get(:@state) || {}
         result = {} #: Hash[String, String]
         state.each do |key, value|
-          begin
-            result[key.to_s] = value.inspect
-          rescue
-            result[key.to_s] = "<error inspecting value>"
-          end
+          result[key.to_s] = safe_inspect(value)
         end
         JSON.generate(result)
       end
@@ -159,11 +155,7 @@ module Funicular
             result[name] = "<omitted>"
             next
           end
-          begin
-            result[name] = component.instance_variable_get(var).inspect
-          rescue
-            result[name] = "<error inspecting value>"
-          end
+          result[name] = safe_inspect(component.instance_variable_get(var))
         end
         JSON.generate(result)
       end
@@ -175,6 +167,58 @@ module Funicular
       end
 
       private
+
+      # Bounded inspect for the DevTools inspector. A plain Object#inspect
+      # walks the whole object graph: a component's @runtime reaches the
+      # router, the mounted component and its entire VDOM tree, and that
+      # recursion overflows the wasm C stack in a -O0 build. Without a
+      # guard page the overflow silently overwrites the heap below the
+      # stack, which surfaces later as garbage registers and GC crashes.
+      # Only leaves are inspected in full; containers and objects are
+      # summarized past INSPECT_MAX_DEPTH.
+      INSPECT_MAX_DEPTH = 3
+      INSPECT_MAX_ITEMS = 25
+
+      def safe_inspect(value, depth = 0)
+        case value
+        when nil, true, false, Integer, Float, Symbol, String
+          value.inspect
+        when Array
+          return "[...#{value.size} items]" if depth >= INSPECT_MAX_DEPTH
+          items = value.first(INSPECT_MAX_ITEMS).map { |v| safe_inspect(v, depth + 1) }
+          items << "...#{value.size - INSPECT_MAX_ITEMS} more" if value.size > INSPECT_MAX_ITEMS
+          "[#{items.join(', ')}]"
+        when Hash
+          return "{...#{value.size} pairs}" if depth >= INSPECT_MAX_DEPTH
+          pairs = [] #: Array[String]
+          value.each do |k, v|
+            break if pairs.size >= INSPECT_MAX_ITEMS
+            pairs << "#{safe_inspect(k, depth + 1)} => #{safe_inspect(v, depth + 1)}"
+          end
+          pairs << "...#{value.size - INSPECT_MAX_ITEMS} more" if value.size > INSPECT_MAX_ITEMS
+          "{#{pairs.join(', ')}}"
+        else
+          safe_inspect_object(value, depth)
+        end
+      rescue => e
+        "<#{e.class}: #{e.message}>"
+      end
+
+      def safe_inspect_object(value, depth)
+        # JS::Object#inspect is a shallow C implementation; other BasicObject
+        # proxies (style accessors) raise from method_missing on any name.
+        return value.inspect if defined?(::JS::Object) && ::JS::Object === value
+        return "#<BasicObject>" unless ::Object === value
+        klass = value.class.to_s
+        return "#<#{klass}>" if depth >= INSPECT_MAX_DEPTH
+        ivars = value.instance_variables
+        return value.inspect if ivars.empty?
+        parts = ivars.first(INSPECT_MAX_ITEMS).map do |iv|
+          "#{iv}=#{safe_inspect(value.instance_variable_get(iv), depth + 1)}"
+        end
+        parts << "...#{ivars.size - INSPECT_MAX_ITEMS} more" if ivars.size > INSPECT_MAX_ITEMS
+        "#<#{klass} #{parts.join(', ')}>"
+      end
 
       def get_state_keys(component)
         state = component.instance_variable_get(:@state)
