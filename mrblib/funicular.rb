@@ -15,11 +15,8 @@ rescue LoadError
 end
 
 module Funicular
-  # Guard against redefinition: when the mrblib runtime is loaded into a
-  # CRuby/Rails process for SSR, lib/funicular/version.rb has already defined
-  # VERSION for the CRuby gem. In the wasm build VERSION is undefined here.
-  VERSION = '0.5.0' unless Funicular.const_defined?(:VERSION)
-
+  # VERSION is defined in mrblib/version.rb, which is compiled into the wasm
+  # build alongside this file and loaded by lib/funicular/version.rb on CRuby.
   def self.version
     VERSION
   end
