@@ -1,3 +1,47 @@
+## [0.5.1] - 2026-09-17
+
+A patch release: keyed-list patching fixes surfaced by real applications,
+a DevTools inspector crash, and a single source of truth for the version.
+
+### Fixed
+
+- Keyed child reordering: kept children whose position changed between
+  renders were updated in place but never moved, so a keyed list that
+  reordered its items rendered in the old order. The patcher now places
+  kept and inserted children at their new index in one pass. Unmoved
+  children are left untouched: the browser's `insertBefore(node, node)`
+  counts as a detach and re-attach, which reset focus, restarted CSS
+  transitions and reloaded iframes on every keyed render. The live child
+  order is tracked in a Ruby array built from the snapshot instead of
+  re-reading `childNodes` per op, which was O(n^2) across the wasm
+  boundary and leaked JS object references.
+
+- Keyed diffs remove unmatched raw String children. A text child that no
+  new child matched (a `'Loading...'` placeholder followed by a keyed
+  list, say) survived every keyed re-render and stayed in the DOM
+  forever. Only nil slots are skipped now.
+
+- The DevTools inspector bounds the depth of instance-variable
+  inspection. `Object#inspect` on a component's `@runtime` recursed
+  through the router, the mounted component and its whole VDOM tree and
+  overflowed the wasm C stack, which showed up later as garbage values,
+  `TypeError` from `<=>` and GC crashes after clicking a component in the
+  PicoRuby debugger panel. Leaves are inspected in full; containers and
+  objects past a fixed depth and item count are summarized, and
+  BasicObject proxies (style accessors) are named rather than inspected.
+
+### Changed
+
+- `Funicular::VERSION` is defined once, in `mrblib/version.rb`, and is
+  compiled into PicoRuby.wasm. `lib/funicular/version.rb` requires it,
+  so the CRuby gem and the browser runtime can no longer disagree (they
+  had drifted to 0.5.1 vs 0.5.0). `Funicular.version` in the browser now
+  reports the released version.
+
+- `Funicular::VDOM::Element#==` is public. It was declared under
+  `private`, which mruby honors for operator calls, so element
+  comparison behaved differently between CRuby (SSR) and the browser.
+
 ## [0.5.0] - 2026-08-13
 
 The local database release: an ActiveRecord-like, reactive local store on
