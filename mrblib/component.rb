@@ -810,6 +810,21 @@ module Funicular
       __view__.component(component_class, props, &block)
     end
 
+    def outlet
+      router = @runtime&.router
+      return nil unless router
+
+      depth = props[:__depth__].to_i + 1
+      layouts = router.current_layouts
+      if depth < layouts.length
+        return component(layouts[depth],
+                         preserve: true, __depth__: depth, __route__: router.current_path)
+      end
+
+      klass, params = router.current_route
+      klass && component(klass, params)
+    end
+
     def form_for(model_key, options = {}, &block)
       build_form_for(__view__, model_key, options, &block)
     end

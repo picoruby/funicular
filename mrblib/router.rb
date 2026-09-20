@@ -1,6 +1,6 @@
 module Funicular
   class Router
-    attr_reader :routes, :current_component, :current_path, :url_helpers, :route_helpers
+    attr_reader :routes, :current_path, :url_helpers, :route_helpers, :current_route, :current_layouts
 
     def initialize(container)
       @container = container
@@ -8,7 +8,10 @@ module Funicular
       @default_route = nil
       @current_component = nil
       @current_path = nil
+      @current_route = nil
+      @current_layouts = []
       @layout_stack = []
+      @layout_root = nil
       @popstate_callback_id = nil
       @beforeunload_callback_id = nil
       @url_helpers = Module.new
@@ -53,6 +56,13 @@ module Funicular
       yield
     ensure
       @layout_stack.pop
+    end
+
+    def current_component
+      return @current_component unless @layout_root
+
+      klass = @current_route&.first
+      klass && route_instance_in(@layout_root.vdom, klass)
     end
 
     # Resolve a path to [component_class, params] without any DOM/JS work.
@@ -168,7 +178,8 @@ module Funicular
       @hydrate_initial = false
 
       # Find matching route
-      component_class, params = find_route(path)
+      route, params = match_route(path)
+      component_class = route && route[:component]
 
       unless component_class
         # Maybe render a 404 component?
@@ -177,6 +188,8 @@ module Funicular
 
       # Don't remount if already on this path
       return if @current_path == path
+
+      return render_with_layouts(route, params, path, hydrate_now) unless route[:layouts].empty?
 
       # Unmount current component
       unmount_current_component
@@ -206,10 +219,54 @@ module Funicular
       @current_component.mount(@container)
     end
 
+    def render_with_layouts(route, params, path, hydrate_now)
+      if hydrate_now && Funicular.first_element_child(@container)
+        puts '[Funicular] Layouts do not support hydration; rendering fresh.'
+        @container[:innerHTML] = ''
+      end
+
+      layouts = route[:layouts]
+      reusable = @layout_root&.mounted && @current_layouts.first == layouts.first
+      unmount_current_component unless reusable
+
+      @current_path = path
+      @current_route = [route[:component], params]
+      @current_layouts = layouts
+
+      if reusable
+        @layout_root.patch(__route__: path)
+      else
+        @layout_root = layouts.first.new
+        @layout_root.runtime = @runtime
+        @layout_root.mount(@container)
+      end
+    end
+
+    def route_instance_in(vnode, klass)
+      return vnode.instance if vnode.is_a?(VDOM::Component) && vnode.component_class == klass
+
+      subtree_of(vnode).each do |child|
+        found = route_instance_in(child, klass)
+        return found if found
+      end
+      nil
+    end
+
+    def subtree_of(vnode)
+      return [vnode.instance&.vdom].compact if vnode.is_a?(VDOM::Component)
+      return vnode.children.compact if vnode.respond_to?(:children)
+
+      []
+    end
+
     # Unmount current component
     def unmount_current_component
       @current_component&.unmount
       @current_component = nil
+      @layout_root&.unmount
+      @layout_root = nil
+      @current_layouts = []
+      @current_route = nil
       @current_path = nil
     end
 
