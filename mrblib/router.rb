@@ -273,6 +273,11 @@ module Funicular
     end
 
     def find_route(path)
+      route, params = match_route(path)
+      [route && route[:component], params]
+    end
+
+    def match_route(path)
       path_segments = path.split('/').reject { |s| s.empty? }
       params = {} #: Hash[Symbol, untyped]
 
@@ -302,7 +307,7 @@ module Funicular
           end
         end
 
-        return [route[:component], params] if match
+        return [route, params] if match
       end
 
       [nil, params] # No route found
