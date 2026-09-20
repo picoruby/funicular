@@ -814,12 +814,12 @@ module Funicular
       router = @runtime&.router
       return nil unless router
 
-      depth = props[:__depth__].to_i + 1
       layouts = router.current_layouts
-      if depth < layouts.length
-        return component(layouts[depth],
-                         preserve: true, __depth__: depth, __route__: router.current_path)
-      end
+      depth = layouts.index(self.class)
+      return nil unless depth
+
+      nested = layouts[depth + 1]
+      return component(nested, preserve: true, __route__: router.current_path) if nested
 
       klass, params = router.current_route
       klass && component(klass, params)
