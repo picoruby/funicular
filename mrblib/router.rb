@@ -8,6 +8,7 @@ module Funicular
       @default_route = nil
       @current_component = nil
       @current_path = nil
+      @layout_stack = []
       @popstate_callback_id = nil
       @beforeunload_callback_id = nil
       @url_helpers = Module.new
@@ -45,6 +46,13 @@ module Funicular
     # Set default route (used when path is empty)
     def set_default(path)
       @default_route = path
+    end
+
+    def layout(component_class)
+      @layout_stack.push(component_class)
+      yield
+    ensure
+      @layout_stack.pop
     end
 
     # Resolve a path to [component_class, params] without any DOM/JS work.
@@ -215,7 +223,8 @@ module Funicular
         component: component_class,
         name: name,
         pattern_segments: pattern_segments,
-        constraints: constraints || {}
+        constraints: constraints || {},
+        layouts: @layout_stack.dup
       }
       # @type var route: Funicular::route_definition_t
       @routes << route

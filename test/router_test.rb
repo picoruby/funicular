@@ -152,4 +152,46 @@ class RouterTest < Picotest::Test
     assert_equal(:get, @router.routes[2][:method])
   end
 
+  class Level1Layout; end
+  class Level2Layout; end
+  class Level3Layout; end
+
+  def layout_chains
+    @router.routes.map { |r| [r[:name], r[:layouts]] }.to_h
+  end
+
+  def test_nested_layout_blocks_record_the_chain_enclosing_each_route
+    @router.layout(Level1Layout) do
+      @router.get('/one', to: MyComponent, as: 'one')
+      @router.layout(Level2Layout) do
+        @router.get('/two', to: MyComponent, as: 'two')
+        @router.layout(Level3Layout) do
+          @router.get('/three', to: MyComponent, as: 'three')
+        end
+      end
+    end
+
+    chains = layout_chains
+    assert_equal([Level1Layout], chains['one'])
+    assert_equal([Level1Layout, Level2Layout], chains['two'])
+    assert_equal([Level1Layout, Level2Layout, Level3Layout], chains['three'])
+  end
+
+  def test_routes_declared_outside_a_layout_have_no_chain
+    @router.layout(Level1Layout) { @router.get('/inside', to: MyComponent, as: 'inside') }
+    @router.get('/outside', to: MyComponent, as: 'outside')
+
+    assert_equal([Level1Layout], layout_chains['inside'])
+    assert_equal([], layout_chains['outside'])
+  end
+
+  def test_layout_stack_unwinds_when_the_block_raises
+    begin
+      @router.layout(Level1Layout) { raise 'boom' }
+    rescue RuntimeError
+    end
+    @router.get('/after', to: MyComponent, as: 'after')
+
+    assert_equal([], layout_chains['after'])
+  end
 end
