@@ -177,21 +177,17 @@ class RouterTest < Picotest::Test
     assert_equal([Level1Layout, Level2Layout, Level3Layout], chains['three'])
   end
 
-  def test_routes_declared_outside_a_layout_have_no_chain
+  def test_layout_stack_unwinds_after_the_block_returns_or_raises
     @router.layout(Level1Layout) { @router.get('/inside', to: MyComponent, as: 'inside') }
     @router.get('/outside', to: MyComponent, as: 'outside')
-
-    assert_equal([Level1Layout], layout_chains['inside'])
-    assert_equal([], layout_chains['outside'])
-  end
-
-  def test_layout_stack_unwinds_when_the_block_raises
     begin
-      @router.layout(Level1Layout) { raise 'boom' }
+      @router.layout(Level2Layout) { raise 'boom' }
     rescue RuntimeError
     end
     @router.get('/after', to: MyComponent, as: 'after')
 
+    assert_equal([Level1Layout], layout_chains['inside'])
+    assert_equal([], layout_chains['outside'])
     assert_equal([], layout_chains['after'])
   end
   def test_current_component_without_a_layout_is_the_mounted_component
