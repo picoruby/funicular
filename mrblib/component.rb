@@ -822,7 +822,7 @@ module Funicular
       return component(nested, preserve: true, __route__: router.current_path) if nested
 
       klass, params = router.current_route
-      klass && component(klass, params)
+      router.page_vnode = component(klass, params) if klass
     end
 
     def form_for(model_key, options = {}, &block)

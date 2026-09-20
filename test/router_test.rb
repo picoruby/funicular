@@ -194,38 +194,20 @@ class RouterTest < Picotest::Test
 
     assert_equal([], layout_chains['after'])
   end
-  class SiblingComponent; end
-
-  Instance = Struct.new(:vdom)
-
   def test_current_component_without_a_layout_is_the_mounted_component
     assert_nil(@router.current_component)
     @router.instance_variable_set(:@current_component, :page)
     assert_equal(:page, @router.current_component)
   end
 
-  def test_current_component_resolves_through_nested_layouts
-    page = Funicular::VDOM::Component.new(MyComponent)
-    page.instance = :page_instance
-    level3 = Funicular::VDOM::Component.new(Level3Layout)
-    level3.instance = Instance.new(Funicular::VDOM::Element.new('div', {}, [page]))
-    level2 = Funicular::VDOM::Component.new(Level2Layout)
-    level2.instance = Instance.new(Funicular::VDOM::Element.new('div', {}, [
-      Funicular::VDOM::Component.new(SiblingComponent), level3
-    ]))
+  def test_current_component_under_a_layout_is_the_page_rendered_at_the_outlet
+    @router.instance_variable_set(:@layout_root, :root)
+    assert_nil(@router.current_component)
 
-    root = Funicular::VDOM::Element.new('main', {}, [level2])
-    @router.instance_variable_set(:@layout_root, Instance.new(root))
-    @router.instance_variable_set(:@current_route, [MyComponent, {}])
+    vnode = Funicular::VDOM::Component.new(MyComponent)
+    vnode.instance = :page_instance
+    @router.page_vnode = vnode
 
     assert_equal(:page_instance, @router.current_component)
-  end
-
-  def test_current_component_is_nil_when_the_matched_class_is_not_mounted
-    root = Funicular::VDOM::Element.new('main', {}, [Funicular::VDOM::Component.new(SiblingComponent)])
-    @router.instance_variable_set(:@layout_root, Instance.new(root))
-    @router.instance_variable_set(:@current_route, [MyComponent, {}])
-
-    assert_nil(@router.current_component)
   end
 end

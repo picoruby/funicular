@@ -12,6 +12,7 @@ module Funicular
       @current_layouts = []
       @layout_stack = []
       @layout_root = nil
+      @page_vnode = nil
       @popstate_callback_id = nil
       @beforeunload_callback_id = nil
       @url_helpers = Module.new
@@ -58,11 +59,12 @@ module Funicular
       @layout_stack.pop
     end
 
+    attr_writer :page_vnode
+
     def current_component
       return @current_component unless @layout_root
 
-      klass = @current_route&.first
-      klass && route_instance_in(@layout_root.vdom, klass)
+      @page_vnode&.instance
     end
 
     # Resolve a path to [component_class, params] without any DOM/JS work.
@@ -231,6 +233,7 @@ module Funicular
 
       @current_path = path
       @current_route = [route[:component], params]
+      @page_vnode = nil
       @current_layouts = layouts
 
       if reusable
@@ -242,29 +245,13 @@ module Funicular
       end
     end
 
-    def route_instance_in(vnode, klass)
-      return vnode.instance if vnode.is_a?(VDOM::Component) && vnode.component_class == klass
-
-      subtree_of(vnode).each do |child|
-        found = route_instance_in(child, klass)
-        return found if found
-      end
-      nil
-    end
-
-    def subtree_of(vnode)
-      return [vnode.instance&.vdom].compact if vnode.is_a?(VDOM::Component)
-      return vnode.children.compact if vnode.respond_to?(:children)
-
-      []
-    end
-
     # Unmount current component
     def unmount_current_component
       @current_component&.unmount
       @current_component = nil
       @layout_root&.unmount
       @layout_root = nil
+      @page_vnode = nil
       @current_layouts = []
       @current_route = nil
       @current_path = nil
