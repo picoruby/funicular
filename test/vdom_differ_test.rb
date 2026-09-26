@@ -34,6 +34,14 @@ class VDOMDifferTest < Picotest::Test
     assert_equal([[:text, 'world']], @differ.diff('hello', 'world'))
   end
 
+  def test_nil_child_keeps_sibling_positions
+    form = Funicular::VDOM::Element.new('form')
+    notice = Funicular::VDOM::Element.new('p')
+    old_node = Funicular::VDOM::Element.new('main', {}, [nil, form])
+    new_node = Funicular::VDOM::Element.new('main', {}, [notice, form])
+    assert_equal([[0, [[:replace, notice, '']]]], @differ.diff(old_node, new_node))
+  end
+
   def test_diff_element_different_tag
     old_node = Funicular::VDOM::Element.new('div')
     new_node = Funicular::VDOM::Element.new('span')

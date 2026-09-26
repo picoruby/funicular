@@ -59,11 +59,8 @@ class VDOMTest < Picotest::Test
 
   def test_element_normalize_children_with_nil
     child = Funicular::VDOM::Element.new('span')
-    # nil values should be skipped
     element = Funicular::VDOM::Element.new('div', {}, [child, nil, false, 'text'])
-    assert_equal(2, element.children.length)
-    assert_equal(child, element.children[0])
-    assert_equal('text', element.children[1])
+    assert_equal([child, '', '', 'text'], element.children)
   end
 
   def test_element_normalize_children_with_numbers

@@ -126,7 +126,7 @@ module Funicular
             # @type var child: Array[Funicular::VDOM::child_t]
             result.concat(normalize_children(child))
           when nil, false
-            # Skip nil values
+            result << ''
           else
             # Convert other types to strings
             result << child.to_s

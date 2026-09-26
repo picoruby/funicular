@@ -17,8 +17,10 @@
 - Text content is patched in-place instead of replacing the DOM node. Text
   vnodes and raw String children emitted `:replace`, so every text change
   destroyed the node and detached anything referencing it.
-- `false` children are skipped like `nil`. The `cond && node` pattern
-  rendered the literal text "false" when `cond` was falsy.
+- `nil` and `false` children keep their slot as an empty text node, so a
+  conditional child no longer shifts its siblings and forces their subtrees to
+  be rebuilt, and the `cond && node` pattern no longer renders the literal text
+  "false" when `cond` is falsy.
 - Event handlers, refs and child hydration pair vnode children with
   `childNodes` instead of element-only `children`, so elements after a text
   sibling are no longer skipped.
