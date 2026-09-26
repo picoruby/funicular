@@ -24,6 +24,8 @@ module Funicular
             # Props patches only make sense for Element nodes (text nodes have
             # no attributes); narrow before delegating.
             update_props(element, patch[1]) if element.is_a?(JS::Element)
+          when :text
+            element[:nodeValue] = patch[1].to_s
           when :update_and_rebind
             instance, internal_patches, new_vdom = patch[1], patch[2], patch[3]
             old_dom_element = instance.dom_element

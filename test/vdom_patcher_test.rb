@@ -150,6 +150,10 @@ class VDOMPatcherTest < Picotest::Test
       @parent_element = nil
     end
 
+    def []=(key, value)
+      @text_content = value if key.to_s == 'nodeValue'
+    end
+
     def parentElement
       @parent_element
     end
@@ -514,5 +518,11 @@ class VDOMPatcherTest < Picotest::Test
 
     assert(element.is_a?(MockTextNode))
     assert_equal('hello', element.text_content)
+  end
+
+  def test_text_patch_updates_node_in_place
+    node = @doc.createTextNode('old')
+    @patcher.apply(node, [[:text, 'new']])
+    assert_equal('new', node.text_content)
   end
 end
