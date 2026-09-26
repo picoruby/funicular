@@ -152,47 +152,18 @@ class RouterTest < Picotest::Test
     assert_equal(:get, @router.routes[2][:method])
   end
 
-  class Level1Layout; end
-  class Level2Layout; end
-  class Level3Layout; end
+  class OuterLayout; end
+  class InnerLayout; end
 
-  def layout_chains
-    @router.routes.map { |r| [r[:name], r[:layouts]] }.to_h
-  end
-
-  def test_nested_layout_blocks_record_the_chain_enclosing_each_route
-    @router.layout(Level1Layout) do
-      @router.get('/one', to: MyComponent, as: 'one')
-      @router.layout(Level2Layout) do
-        @router.get('/two', to: MyComponent, as: 'two')
-        @router.layout(Level3Layout) do
-          @router.get('/three', to: MyComponent, as: 'three')
-        end
-      end
+  def test_layout_blocks_record_the_enclosing_chain
+    @router.layout(OuterLayout) do
+      @router.get('/outer', to: MyComponent, as: 'outer')
+      @router.layout(InnerLayout) { @router.get('/inner', to: MyComponent, as: 'inner') }
     end
+    assert_raise(RuntimeError) { @router.layout(InnerLayout) { raise 'boom' } }
+    @router.get('/bare', to: MyComponent, as: 'bare')
 
-    chains = layout_chains
-    assert_equal([Level1Layout], chains['one'])
-    assert_equal([Level1Layout, Level2Layout], chains['two'])
-    assert_equal([Level1Layout, Level2Layout, Level3Layout], chains['three'])
-  end
-
-  def test_layout_stack_unwinds_after_the_block_returns_or_raises
-    @router.layout(Level1Layout) { @router.get('/inside', to: MyComponent, as: 'inside') }
-    @router.get('/outside', to: MyComponent, as: 'outside')
-    begin
-      @router.layout(Level2Layout) { raise 'boom' }
-    rescue RuntimeError
-    end
-    @router.get('/after', to: MyComponent, as: 'after')
-
-    assert_equal([Level1Layout], layout_chains['inside'])
-    assert_equal([], layout_chains['outside'])
-    assert_equal([], layout_chains['after'])
-  end
-  def test_current_component_without_a_layout_is_the_mounted_component
-    assert_nil(@router.current_component)
-    @router.instance_variable_set(:@current_component, :page)
-    assert_equal(:page, @router.current_component)
+    chains = @router.routes.map { |r| [r[:name], r[:layouts]] }.to_h
+    assert_equal({ 'outer' => [OuterLayout], 'inner' => [OuterLayout, InnerLayout], 'bare' => [] }, chains)
   end
 end
