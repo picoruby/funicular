@@ -30,7 +30,20 @@ class ComponentDomWalkTest < Picotest::Test
       case key.to_s
       when 'nodeType' then @type
       when 'childNodes' then NodeList.new(@child_nodes)
+      when 'ownerDocument' then self
       end
+    end
+
+    def createTextNode(value)
+      Node.new(3, value)
+    end
+
+    def removeChild(node)
+      @child_nodes.delete_if { |n| n.equal?(node) }
+    end
+
+    def replaceChild(new_node, old_node)
+      @child_nodes[@child_nodes.index { |n| n.equal?(old_node) }] = new_node
     end
 
     def addEventListener(name)
@@ -57,4 +70,21 @@ class ComponentDomWalkTest < Picotest::Test
     assert_equal(input, component.collect_refs(root, vnode)[:field])
   end
 
+  def test_hydration_restores_text_boundaries_before_hydrating_children
+    child_root = Node.new(1)
+    root = Node.new(1, nil, [Node.new(8), Node.new(3, 'a'), Node.new(8), Node.new(3, 'b'), child_root])
+    child = Class.new(Funicular::Component) do
+      attr_reader :hydrated_into
+
+      def hydrate(dom_element)
+        @hydrated_into = dom_element
+      end
+    end
+    vnode = el('div', {}, [nil, 'a', 'b', Funicular::VDOM::Component.new(child)])
+
+    Funicular::Component.new.send(:hydrate_child_components, vnode, root)
+
+    assert_equal(['', 'a', 'b', nil], root.child_nodes.map { |n| n.value })
+    assert_equal(child_root, vnode.children[3].instance.hydrated_into)
+  end
 end

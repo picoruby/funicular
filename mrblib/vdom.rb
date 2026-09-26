@@ -39,6 +39,11 @@ module Funicular
       true
     end
 
+    def self.text(child)
+      return child if child.is_a?(String)
+      child.content.to_s if child.is_a?(Text)
+    end
+
     def self.child_nodes(element)
       nodes = element[:childNodes]
       nodes.is_a?(JS::Object) ? nodes.to_a : [] #: Array[untyped]

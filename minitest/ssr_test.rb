@@ -32,6 +32,15 @@ class SSRTest < Minitest::Test
                  serialize(el("p", {}, ["a & b <c>"]))
   end
 
+  def test_marks_empty_slots_and_seams_between_texts
+    assert_equal "<div><!----><b></b>a<!---->b<i></i>c</div>",
+                 serialize(el("div", {}, [nil, el("b"), "a", "b", el("i"), "c"]))
+  end
+
+  def test_raw_text_elements_are_not_marked
+    assert_equal "<textarea>ab</textarea>", serialize(el("textarea", {}, [nil, "a", "b"]))
+  end
+
   def test_escapes_attribute_values
     assert_equal '<div title="&quot;hi&quot;"></div>',
                  serialize(el("div", { title: '"hi"' }))

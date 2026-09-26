@@ -24,6 +24,9 @@
 - Event handlers, refs and child hydration pair vnode children with
   `childNodes` instead of element-only `children`, so elements after a text
   sibling are no longer skipped.
+- `HTMLSerializer` emits `<!---->` for empty slots and between adjacent texts,
+  except inside `textarea`, `title` and `style`. Hydration restores them to
+  one node per vnode child.
 
 ## [0.5.1] - 2026-09-17
 

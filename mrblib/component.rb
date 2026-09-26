@@ -1047,8 +1047,21 @@ module Funicular
       return unless dom_element
 
       dom_children = VDOM.child_nodes(dom_element)
+      skipped = 0
+      previous_text = false
       vnode.children.each_with_index do |child, index|
-        child_dom = dom_children[index]
+        text = VDOM.text(child)
+        child_dom = dom_children[index + skipped]
+        if text && child_dom && child_dom[:nodeType] == 8
+          if text.empty?
+            dom_element.replaceChild(dom_element[:ownerDocument].createTextNode(''), child_dom)
+          elsif previous_text
+            dom_element.removeChild(child_dom)
+            skipped += 1
+            child_dom = dom_children[index + skipped]
+          end
+        end
+        previous_text = !text.to_s.empty?
         next unless child_dom
 
         if child.is_a?(VDOM::Component)
