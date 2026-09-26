@@ -75,6 +75,7 @@ module Funicular
     def __view__: () -> ViewContext
     def routes: () -> untyped
     def component: (singleton(Component) component_class, ?Hash[Symbol, untyped] props) ?{ () -> untyped } -> VDOM::Component
+    def outlet: () -> VDOM::Component?
     def form_for: (Symbol model_key, ?Hash[Symbol, untyped] options) { (FormBuilder) -> void } -> VDOM::Element
     def link_to: (String path, **untyped options) ?{ -> untyped } -> VDOM::Element
     def button_to: (String path, ?method: Symbol, **untyped options) ?{ -> untyped } -> VDOM::Element
