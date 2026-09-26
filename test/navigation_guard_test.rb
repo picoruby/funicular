@@ -45,6 +45,34 @@ class NavigationGuardTest < Picotest::Test
     assert_equal(true, @router.leave_allowed?)
   end
 
+  class OuterLayout; end
+  class InnerLayout; end
+  class Wrapper; end
+
+  def rendered(component_class, instance, children = [])
+    vnode = Funicular::VDOM::Component.new(component_class, {}, children)
+    vnode.instance = instance
+    vnode
+  end
+
+  def layout_rendering(child)
+    layout = Funicular::Component.new
+    layout.vdom = Funicular::VDOM::Element.new('div', {}, [child])
+    layout
+  end
+
+  def test_guard_of_a_page_under_layouts_is_asked
+    inner = layout_rendering(rendered(Wrapper, nil, [rendered(GuardedComponent, GuardedComponent.new)]))
+    @router.instance_variable_set(:@layout_root, layout_rendering(rendered(InnerLayout, inner)))
+    @router.instance_variable_set(:@current_layouts, [OuterLayout, InnerLayout])
+    @router.instance_variable_set(:@current_route, [GuardedComponent, {}])
+    Funicular.confirm_handler = ->(_message) { false }
+
+    assert_equal(false, @router.leave_allowed?)
+    inner.vdom = nil
+    assert_equal(true, @router.leave_allowed?)
+  end
+
   def test_component_guard_defaults_to_nil
     assert_equal(nil, Funicular::Component.new.navigation_guard)
   end

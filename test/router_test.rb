@@ -195,15 +195,4 @@ class RouterTest < Picotest::Test
     @router.instance_variable_set(:@current_component, :page)
     assert_equal(:page, @router.current_component)
   end
-
-  def test_current_component_under_a_layout_is_the_page_rendered_at_the_outlet
-    @router.instance_variable_set(:@layout_root, :root)
-    assert_nil(@router.current_component)
-
-    vnode = Funicular::VDOM::Component.new(MyComponent)
-    vnode.instance = :page_instance
-    @router.page_vnode = vnode
-
-    assert_equal(:page_instance, @router.current_component)
-  end
 end

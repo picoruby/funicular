@@ -811,18 +811,14 @@ module Funicular
     end
 
     def outlet
-      router = @runtime&.router
-      return nil unless router
+      router = @runtime.router
+      depth = router&.current_layouts&.index(self.class)
+      return unless router && depth
 
-      layouts = router.current_layouts
-      depth = layouts.index(self.class)
-      return nil unless depth
-
-      nested = layouts[depth + 1]
+      nested = router.current_layouts[depth + 1]
       return component(nested, preserve: true, __route__: router.current_path) if nested
 
-      klass, params = router.current_route
-      router.page_vnode = component(klass, params) if klass
+      component(*router.current_route)
     end
 
     def form_for(model_key, options = {}, &block)

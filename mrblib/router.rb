@@ -12,7 +12,6 @@ module Funicular
       @current_layouts = []
       @layout_stack = []
       @layout_root = nil
-      @page_vnode = nil
       @popstate_callback_id = nil
       @beforeunload_callback_id = nil
       @url_helpers = Module.new
@@ -59,12 +58,15 @@ module Funicular
       @layout_stack.pop
     end
 
-    attr_writer :page_vnode
-
     def current_component
       return @current_component unless @layout_root
 
-      @page_vnode&.instance
+      instance = @layout_root
+      (@current_layouts[1..-1] + [@current_route[0]]).each do |klass|
+        instance = find_component_instance(instance.vdom, klass)
+        return nil unless instance
+      end
+      instance
     end
 
     # Resolve a path to [component_class, params] without any DOM/JS work.
@@ -111,7 +113,7 @@ module Funicular
       # a guard is active. sync: the decision must be made on the JS
       # event dispatch stack, so the guard must not suspend.
       @beforeunload_callback_id = JS.global.addEventListener('beforeunload', sync: true) do |event|
-        if @current_component&.navigation_guard
+        if current_component&.navigation_guard
           event.preventDefault
           event[:returnValue] = ''
         end
@@ -156,7 +158,7 @@ module Funicular
     # allowed; a String from the guard prompts the user via
     # Funicular.confirm. True when no component or no guard.
     def leave_allowed?
-      message = @current_component&.navigation_guard
+      message = current_component&.navigation_guard
       return true unless message
       Funicular.confirm(message)
     end
@@ -233,7 +235,6 @@ module Funicular
 
       @current_path = path
       @current_route = [route[:component], params]
-      @page_vnode = nil
       @current_layouts = layouts
 
       if reusable
@@ -245,13 +246,23 @@ module Funicular
       end
     end
 
+    def find_component_instance(vnode, component_class)
+      return unless vnode.is_a?(VDOM::Element) || vnode.is_a?(VDOM::Component)
+      return vnode.instance if vnode.is_a?(VDOM::Component) && vnode.component_class == component_class
+
+      vnode.children.each do |child|
+        found = find_component_instance(child, component_class)
+        return found if found
+      end
+      nil
+    end
+
     # Unmount current component
     def unmount_current_component
       @current_component&.unmount
       @current_component = nil
       @layout_root&.unmount
       @layout_root = nil
-      @page_vnode = nil
       @current_layouts = []
       @current_route = nil
       @current_path = nil
