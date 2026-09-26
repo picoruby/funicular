@@ -19,6 +19,9 @@
   destroyed the node and detached anything referencing it.
 - `false` children are skipped like `nil`. The `cond && node` pattern
   rendered the literal text "false" when `cond` was falsy.
+- Event handlers, refs and child hydration pair vnode children with
+  `childNodes` instead of element-only `children`, so elements after a text
+  sibling are no longer skipped.
 
 ## [0.5.1] - 2026-09-17
 

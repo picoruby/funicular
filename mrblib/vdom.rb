@@ -39,6 +39,11 @@ module Funicular
       true
     end
 
+    def self.child_nodes(element)
+      nodes = element[:childNodes]
+      nodes.is_a?(JS::Object) ? nodes.to_a : [] #: Array[untyped]
+    end
+
     def self.event_attribute?(name)
       name.to_s.downcase.start_with?('on')
     end
