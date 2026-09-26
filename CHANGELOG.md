@@ -3,23 +3,13 @@
 ### Added
 
 - Nested router layouts: `router.layout(Component) { ... }` and
-  `Component#outlet`. The router unmounted the matched component and mounted a
-  fresh one on every navigation, with no diffing, so anything a page rendered
-  around itself was destroyed and rebuilt on each route change, losing focus,
-  scroll position and in-flight transitions.
-
-  Layout blocks nest, and each route records the chain enclosing it. The
-  outermost layout is mounted once; each layout renders the next at its
-  `outlet`, and the innermost renders the matched component. Navigating
-  re-renders the chain and the differ replaces only what changed, so a layout
-  and everything it draws keeps its DOM nodes for as long as the route stays
-  within it.
-
-  `Router#current_component` walks the mounted layouts to find the matched
-  component, so navigation guards and the `beforeunload` handler still see the
-  page rather than a layout. Routes declared outside any layout block mount
-  exactly as before. Hydration into a layout is unsupported and falls back to
-  a fresh render.
+  `Component#outlet`. Each layout renders the next, or the matched page, at
+  `outlet`. Navigating under the same outermost layout re-renders it in place
+  and the differ patches only what changed, instead of remounting the page; a
+  different outermost layout remounts the chain. Navigation guards and
+  `beforeunload` see the page, not a layout. Routes outside any layout block are
+  unchanged. Hydration into a layout falls back to a fresh render, and SSR
+  renders the page without its layouts, so such pages re-render on load.
 
 ## [0.5.1] - 2026-09-17
 
