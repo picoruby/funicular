@@ -525,4 +525,37 @@ class VDOMPatcherTest < Picotest::Test
     @patcher.apply(node, [[:text, 'new']])
     assert_equal('new', node.text_content)
   end
+
+  def test_text_child_change_reuses_dom_node
+    first_vdom = Funicular::VDOM::Element.new('p', {}, ['hello'])
+    dom = Funicular::VDOM::Renderer.new(@doc).render(first_vdom)
+    text_node = dom.children[0]
+
+    second_vdom = Funicular::VDOM::Element.new('p', {}, ['world'])
+    @patcher.apply(dom, Funicular::VDOM::Differ.diff(first_vdom, second_vdom))
+
+    assert(dom.children[0].equal?(text_node))
+    assert_equal('world', text_node.text_content)
+    assert_equal(0, dom.detach_count)
+  end
+
+  def test_keyed_children_patch_unkeyed_text_in_place
+    first_vdom = Funicular::VDOM::Element.new('ul', {}, [
+      'Total: 1',
+      Funicular::VDOM::Element.new('li', {key: 'a'}, ['A'])
+    ])
+    dom = Funicular::VDOM::Renderer.new(@doc).render(first_vdom)
+    text_node, a_node = dom.children
+
+    second_vdom = Funicular::VDOM::Element.new('ul', {}, [
+      'Total: 2',
+      Funicular::VDOM::Element.new('li', {key: 'a'}, ['A'])
+    ])
+    @patcher.apply(dom, Funicular::VDOM::Differ.diff(first_vdom, second_vdom))
+
+    assert(dom.children[0].equal?(text_node))
+    assert(dom.children[1].equal?(a_node))
+    assert_equal('Total: 2', text_node.text_content)
+    assert_equal(0, dom.detach_count)
+  end
 end

@@ -166,7 +166,7 @@ module Funicular
               end
             elsif child_element.is_a?(JS::Object)
               # Recurse into the child node. apply handles both Element and
-              # text Node cases (the latter only meaningfully via :replace).
+              # text Node cases (the latter via :text or :replace).
               apply(child_element, child_patches)
             end
           end
