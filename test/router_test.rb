@@ -166,4 +166,76 @@ class RouterTest < Picotest::Test
     chains = @router.routes.map { |r| [r[:name], r[:layouts]] }.to_h
     assert_equal({ 'outer' => [OuterLayout], 'inner' => [OuterLayout, InnerLayout], 'bare' => [] }, chains)
   end
+
+  # Stand-in for a mounted layout root: records patch calls and lets the
+  # test flip the mid-render flag that Component#patch would set.
+  class FakeLayoutRoot
+    attr_accessor :runtime, :mounted, :updating
+    attr_reader :patched, :unmounted
+
+    def initialize
+      @mounted = false
+      @updating = false
+      @patched = []
+      @unmounted = false
+    end
+
+    def updating?
+      @updating
+    end
+
+    def mount(_container)
+      @mounted = true
+    end
+
+    def unmount
+      @mounted = false
+      @unmounted = true
+    end
+
+    def patch(new_state)
+      @patched << new_state
+    end
+  end
+
+  def test_navigation_under_the_same_layout_patches_the_mounted_root
+    @router.layout(FakeLayoutRoot) do
+      @router.get('/a', to: MyComponent)
+      @router.get('/b', to: MyComponent)
+    end
+    route_a, route_b = @router.routes
+
+    @router.send(:render_with_layouts, route_a, {}, '/a', false)
+    root = @router.instance_variable_get(:@layout_root)
+    assert_equal(true, root.mounted)
+
+    @router.send(:render_with_layouts, route_b, {}, '/b', false)
+    assert(root.equal?(@router.instance_variable_get(:@layout_root)))
+    assert_equal([{ __route__: '/b' }], root.patched)
+    assert_equal('/b', @router.current_path)
+    assert_equal([MyComponent, {}], @router.current_route)
+  end
+
+  def test_navigation_while_the_root_is_updating_remounts_the_chain
+    @router.layout(FakeLayoutRoot) do
+      @router.get('/a', to: MyComponent)
+      @router.get('/b', to: MyComponent)
+    end
+    route_a, route_b = @router.routes
+
+    @router.send(:render_with_layouts, route_a, {}, '/a', false)
+    root = @router.instance_variable_get(:@layout_root)
+
+    # A page redirecting from component_mounted during the root's re-render:
+    # patch would be ignored, so the router must remount instead.
+    root.updating = true
+    @router.send(:render_with_layouts, route_b, {}, '/b', false)
+
+    new_root = @router.instance_variable_get(:@layout_root)
+    assert_equal(true, root.unmounted)
+    assert_equal([], root.patched)
+    assert(!new_root.equal?(root))
+    assert_equal(true, new_root.mounted)
+    assert_equal('/b', @router.current_path)
+  end
 end

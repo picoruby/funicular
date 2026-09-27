@@ -9,7 +9,8 @@
   different outermost layout remounts the chain. Navigation guards and
   `beforeunload` see the page, not a layout. Routes outside any layout block are
   unchanged. Hydration into a layout falls back to a fresh render, and SSR
-  renders the page without its layouts, so such pages re-render on load.
+  renders the page without its layouts, so such pages re-render on load and
+  the server-seeded state is not applied.
 
 ### Fixed
 

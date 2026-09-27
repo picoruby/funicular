@@ -10,7 +10,7 @@ module Funicular
       @current_path = nil
       @current_route = nil
       @current_layouts = []
-      @layout_stack = []
+      @layout_stack = [] #: Array[singleton(Component)]
       @layout_root = nil
       @popstate_callback_id = nil
       @beforeunload_callback_id = nil
@@ -59,12 +59,15 @@ module Funicular
     end
 
     def current_component
-      return @current_component unless @layout_root
+      layout_root = @layout_root
+      route = @current_route
+      return @current_component unless layout_root && route
 
-      instance = @layout_root
-      (@current_layouts[1..-1] + [@current_route[0]]).each do |klass|
-        instance = find_component_instance(instance.vdom, klass)
+      instance = layout_root #: Component?
+      chain = (@current_layouts[1..-1] || []) + [route[0]]
+      chain.each do |klass|
         return nil unless instance
+        instance = find_component_instance(instance.vdom, klass)
       end
       instance
     end
@@ -183,12 +186,12 @@ module Funicular
 
       # Find matching route
       route, params = match_route(path)
-      component_class = route && route[:component]
 
-      unless component_class
+      unless route
         # Maybe render a 404 component?
         return
       end
+      component_class = route[:component]
 
       # Don't remount if already on this path
       return if @current_path == path
@@ -230,19 +233,27 @@ module Funicular
       end
 
       layouts = route[:layouts]
-      reusable = @layout_root&.mounted && @current_layouts.first == layouts.first
+      layout_root = @layout_root
+      # Reuse the mounted chain only under the same outermost layout, and
+      # only when that root is not mid-render: Component#patch drops nested
+      # calls, so a page that navigates from component_mounted during a
+      # re-render would otherwise change the URL and leave the old page in
+      # the DOM. Remounting the chain matches what bare routes do.
+      reusable = layout_root && layout_root.mounted && !layout_root.updating? &&
+                 @current_layouts.first == layouts.first
       unmount_current_component unless reusable
 
       @current_path = path
       @current_route = [route[:component], params]
       @current_layouts = layouts
 
-      if reusable
-        @layout_root.patch(__route__: path)
+      if layout_root && reusable
+        layout_root.patch(__route__: path)
       else
-        @layout_root = layouts.first.new
-        @layout_root.runtime = @runtime
-        @layout_root.mount(@container)
+        layout_root = layouts.first.new
+        layout_root.runtime = @runtime
+        @layout_root = layout_root
+        layout_root.mount(@container)
       end
     end
 

@@ -61,6 +61,7 @@ module Funicular
     def render_suspense: (Symbol name, fallback: untyped, ?error: untyped) { (ResourceAccessor) -> untyped } -> untyped
 
     def navigation_guard: () -> String?
+    def updating?: () -> bool
     def patch: (Hash[Symbol, untyped] new_state) -> void
     def mount: (JS::Element container) -> void
     def hydrate: (JS::Element dom_element) -> void
