@@ -120,7 +120,7 @@ module Funicular
             # Recursively normalize nested arrays
             # @type var child: Array[Funicular::VDOM::child_t]
             result.concat(normalize_children(child))
-          when nil
+          when nil, false
             # Skip nil values
           else
             # Convert other types to strings

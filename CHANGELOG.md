@@ -1,3 +1,13 @@
+## [Unreleased]
+
+### Fixed
+
+- Text content is patched in-place instead of replacing the DOM node. Text
+  vnodes and raw String children emitted `:replace`, so every text change
+  destroyed the node and detached anything referencing it.
+- `false` children are skipped like `nil`. The `cond && node` pattern
+  rendered the literal text "false" when `cond` was falsy.
+
 ## [0.5.1] - 2026-09-17
 
 A patch release: keyed-list patching fixes surfaced by real applications,

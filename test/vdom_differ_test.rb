@@ -27,7 +27,11 @@ class VDOMDifferTest < Picotest::Test
     old_node = Funicular::VDOM::Text.new('hello')
     new_node = Funicular::VDOM::Text.new('world')
     patches = @differ.diff(old_node, new_node)
-    assert_equal([[:replace, new_node, old_node]], patches)
+    assert_equal([[:text, 'world']], patches)
+  end
+
+  def test_diff_string_child_changed
+    assert_equal([[:text, 'world']], @differ.diff('hello', 'world'))
   end
 
   def test_diff_element_different_tag
