@@ -29,6 +29,8 @@ module Funicular
         else
           if old_node == new_node
             []
+          elsif old_node.is_a?(String) && new_node.is_a?(String)
+            [[:text, new_node]]
           else
             [[:replace, new_node, old_node]]
           end
@@ -38,11 +40,7 @@ module Funicular
       private
 
       def self.diff_text(old_node, new_node)
-        if old_node.content != new_node.content
-          [[:replace, new_node, old_node]]
-        else
-          []
-        end
+        old_node.content == new_node.content ? [] : [[:text, new_node.content]]
       end
 
       def self.diff_element(old_node, new_node)
