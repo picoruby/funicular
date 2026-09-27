@@ -8,7 +8,7 @@ Gem::Specification.new do |spec|
   spec.authors = ["HASUMI Hitoshi"]
   spec.email = ["hasumikin@gmail.com"]
 
-  spec.summary = "Rails plugin for client-side Ruby development with mruby"
+  spec.summary = "Rails plugin for client-side Ruby development with PicoRuby"
   spec.description = "Funicular enables you to write client-side UI components in Ruby, powered by PicoRuby.wasm"
   spec.homepage = "https://github.com/picoruby/funicular"
   spec.license = "MIT"
@@ -16,7 +16,7 @@ Gem::Specification.new do |spec|
 
   # spec.metadata["allowed_push_host"] = "TODO: Set to your gem server 'https://example.com'"
 
-  spec.metadata["homepage_uri"] = "https://picoruby.org/funicular-getting-started"
+  spec.metadata["homepage_uri"] = "https://picoruby.org/funicular"
   spec.metadata["source_code_uri"] = spec.homepage
   spec.metadata["changelog_uri"] = "https://github.com/picoruby/funicular/blob/master/CHANGELOG.md"
 
