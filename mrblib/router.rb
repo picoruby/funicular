@@ -1,6 +1,6 @@
 module Funicular
   class Router
-    attr_reader :routes, :current_component, :current_path, :url_helpers, :route_helpers
+    attr_reader :routes, :current_path, :url_helpers, :route_helpers, :current_route, :current_layouts
 
     def initialize(container)
       @container = container
@@ -8,6 +8,10 @@ module Funicular
       @default_route = nil
       @current_component = nil
       @current_path = nil
+      @current_route = nil
+      @current_layouts = []
+      @layout_stack = [] #: Array[singleton(Component)]
+      @layout_root = nil
       @popstate_callback_id = nil
       @beforeunload_callback_id = nil
       @url_helpers = Module.new
@@ -45,6 +49,27 @@ module Funicular
     # Set default route (used when path is empty)
     def set_default(path)
       @default_route = path
+    end
+
+    def layout(component_class)
+      @layout_stack.push(component_class)
+      yield
+    ensure
+      @layout_stack.pop
+    end
+
+    def current_component
+      layout_root = @layout_root
+      route = @current_route
+      return @current_component unless layout_root && route
+
+      instance = layout_root #: Component?
+      chain = (@current_layouts[1..-1] || []) + [route[0]]
+      chain.each do |klass|
+        return nil unless instance
+        instance = find_component_instance(instance.vdom, klass)
+      end
+      instance
     end
 
     # Resolve a path to [component_class, params] without any DOM/JS work.
@@ -91,7 +116,7 @@ module Funicular
       # a guard is active. sync: the decision must be made on the JS
       # event dispatch stack, so the guard must not suspend.
       @beforeunload_callback_id = JS.global.addEventListener('beforeunload', sync: true) do |event|
-        if @current_component&.navigation_guard
+        if current_component&.navigation_guard
           event.preventDefault
           event[:returnValue] = ''
         end
@@ -136,7 +161,7 @@ module Funicular
     # allowed; a String from the guard prompts the user via
     # Funicular.confirm. True when no component or no guard.
     def leave_allowed?
-      message = @current_component&.navigation_guard
+      message = current_component&.navigation_guard
       return true unless message
       Funicular.confirm(message)
     end
@@ -160,15 +185,18 @@ module Funicular
       @hydrate_initial = false
 
       # Find matching route
-      component_class, params = find_route(path)
+      route, params = match_route(path)
 
-      unless component_class
+      unless route
         # Maybe render a 404 component?
         return
       end
+      component_class = route[:component]
 
       # Don't remount if already on this path
       return if @current_path == path
+
+      return render_with_layouts(route, params, path, hydrate_now) unless route[:layouts].empty?
 
       # Unmount current component
       unmount_current_component
@@ -198,10 +226,56 @@ module Funicular
       @current_component.mount(@container)
     end
 
+    def render_with_layouts(route, params, path, hydrate_now)
+      if hydrate_now && Funicular.first_element_child(@container)
+        puts '[Funicular] Layouts do not support hydration; rendering fresh.'
+        @container[:innerHTML] = ''
+      end
+
+      layouts = route[:layouts]
+      layout_root = @layout_root
+      # Reuse the mounted chain only under the same outermost layout, and
+      # only when that root is not mid-render: Component#patch drops nested
+      # calls, so a page that navigates from component_mounted during a
+      # re-render would otherwise change the URL and leave the old page in
+      # the DOM. Remounting the chain matches what bare routes do.
+      reusable = layout_root && layout_root.mounted && !layout_root.updating? &&
+                 @current_layouts.first == layouts.first
+      unmount_current_component unless reusable
+
+      @current_path = path
+      @current_route = [route[:component], params]
+      @current_layouts = layouts
+
+      if layout_root && reusable
+        layout_root.patch(__route__: path)
+      else
+        layout_root = layouts.first.new
+        layout_root.runtime = @runtime
+        @layout_root = layout_root
+        layout_root.mount(@container)
+      end
+    end
+
+    def find_component_instance(vnode, component_class)
+      return unless vnode.is_a?(VDOM::Element) || vnode.is_a?(VDOM::Component)
+      return vnode.instance if vnode.is_a?(VDOM::Component) && vnode.component_class == component_class
+
+      vnode.children.each do |child|
+        found = find_component_instance(child, component_class)
+        return found if found
+      end
+      nil
+    end
+
     # Unmount current component
     def unmount_current_component
       @current_component&.unmount
       @current_component = nil
+      @layout_root&.unmount
+      @layout_root = nil
+      @current_layouts = []
+      @current_route = nil
       @current_path = nil
     end
 
@@ -215,7 +289,8 @@ module Funicular
         component: component_class,
         name: name,
         pattern_segments: pattern_segments,
-        constraints: constraints || {}
+        constraints: constraints || {},
+        layouts: @layout_stack.dup
       }
       # @type var route: Funicular::route_definition_t
       @routes << route
@@ -273,6 +348,11 @@ module Funicular
     end
 
     def find_route(path)
+      route, params = match_route(path)
+      [route && route[:component], params]
+    end
+
+    def match_route(path)
       path_segments = path.split('/').reject { |s| s.empty? }
       params = {} #: Hash[Symbol, untyped]
 
@@ -302,7 +382,7 @@ module Funicular
           end
         end
 
-        return [route[:component], params] if match
+        return [route, params] if match
       end
 
       [nil, params] # No route found

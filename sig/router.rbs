@@ -1,10 +1,11 @@
 module Funicular
   type route_constraints_t = Hash[Symbol, Regexp]
-  type route_definition_t = { method: Symbol, path: String, component: singleton(Component), name: String?, pattern_segments: Array[String], constraints: route_constraints_t }
+  type route_definition_t = { method: Symbol, path: String, component: singleton(Component), name: String?, pattern_segments: Array[String], constraints: route_constraints_t, layouts: Array[singleton(Component)] }
 
   class Router
     attr_reader routes: Array[route_definition_t]
-    attr_reader current_component: Component?
+    attr_reader current_route: [singleton(Component), Hash[Symbol, untyped]]?
+    attr_reader current_layouts: Array[singleton(Component)]
     attr_reader current_path: String?
     attr_reader url_helpers: Module
     attr_reader route_helpers: untyped
@@ -17,6 +18,8 @@ module Funicular
     def delete: (String path, to: singleton(Component), ?as: String?, ?constraints: route_constraints_t?) -> void
     def add_route: (String path, singleton(Component) component_class, ?as: String?, ?constraints: route_constraints_t?) -> void
     def set_default: (String path) -> void
+    def layout: (singleton(Component) component_class) { () -> void } -> void
+    def current_component: () -> Component?
     def match: (String path) -> [singleton(Component)?, Hash[Symbol, untyped]]
     def start: (?hydrate: bool) -> void
     def stop: () -> void
@@ -28,7 +31,10 @@ module Funicular
     private def generate_url_helper: (String name, String path_pattern) -> void
     private def extract_param_names: (String path_pattern) -> Array[Symbol]
     private def handle_route_change: () -> void
+    private def render_with_layouts: (route_definition_t route, Hash[Symbol, untyped] params, String path, bool? hydrate_now) -> void
+    private def find_component_instance: (untyped vnode, singleton(Component) component_class) -> Component?
     private def unmount_current_component: () -> void
     private def find_route: (String path) -> [singleton(Component) | nil, Hash[Symbol, untyped]]
+    private def match_route: (String path) -> [route_definition_t?, Hash[Symbol, untyped]]
   end
 end

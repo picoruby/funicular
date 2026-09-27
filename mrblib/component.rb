@@ -418,6 +418,14 @@ module Funicular
       @suspense_definitions ||= {}
     end
 
+    # True while patch is re-rendering this component. Callers that would
+    # re-enter patch from inside that render (for example a child page that
+    # navigates in component_mounted) must take another path, because patch
+    # ignores nested calls.
+    def updating?
+      @updating
+    end
+
     # Update state and trigger re-render
     def patch(new_state)
       return unless @mounted
@@ -808,6 +816,20 @@ module Funicular
     # Bareword DSL helpers available inside render (self is the component).
     def component(component_class, props = {}, &block)
       __view__.component(component_class, props, &block)
+    end
+
+    def outlet
+      router = @runtime&.router
+      depth = router&.current_layouts&.index(self.class)
+      return unless router && depth
+
+      nested = router.current_layouts[depth + 1]
+      return component(nested, preserve: true, __route__: router.current_path) if nested
+
+      route = router.current_route
+      return unless route
+
+      component(route[0], route[1])
     end
 
     def form_for(model_key, options = {}, &block)
