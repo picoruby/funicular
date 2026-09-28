@@ -87,7 +87,7 @@ module Funicular
             ops = patch[1]
             removes = patch[2]
 
-            snapshot = child_nodes_array(element)
+            snapshot = VDOM.child_nodes(element)
 
             # Phase 1: removes (descending old_index)
             sorted_removes = removes.sort { |a, b| b[0] <=> a[0] }
@@ -148,7 +148,7 @@ module Funicular
           when Integer
             child_index = patch[0]
             child_patches = patch[1]
-            children = child_nodes_array(element)
+            children = VDOM.child_nodes(element)
             child_element = children[child_index]
             if child_element.nil?
               # No existing child at this index - we need to create new elements
@@ -175,14 +175,6 @@ module Funicular
       end
 
       private
-
-      # childNodes (not children) so that text nodes are included. Each call
-      # crosses the wasm boundary once per child, so callers should read it
-      # once and work on the returned array.
-      def child_nodes_array(element)
-        child_nodes = element[:childNodes]
-        child_nodes.is_a?(JS::Object) ? child_nodes.to_a : [] #: Array[untyped]
-      end
 
       def unmount_component(vnode)
         return unless vnode.is_a?(VDOM::Component) && vnode.instance

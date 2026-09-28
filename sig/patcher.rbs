@@ -9,7 +9,6 @@ module Funicular
       def apply: (JS::Object element, Array[patch_t] patches) -> JS::Object
 
       # Accepts JS::Object since callers narrow via is_a?(JS::Element) at runtime
-      private def child_nodes_array: (JS::Object element) -> Array[untyped]
       private def update_props: (JS::Object element, Hash[Symbol, String?] props_patch) -> void
       private def create_element: (untyped vnode) -> JS::Object
       private def unmount_component: (VDOM::VNode vnode) -> void

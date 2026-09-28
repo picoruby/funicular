@@ -18,6 +18,8 @@ module Funicular
       # Props that must never be emitted as HTML attributes.
       SKIP_PROPS = %i[ref key]
 
+      RAW_TEXT_ELEMENTS = %w[textarea title style]
+
       def self.serialize(vnode, runtime = nil)
         new(runtime).render(vnode)
       end
@@ -53,24 +55,27 @@ module Funicular
         if VOID_ELEMENTS.include?(tag.downcase)
           "<#{tag}#{attrs}>"
         else
-          "<#{tag}#{attrs}>#{render_children(element.children)}</#{tag}>"
+          "<#{tag}#{attrs}>#{render_children(element.children, !RAW_TEXT_ELEMENTS.include?(tag.downcase))}</#{tag}>"
         end
       end
 
-      def render_children(children)
-        parts = [] #: Array[String]
-        children.each do |child|
-          if child.is_a?(VNode)
-            parts << render(child)
-          elsif child.is_a?(String)
-            parts << escape_html(child)
-          elsif child.is_a?(Array)
-            parts << render_children(child)
-          elsif !child.nil?
-            parts << escape_html(child.to_s)
+      # Element#children is flattened by normalize_children, so nested arrays
+      # need no handling here.
+      def render_children(children, marks)
+        previous_text = false
+        children.map do |child|
+          text = VDOM.text(child)
+          html = if text
+            escape_html(text)
+          elsif child.is_a?(VNode)
+            render(child)
+          else
+            ''
           end
-        end
-        parts.join
+          html = "<!---->#{html}" if marks && text && (text.empty? || previous_text)
+          previous_text = !text.to_s.empty?
+          html
+        end.join
       end
 
       def render_text(text)

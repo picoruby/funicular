@@ -156,7 +156,7 @@ module Funicular
         #    "Loading..." placeholder that never disappeared once the keyed
         #    list it was replaced by arrived. Raw String children are text
         #    nodes in the DOM (normalize_children keeps them as Strings), so
-        #    they must be collected here as well; only nil slots are skipped.
+        #    they must be collected here as well.
         removes = [] #: Array[[Integer, child_t]]
         old_children.each_with_index do |old_child, old_index|
           next if old_child.nil?

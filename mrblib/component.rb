@@ -717,8 +717,8 @@ module Funicular
       end
 
       # Recursively bind events for children
-      if vnode.children && dom_element.children
-        children = dom_element.children.to_a
+      if vnode.children
+        children = VDOM.child_nodes(dom_element)
         vnode.children.each_with_index do |child_vnode, index|
           if child_vnode.is_a?(VDOM::Element)
             child_element = children[index]
@@ -756,8 +756,8 @@ module Funicular
         refs_map[ref_name] = dom_element
       end
 
-      if vnode.children && dom_element.children
-        children = dom_element.children.to_a
+      if vnode.children
+        children = VDOM.child_nodes(dom_element)
         vnode.children.each_with_index do |child_vnode, index|
           if child_vnode.is_a?(VDOM::Element)
             child_element = children[index]
@@ -1046,9 +1046,22 @@ module Funicular
       return unless vnode.is_a?(VDOM::Element)
       return unless dom_element
 
-      dom_children = dom_element.children.to_a
+      dom_children = VDOM.child_nodes(dom_element)
+      skipped = 0
+      previous_text = false
       vnode.children.each_with_index do |child, index|
-        child_dom = dom_children[index]
+        text = VDOM.text(child)
+        child_dom = dom_children[index + skipped]
+        if text && child_dom && child_dom[:nodeType] == 8
+          if text.empty?
+            dom_element.replaceChild(dom_element[:ownerDocument].createTextNode(''), child_dom)
+          elsif previous_text
+            dom_element.removeChild(child_dom)
+            skipped += 1
+            child_dom = dom_children[index + skipped]
+          end
+        end
+        previous_text = !text.to_s.empty?
         next unless child_dom
 
         if child.is_a?(VDOM::Component)

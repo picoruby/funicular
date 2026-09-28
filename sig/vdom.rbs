@@ -7,6 +7,8 @@ module Funicular
     SCRIPTING_ELEMENTS: Array[String]
 
     def self.valid_tag_name?: (untyped name) -> bool
+    def self.text: (untyped child) -> String?
+    def self.child_nodes: (untyped element) -> Array[untyped]
     def self.valid_attribute_name?: (untyped name) -> bool
     def self.event_attribute?: (untyped name) -> bool
     def self.unsafe_url?: (untyped name, untyped value) -> bool
