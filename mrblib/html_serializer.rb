@@ -20,6 +20,11 @@ module Funicular
 
       RAW_TEXT_ELEMENTS = %w[textarea title style]
 
+      # The HTML parser drops one newline right after the start tag of these
+      # elements. Emit an extra newline so the text node the client VDOM
+      # expects survives parsing with its content intact.
+      NEWLINE_STRIPPING_ELEMENTS = %w[pre textarea listing]
+
       def self.serialize(vnode, runtime = nil)
         new(runtime).render(vnode)
       end
@@ -52,10 +57,13 @@ module Funicular
         tag = element.tag
         attrs = serialize_props(element.props)
 
-        if VOID_ELEMENTS.include?(tag.downcase)
+        lower = tag.downcase
+        if VOID_ELEMENTS.include?(lower)
           "<#{tag}#{attrs}>"
         else
-          "<#{tag}#{attrs}>#{render_children(element.children, !RAW_TEXT_ELEMENTS.include?(tag.downcase))}</#{tag}>"
+          inner = render_children(element.children, !RAW_TEXT_ELEMENTS.include?(lower))
+          inner = "\n#{inner}" if NEWLINE_STRIPPING_ELEMENTS.include?(lower) && inner.start_with?("\n")
+          "<#{tag}#{attrs}>#{inner}</#{tag}>"
         end
       end
 

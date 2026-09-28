@@ -4,6 +4,7 @@ module Funicular
       VOID_ELEMENTS: Array[String]
       SKIP_PROPS: Array[Symbol]
       RAW_TEXT_ELEMENTS: Array[String]
+      NEWLINE_STRIPPING_ELEMENTS: Array[String]
 
       def self.serialize: (VNode? vnode, ?Runtime? runtime) -> String
       def initialize: (?Runtime? runtime) -> void

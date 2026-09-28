@@ -37,6 +37,13 @@ class HTMLSerializerTest < Picotest::Test
     assert_equal('<textarea>ab</textarea>', serialize(el('textarea', {}, [nil, 'a', 'b'])))
   end
 
+  def test_doubles_the_leading_newline_the_parser_strips
+    assert_equal("<pre>\n\nfoo</pre>", serialize(el('pre', {}, ["\nfoo"])))
+    assert_equal("<textarea>\n\nfoo</textarea>", serialize(el('textarea', {}, ["\nfoo"])))
+    assert_equal("<pre>foo\n</pre>", serialize(el('pre', {}, ["foo\n"])))
+    assert_equal("<div>\nfoo</div>", serialize(el('div', {}, ["\nfoo"])))
+  end
+
   def test_escapes_attribute_values
     assert_equal('<div title="&quot;hi&quot;"></div>',
                  serialize(el('div', {title: '"hi"'})))

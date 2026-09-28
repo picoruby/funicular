@@ -27,6 +27,9 @@
 - `HTMLSerializer` emits `<!---->` for empty slots and between adjacent texts,
   except inside `textarea`, `title` and `style`. Hydration restores them to
   one node per vnode child.
+- `HTMLSerializer` doubles a leading newline inside `pre`, `textarea` and
+  `listing`. The HTML parser drops one newline after those start tags, so
+  the server DOM lost the newline the client VDOM expects.
 
 ## [0.5.1] - 2026-09-17
 
