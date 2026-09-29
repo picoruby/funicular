@@ -1018,6 +1018,13 @@ state seeded by the controller; `watch`-driven components belong on
 client-rendered routes (or behind `Funicular.server?` guards in
 `component_mounted`, which SSR never calls anyway).
 
+A hydrated page can still hand its seeded rows to the replica.
+`Comment.absorb(state[:comments])` in `component_mounted` applies them as a
+fetched collection would (one transaction, one change event), so a `watch`
+or `on_change` started right after reads the server-rendered rows instead
+of an empty table. The rows must carry the attributes the replica columns
+expect (`id` included). `absorb` is a no-op without a replica.
+
 ## Configuration
 
 After the Rails-side opt-in shown in Quick start, runtime DB hooks and tuning
