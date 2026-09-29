@@ -7,7 +7,7 @@
 module Funicular
   module HTTP
     class << self
-      def get(url, &block)
+      def get(url, headers: nil, &block)
         $wipe_pending << block
       end
 

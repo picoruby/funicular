@@ -23,29 +23,156 @@ module Funicular
     #
     #   Funicular::Schema.build(User,
     #     attributes: { "display_name" => { type: "string", readonly: false } },
-    #     endpoints:  { "update" => { method: "PATCH", path: "/users/:id" } },
     #     except:     { username: [:format] })
     #   # => { attributes: { "display_name" => { type:, readonly:,
     #   #        validations: { "presence" => true, "length" => {...} } } },
-    #   #      endpoints: {...} }
+    #   #      endpoints: { "find" => { method: "GET", path: "/users/:id" },
+    #   #                   "update" => { method: "PATCH", path: "/users/:id" } } }
     #
     # Only the attributes you declare are introspected (allowlist); `except`
     # drops specific kinds per attribute (denylist).
-    def self.build(model_class, attributes:, endpoints: {}, except: {})
+    #
+    # Endpoints derive from the Rails routes to the model's controller
+    # (`resources :users` -> users#show is "find", users#update is
+    # "update"; see Endpoints). Every keyword is an escape hatch:
+    #
+    #   controller: "api/users"   # the routes' controller when it is not
+    #                             # model_class.model_name.collection
+    #   endpoints:  { "current" => "sessions#show",             # alias a route
+    #                 "create"  => { method: "POST", path: "/login" }, # by hand
+    #                 "destroy" => nil }                        # hide one
+    #   routes:     false         # no derivation: endpoints: only
+    #
+    # model_class may be nil for a schema with no ActiveModel behind it
+    # (a session, say); pass controller: then, and no validations derive.
+    def self.build(model_class, attributes:, endpoints: nil, except: {},
+                   controller: nil, routes: nil)
       merged = {}
+      derive_validations = model_class.respond_to?(:validators_on)
       attributes.each do |name, definition|
         # Readonly attributes are server-managed: the client never
         # submits them, so validating their (nil) client-side value
         # against e.g. a presence validator would reject every create.
         # Skip validator introspection for them entirely.
-        if readonly?(definition)
+        if readonly?(definition) || !derive_validations
           merged[name] = definition
           next
         end
         rules = rules_for(model_class, name, except_kinds(except, name))
         merged[name] = rules.empty? ? definition : definition.merge(validations: rules)
       end
-      { attributes: merged, endpoints: endpoints }
+      {
+        attributes: merged,
+        endpoints: Endpoints.resolve(model_class, endpoints, controller, routes)
+      }
+    end
+
+    # The endpoint table of a schema, derived from the Rails routes.
+    #
+    # ActiveRecord maps a class to a table by convention; this maps a
+    # model to its resource the same way. Every route whose controller
+    # is the model's becomes an endpoint: the five RESTful actions get
+    # the names Funicular::Model calls them by, any other action keeps
+    # its own name (`get :avatar, on: :member` -> "avatar", reached with
+    # `find(id, endpoint_name: "avatar")`). Where two routes lead to the
+    # same action, the first one in routes.rb wins, as in Rails' own
+    # matching; `endpoints:` picks another with a "controller#action"
+    # reference.
+    module Endpoints
+      CANONICAL = {
+        "index" => "all",
+        "show" => "find",
+        "create" => "create",
+        "update" => "update",
+        "destroy" => "destroy"
+      }.freeze
+
+      # explicit: the endpoints: keyword (nil, or a Hash whose values are
+      # a { method:, path: } Hash, a "controller#action" String, or nil
+      # to hide a derived endpoint). routes: nil for the application's,
+      # false for none, or a RouteSet.
+      def self.resolve(model_class, explicit, controller, routes)
+        route_set = routes.nil? ? application_routes : routes
+        route_set = nil if route_set == false
+        name = controller || default_controller(model_class)
+        result = route_set && name ? derive(name, route_set) : {}
+        (explicit || {}).each do |key, value|
+          key = key.to_s
+          if value.nil?
+            result.delete(key)
+          elsif value.is_a?(String) || value.is_a?(Symbol)
+            result[key] = lookup(value.to_s, route_set, key)
+          else
+            result[key] = value
+          end
+        end
+        if result.empty? && route_set
+          raise ArgumentError,
+                "no endpoints for #{model_class || name}: routes.rb has no " \
+                "route to #{name || '(no controller)'}, and none were " \
+                "declared with endpoints:"
+        end
+        result
+      end
+
+      def self.application_routes
+        return nil unless defined?(::Rails) && ::Rails.respond_to?(:application)
+        app = ::Rails.application
+        return nil unless app && app.respond_to?(:routes)
+        app.routes
+      end
+
+      # Post -> "posts", Admin::Post -> "admin/posts": the controller
+      # `resources` declares for the model.
+      def self.default_controller(model_class)
+        return nil unless model_class.respond_to?(:model_name)
+        model_class.model_name.collection
+      end
+
+      def self.derive(controller, route_set)
+        result = {}
+        route_set.routes.each do |route|
+          next unless route.defaults[:controller].to_s == controller
+          action = route.defaults[:action].to_s
+          next if action.empty?
+          name = CANONICAL[action] || action
+          next if result.key?(name)
+          entry = entry_for(route)
+          result[name] = entry if entry
+        end
+        result
+      end
+
+      def self.lookup(reference, route_set, key)
+        unless route_set
+          raise ArgumentError,
+                "endpoints: #{key.inspect} refers to #{reference.inspect}, " \
+                "but no routes are available to resolve it"
+        end
+        controller, action = reference.split("#", 2)
+        if controller.nil? || controller.empty? || action.nil? || action.empty?
+          raise ArgumentError,
+                "endpoints: #{key.inspect} must be a { method:, path: } Hash " \
+                "or a \"controller#action\" reference, got #{reference.inspect}"
+        end
+        route_set.routes.each do |route|
+          next unless route.defaults[:controller].to_s == controller
+          next unless route.defaults[:action].to_s == action
+          entry = entry_for(route)
+          return entry if entry
+        end
+        raise ArgumentError,
+              "endpoints: #{key.inspect} refers to #{reference}, but " \
+              "routes.rb has no such route"
+      end
+
+      # { method:, path: } for one route; nil for a route without an
+      # HTTP verb (a mounted engine, say).
+      def self.entry_for(route)
+        verb = route.verb.to_s.split("|").first.to_s
+        return nil if verb.empty?
+        { method: verb, path: route.path.spec.to_s.sub(/\(\.:format\)\z/, "") }
+      end
     end
 
     def self.readonly?(definition)

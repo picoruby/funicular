@@ -1,6 +1,60 @@
 ## [0.5.2] - 2026-09-29
 
+### Changed (breaking)
+
+- A REST call on an endpoint the schema does not declare raises
+  `Funicular::Model::EndpointError` instead of silently doing nothing. The
+  message lists the endpoints the schema has and the Rails action a route
+  would need.
+- The `error` a REST callback receives may be a `Funicular::Model::Errors`
+  now: a response with `{ errors: { attribute => [messages] } }` (what
+  `render json: { errors: record.errors }` produces) lands on the record's
+  `errors` and is yielded as-is, exactly like a client-side validation
+  failure. `Errors#to_s` joins the full messages, so string interpolation of
+  an `error` keeps working; call sites that branch on `error.is_a?(String)`
+  must handle both.
+- A path placeholder the call cannot fill (`Comment.all` against
+  `/posts/:post_id/comments` without a `post_id`) raises `ArgumentError`
+  instead of sending the literal `:post_id`.
+
 ### Added
+
+- Object-REST Mapper: endpoints derive from the Rails routes.
+  `Funicular::Schema.build(Post, attributes: ...)` walks the application's
+  routes to the model's controller (`Post` -> `posts`, `Admin::Post` ->
+  `admin/posts`): index/show/create/update/destroy become
+  all/find/create/update/destroy, and every other action keeps its name
+  (`get :avatar, on: :member` -> `"avatar"`). Escape hatches: `controller:`
+  names another controller, `endpoints:` aliases a route (`"current" =>
+  "sessions#show"`), writes one by hand, or hides a derived one (`nil`), and
+  `routes: false` turns derivation off. `model_class` may be `nil`.
+- Path placeholders fill from the call: `Comment.all(post_id: 3)` requests
+  `/posts/3/comments` and keeps the other params as the query string;
+  `Comment.create(post_id: 3, body: "..")` posts to `/posts/3/comments`;
+  `Comment.find(7, post_id: 3)`, `Comment.destroy(7, post_id: 3)`, and the
+  instance methods fill from attributes. One unfilled segment takes the id,
+  whatever the route calls it (`resources :pages, param: :slug`).
+- `all(endpoint_name:)` and `create(endpoint_name:)` reach collection and
+  member routes beyond the canonical five, like `find(endpoint_name:)`.
+- Conditional GET: a replica model remembers the `ETag` of every GET (in
+  the replica database, per user namespace) and sends `If-None-Match` next
+  time. A `304 Not Modified` is answered from the replica rows the previous
+  response listed, with no write and no change event. Rails answers 304
+  through `Rack::ETag` and `Rack::ConditionalGet` with no controller code;
+  `stale?`/`fresh_when` skip the query and rendering too. A response with
+  `Cache-Control: no-store` is never remembered. Ephemeral models and apps
+  without the local database keep the unconditional GET.
+- Replica rows merge per attribute. A fetched row writes only the
+  attributes it carries (`INSERT ... ON CONFLICT DO UPDATE`), so an index
+  summary without the body and a show detail without the excerpt build one
+  complete row instead of blanking each other's columns. An attribute sent
+  as `null` is still written as NULL.
+- `Model.absorb(rows)`: apply rows the page already holds (the state a
+  server-rendered page arrived with) to the replica, as a fetch would, so a
+  `watch` on a hydrated page starts from them instead of an empty table.
+- `HTTP::Response#etag`, `#not_modified?`, `#no_store?`, and
+  `HTTP.get(url, headers:)`.
+- `Funicular::Model::Errors.from_hash` and `Errors#to_s`.
 
 - Nested router layouts: `router.layout(Component) { ... }` and
   `Component#outlet`. Each layout renders the next, or the matched page, at

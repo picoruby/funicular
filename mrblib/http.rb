@@ -1,32 +1,71 @@
 module Funicular
   module HTTP
     class Response
-      attr_reader :data, :status, :ok
+      attr_reader :data, :status, :ok, :etag
 
       # Every mainstream HTTP client calls the payload `body`; keep
       # that name working alongside `data`.
       alias body data
 
-      def initialize(status, data)
+      # etag and cache_control are the raw response header values (nil
+      # when absent). A 304 carries no body: data is nil there.
+      def initialize(status, data, etag = nil, cache_control = nil)
         @status = status
         @ok = @status >= 200 && @status < 300
         @data = data
+        @etag = etag
+        @cache_control = cache_control
+      end
+
+      # 304 Not Modified: the representation the client already holds
+      # is current. Not an error, and not a body either.
+      def not_modified?
+        @status == 304
+      end
+
+      # The server asked that this representation not be stored
+      # (Cache-Control: no-store): the caller must not remember its
+      # ETag.
+      def no_store?
+        cc = @cache_control
+        return false unless cc
+        cc.to_s.downcase.include?("no-store")
       end
 
       def error?
+        return false if not_modified?
         return true unless @ok
         return false unless @data.is_a?(Hash)
         @data["error"] || @data["errors"]
       end
 
+      # errors may be a String, an Array of messages, or -- the
+      # ActiveModel::Errors#as_json shape -- a Hash of attribute name
+      # to messages. Every shape flattens to one String here; Model
+      # keeps the Hash shape as a Funicular::Model::Errors.
       def error_message
         return nil unless @data.is_a?(Hash)
-        @data["error"] || (@data["errors"].is_a?(Array) ? @data["errors"].join(", ") : @data["errors"])
+        return @data["error"] if @data["error"]
+        errors = @data["errors"]
+        if errors.is_a?(Array)
+          errors.join(", ")
+        elsif errors.is_a?(Hash)
+          parts = [] #: Array[String]
+          errors.each do |attribute, messages|
+            list = messages.is_a?(Array) ? messages.join(", ") : messages.to_s
+            parts << "#{attribute} #{list}"
+          end
+          parts.join("; ")
+        else
+          errors
+        end
       end
     end
 
-    def self.get(url, &block)
-      request("GET", url, nil, &block)
+    # headers: extra request headers (e.g. "If-None-Match" for a
+    # conditional GET); nil sends none.
+    def self.get(url, headers: nil, &block)
+      request("GET", url, nil, headers, &block)
     end
 
     def self.post(url, body = nil, &block)
@@ -71,7 +110,7 @@ module Funicular
         body
       end
 
-      def request(method, url, body, &block)
+      def request(method, url, body, extra_headers = nil, &block)
         # A terminal page must not TALK to the server either (docs
         # decision 13): discarding the response is not enough, because
         # the request itself would already have executed under the NEW
@@ -97,6 +136,10 @@ module Funicular
           headers["X-CSRF-Token"] = token if token
         end
 
+        if extra_headers
+          extra_headers.each { |name, value| headers[name.to_s] = value.to_s }
+        end
+
         options[:headers] = headers unless headers.empty?
 
         settled = false
@@ -114,7 +157,9 @@ module Funicular
               status = response.status.to_i
               json_text = response.to_binary
               data = parse_response_body(json_text)
-              http_response = Response.new(status, data)
+              http_response = Response.new(status, data,
+                response_header(response, "ETag"),
+                response_header(response, "Cache-Control"))
             else
               # The session changed under this page (docs decision 13):
               # the response is DISCARDED, and the caller settles with
@@ -157,9 +202,15 @@ module Funicular
       # headers surface, no such header, or a null value through the
       # JS bridge).
       def response_epoch(response)
+        response_header(response, "X-Funicular-Epoch")
+      end
+
+      # One response header as a String, nil when absent (no headers
+      # surface, no such header, or a null value through the JS bridge).
+      def response_header(response, name)
         # @type var raw: untyped
         raw = response
-        value = raw[:headers].get("X-Funicular-Epoch").to_s
+        value = raw[:headers].get(name).to_s
         return nil if value.empty?
         return nil if value == "null" || value == "undefined"
         value

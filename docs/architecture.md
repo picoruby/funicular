@@ -38,7 +38,7 @@ stay free of browser-only calls on any server code path
 | `patcher.rb`                                            | `Patcher.apply(dom, patches)` -- apply patches to the real DOM                                  |
 | `html_serializer.rb`                                    | `VDOM::HTMLSerializer` -- VDOM to HTML string (used by SSR)                                     |
 | `router.rb`                                             | Client-side router, route DSL, per-runtime route helper object, History API                     |
-| `model.rb`                                              | Object-REST Mapper (`all`/`find`/`create`/`update`/`destroy`) + local query API (`storage`/`refresh`, associations, `migrate` blocks) |
+| `model.rb`                                              | Object-REST Mapper (`all`/`find`/`create`/`update`/`destroy`, path expansion, 422 to `errors`, conditional GET against the replica) + local query API (`storage`/`refresh`, associations, `migrate` blocks) |
 | `db.rb`                                                 | `Funicular::DB`: local SQLite databases, DDL derivation, snapshot persistence, change events, `wipe` |
 | `relation.rb`                                           | Lazy chainable Relation and SQL builder for local queries                                       |
 | `http.rb`                                               | Low-level fetch wrapper, CSRF                                                                   |
@@ -279,7 +279,12 @@ deprecated and removed once `refresh :live` ships.
 - `ssr.rb`, `ssr/runtime.rb` -- load the `mrblib/` runtime into the Rails process
   and render a route's VDOM to HTML, injecting state for client hydration.
 - `schema.rb` -- introspect an ActiveRecord model's `validators_on` and emit
-  client-side validators inline with the schema.
+  client-side validators inline with the schema. `Schema::Endpoints` derives
+  the endpoint table from the Rails routes to the model's controller
+  (index/show/create/update/destroy become all/find/create/update/destroy;
+  other actions keep their names). `controller:`, `endpoints:` (a
+  `"controller#action"` alias, a hand-written entry, or `nil` to hide one),
+  and `routes: false` are the escape hatches.
 
 ## Vendored artifacts
 

@@ -640,6 +640,18 @@ module Funicular
       Funicular::DB.replica_delete(db, self, id)
     end
 
+    # Absorb rows this page already holds -- the state a server-rendered
+    # page arrived with, say -- into the replica, exactly as a fetched
+    # collection would land (one transaction, one change event). The
+    # SSR payload is the first representation of the resource this page
+    # saw; absorbing it lets a `watch` start from it instead of from an
+    # empty table. A no-op without a replica.
+    def self.absorb(rows)
+      return nil if rows.nil? || rows.empty?
+      __write_through_upsert_all(rows)
+      nil
+    end
+
     # Generate attribute readers/writers from the migrate fold, mirroring
     # what load_schema does from the REST schema. Methods the model class
     # ALREADY defines (a hand-written reader like `def title`) are
@@ -862,7 +874,222 @@ module Funicular
       end
     end
 
-    def self.all(params = {}, &block)
+    # ---- REST: endpoints and paths ---------------------------------------
+
+    # Raised when a REST call names an endpoint the schema does not
+    # declare. Endpoints derive from the Rails routes (Funicular::Schema)
+    # or are listed by hand; either way a missing one is a bug to fix,
+    # never a silent no-op.
+    class EndpointError < StandardError; end
+
+    # Canonical endpoint name -> the Rails action it derives from (for
+    # the EndpointError hint).
+    ENDPOINT_ACTIONS = {
+      "all" => "index",
+      "find" => "show",
+      "create" => "create",
+      "update" => "update",
+      "destroy" => "destroy",
+    }
+
+    def self.__endpoint(name)
+      eps = @endpoints
+      endpoint = eps ? eps[name] : nil
+      if endpoint.nil?
+        available = eps && !eps.empty? ? eps.keys.join(", ") : "none"
+        action = ENDPOINT_ACTIONS[name] || name
+        raise EndpointError,
+          "#{to_s} has no '#{name}' endpoint (available: #{available}); " \
+          "declare it in the schema or add a route for " \
+          "#{derive_table_name}##{action}"
+      end
+      endpoint
+    end
+
+    # Fill the :name segments of an endpoint path. Values come from
+    # source (a Hash keyed by String or Symbol, or nil); one segment
+    # still empty afterwards takes identifier -- the record id, whatever
+    # the route calls it (:id, :slug, ...). Anything still missing is
+    # an ArgumentError: a request never leaves with a literal ":post_id"
+    # in its URL. Returns [path, consumed], consumed being the source
+    # keys used, as Strings, so a caller can keep them out of the
+    # query string.
+    def self.__expand_path(path, source, identifier, context)
+      segments = path.split("/")
+      # @type var consumed: Array[String]
+      consumed = []
+      # @type var missing: Array[Integer]
+      missing = []
+      i = 0
+      while i < segments.size
+        segment = segments[i]
+        if segment.start_with?(":")
+          name = segment[1..-1].to_s
+          value = __path_value(source, name)
+          if value.nil?
+            missing << i
+          else
+            segments[i] = __path_segment(value)
+            consumed << name
+          end
+        end
+        i += 1
+      end
+      if missing.size == 1 && !identifier.nil?
+        segments[missing[0]] = __path_segment(identifier)
+        missing = []
+      end
+      unless missing.empty?
+        raise ArgumentError,
+          "missing #{segments[missing[0]]} for #{context}; pass it as a " \
+          "keyword or fix the route"
+      end
+      [segments.join("/"), consumed]
+    end
+
+    def self.__path_value(source, name)
+      return nil unless source
+      return source[name] if source.has_key?(name)
+      sym = name.to_sym
+      return source[sym] if source.has_key?(sym)
+      nil
+    end
+
+    # A value as one URL path segment: form-encoded (so "/" and "?"
+    # cannot break out of the segment), with the space as %20, not "+".
+    def self.__path_segment(value)
+      URI.encode_www_form_component(value.to_s).gsub("+", "%20")
+    end
+
+    # params minus the keys the path consumed: what becomes the query
+    # string.
+    def self.__query_params(params, consumed)
+      # @type var query: Hash[untyped, untyped]
+      query = {}
+      return query if params.nil?
+      params.each do |key, value|
+        query[key] = value unless consumed.include?(key.to_s)
+      end
+      query
+    end
+
+    # The attributes of this record, as a path source for the instance
+    # methods (update/destroy/reload): /posts/:post_id/comments/:id
+    # fills from @post_id and @id.
+    def __path_source
+      # @type var source: Hash[String, untyped]
+      source = {}
+      names = self.class.schema.keys
+      i = 0
+      while i < names.size
+        name = names[i]
+        source[name] = instance_variable_get("@#{name}")
+        i += 1
+      end
+      source
+    end
+
+    # The Errors a Rails action rendered with
+    # `render json: { errors: record.errors }, status: :unprocessable_content`,
+    # nil when the failure body has another shape (a plain message).
+    def self.__server_errors(response)
+      data = response.data
+      return nil unless data.is_a?(Hash)
+      hash = data["errors"]
+      return nil unless hash.is_a?(Hash)
+      Errors.from_hash(hash)
+    end
+
+    # ---- REST: conditional GET (the replica as an HTTP cache) ------------
+    #
+    # A replica model remembers the ETag of every GET it made, keyed by
+    # path, in the replica database's meta table (per user namespace,
+    # gone with wipe). The next GET of the same path carries
+    # If-None-Match; a 304 is answered from the replica rows the entry
+    # lists -- no upsert, so no change event. Rails answers 304 through
+    # Rack::ETag + Rack::ConditionalGet with no controller code, and
+    # `stale?`/`fresh_when` skip the rendering too. A response with
+    # Cache-Control: no-store is never remembered.
+
+    HTTP_CACHE_PREFIX = "http:"
+
+    def self.__http_cache_db
+      return nil unless replica?
+      replica_db
+    end
+
+    def self.__http_cache_entry(path)
+      db = __http_cache_db
+      return nil unless db
+      raw = Funicular::DB.read_meta(db, "#{HTTP_CACHE_PREFIX}#{path}")
+      return nil unless raw
+      begin
+        entry = JSON.parse(raw)
+      rescue
+        return nil
+      end
+      return nil unless entry.is_a?(Hash)
+      return nil unless entry["etag"] && entry["ids"].is_a?(Array)
+      entry
+    end
+
+    def self.__store_http_cache_entry(path, response, ids)
+      db = __http_cache_db
+      return unless db
+      key = "#{HTTP_CACHE_PREFIX}#{path}"
+      etag = response.etag
+      if etag.nil? || response.no_store? || ids.include?(nil)
+        # Nothing to validate against next time; drop a stale entry too.
+        Funicular::DB.delete_meta(db, key)
+        return
+      end
+      Funicular::DB.store_meta(db, key,
+        JSON.generate({ "etag" => etag, "ids" => ids }))
+    end
+
+    def self.__forget_http_cache_entry(path)
+      db = __http_cache_db
+      return unless db
+      Funicular::DB.delete_meta(db, "#{HTTP_CACHE_PREFIX}#{path}")
+    end
+
+    # The instances a 304 stands for, in the order the server last sent
+    # them; nil when any row is missing from the replica (the entry is
+    # then unusable and the caller refetches unconditionally).
+    def self.__instances_from_replica(ids)
+      # @type var instances: Array[Model]
+      instances = []
+      i = 0
+      while i < ids.size
+        record = local.find_by(id: ids[i])
+        return nil unless record
+        instances << record
+        i += 1
+      end
+      instances
+    end
+
+    def self.__log_not_modified(path)
+      puts "[Funicular::HTTP] GET #{path} 304 -> replica" if Funicular.env.development?
+    end
+
+    # ---- REST: the uniform interface ------------------------------------
+
+    # params fill the path's :segments first (Comment.all(post_id: 3)
+    # -> GET /posts/3/comments); the rest becomes the query string.
+    # endpoint_name: names a collection route other than index
+    # (`get :published, on: :collection` -> "published").
+    def self.all(params = {}, endpoint_name: "all", **rest, &block)
+      # Bare keywords are params too (Post.all(page: 2), as before
+      # endpoint_name: existed); endpoint_name: is reserved. String keys
+      # arrive as keywords as well, so this is a plain merge.
+      unless rest.empty?
+        # @type var merged: Hash[untyped, untyped]
+        merged = {}
+        params.each { |key, value| merged[key] = value } if params
+        rest.each { |key, value| merged[key] = value }
+        params = merged
+      end
       if local?
         # The bare class is an alias for .local: Draft.all IS the
         # whole-table Relation, and there is no REST side to call.
@@ -876,21 +1103,38 @@ module Funicular
         end
         return local
       end
-      endpoint = @endpoints["all"]
-      return unless endpoint
+      endpoint = __endpoint(endpoint_name)
+      expanded = __expand_path(endpoint["path"], params, nil, "#{to_s}.all")
+      path = expanded[0]
+      query = __query_params(params, expanded[1])
+      path = "#{path}?#{URI.encode_www_form(query)}" unless query.empty?
+      __fetch_collection(path, true, &block)
+    end
 
-      path = endpoint["path"]
-      if params && !params.empty?
-        path = "#{path}?#{URI.encode_www_form(params)}"
-      end
-
+    # GET a collection into the replica (fetch-through, docs decision 5).
+    # conditional: consult the ETag cache. A 304 the cache cannot honor
+    # (rows gone from the replica) retries once unconditionally.
+    def self.__fetch_collection(path, conditional, &block)
+      entry = conditional ? __http_cache_entry(path) : nil
+      headers = entry ? { "If-None-Match" => entry["etag"] } : nil
       # A wipe between issue and response makes the response stale: it
       # is discarded, never applied -- a logout can never resurrect the
       # previous session's rows (docs decision 17).
       generation = Funicular::DB.mutation_generation
-      HTTP.get(path) do |response|
+      HTTP.get(path, headers: headers) do |response|
         if Funicular::DB.stale_generation?(generation)
           block.call(nil, Funicular::DB.stale_response_error) if block
+        elsif response.not_modified?
+          instances = entry ? __instances_from_replica(entry["ids"]) : nil
+          if instances
+            __log_not_modified(path)
+            block.call(instances, nil) if block
+          elsif conditional
+            __forget_http_cache_entry(path)
+            __fetch_collection(path, false, &block)
+          else
+            block.call(nil, "unexpected 304 for GET #{path}") if block
+          end
         elsif response.error?
           block.call(nil, response.error_message) if block
         else
@@ -902,17 +1146,25 @@ module Funicular
           __write_through_upsert_all(rows)
           # @type var instances: Array[Model]
           instances = []
+          # @type var ids: Array[untyped]
+          ids = []
           i = 0
           while i < rows_size
-            instances << new(rows[i])
+            row = rows[i]
+            instances << new(row)
+            ids << (row.is_a?(Hash) ? row["id"] : nil)
             i += 1
           end
+          __store_http_cache_entry(path, response, ids)
           block.call(instances, nil) if block
         end
       end
     end
 
-    def self.find(id = nil, endpoint_name: "find", model_class: nil, &block)
+    # path_params fill the path's other :segments
+    # (Comment.find(7, post_id: 3) -> GET /posts/3/comments/7); id fills
+    # the one left, whatever the route calls it.
+    def self.find(id = nil, endpoint_name: "find", model_class: nil, **path_params, &block)
       if local?
         if block
           raise ArgumentError,
@@ -920,22 +1172,41 @@ module Funicular
         end
         return local.find(id)
       end
-      endpoint = @endpoints[endpoint_name]
-      return unless endpoint
+      endpoint = __endpoint(endpoint_name)
+      expanded = __expand_path(endpoint["path"], path_params, id, "#{to_s}.find")
+      __fetch_record(expanded[0], model_class || self, true, &block)
+    end
 
-      path = endpoint["path"]
-      path = path.gsub(":id", id.to_s) if id
-
+    # GET one record into klass's replica. The ETag cache is klass's:
+    # Session.find(model_class: User) caches under User.
+    def self.__fetch_record(path, klass, conditional, &block)
+      entry = conditional ? klass.__http_cache_entry(path) : nil
+      headers = entry ? { "If-None-Match" => entry["etag"] } : nil
       generation = Funicular::DB.mutation_generation
-      HTTP.get(path) do |response|
+      HTTP.get(path, headers: headers) do |response|
         if Funicular::DB.stale_generation?(generation)
           block.call(nil, Funicular::DB.stale_response_error) if block
+        elsif response.not_modified?
+          # @type var ids: Array[untyped]
+          ids = entry ? entry["ids"] : []
+          instances = ids.size == 1 ? klass.__instances_from_replica(ids) : nil
+          if instances
+            klass.__log_not_modified(path)
+            block.call(instances[0], nil) if block
+          elsif conditional
+            klass.__forget_http_cache_entry(path)
+            __fetch_record(path, klass, false, &block)
+          else
+            block.call(nil, "unexpected 304 for GET #{path}") if block
+          end
         elsif response.error?
           block.call(nil, response.error_message) if block
         else
-          klass = model_class || self
-          klass.__write_through_upsert(response.data)
-          instance = klass.new(response.data)
+          data = response.data
+          klass.__write_through_upsert(data)
+          instance = klass.new(data)
+          id = data.is_a?(Hash) ? data["id"] : nil
+          klass.__store_http_cache_entry(path, response, [id])
           block.call(instance, nil) if block
         end
       end
@@ -946,6 +1217,11 @@ module Funicular
     # model_class: keyword is reserved for REST models only; on
     # storage :local it is an ordinary attribute, so a column may be
     # named model_class.
+    # The model_class: and endpoint_name: keywords are reserved for
+    # REST models only; on storage :local they are ordinary attributes,
+    # so a column may carry either name. attrs fill the path's
+    # :segments too (Comment.create(post_id: 3, body: "..") -> POST
+    # /posts/3/comments) and travel whole in the body.
     def self.create(attrs = {}, **kw, &block)
       if local?
         if block
@@ -955,9 +1231,9 @@ module Funicular
         return local_create(merge_keyword_attrs(attrs, kw))
       end
       model_class = kw.delete(:model_class)
+      endpoint_name = kw.delete(:endpoint_name)
       attrs = merge_keyword_attrs(attrs, kw)
-      endpoint = @endpoints["create"]
-      return unless endpoint
+      endpoint = __endpoint(endpoint_name ? endpoint_name.to_s : "create")
 
       # Validate on the client before the request (mirrors ActiveRecord#save).
       candidate = new(attrs)
@@ -966,12 +1242,21 @@ module Funicular
         return
       end
 
+      expanded = __expand_path(endpoint["path"], attrs, nil, "#{to_s}.create")
       generation = Funicular::DB.mutation_generation
-      HTTP.post(endpoint["path"], attrs) do |response|
+      HTTP.post(expanded[0], attrs) do |response|
         if Funicular::DB.stale_generation?(generation)
           block.call(nil, Funicular::DB.stale_response_error) if block
         elsif response.error?
-          block.call(nil, response.error_message) if block
+          # A 422 with { errors: record.errors } lands on the candidate
+          # exactly as a client-side failure would.
+          server_errors = __server_errors(response)
+          if server_errors
+            candidate.__replace_errors(server_errors)
+            block.call(nil, server_errors) if block
+          else
+            block.call(nil, response.error_message) if block
+          end
         else
           klass = model_class || self
           klass.__write_through_upsert(response.data)
@@ -981,7 +1266,8 @@ module Funicular
       end
     end
 
-    def self.destroy(id = nil, &block)
+    # path_params fill the path's other :segments; id fills the one left.
+    def self.destroy(id = nil, **path_params, &block)
       if local?
         if block
           raise ArgumentError,
@@ -989,11 +1275,12 @@ module Funicular
         end
         return local.find(id).destroy
       end
-      endpoint = @endpoints["destroy"]
-      return unless endpoint
+      endpoint = __endpoint("destroy")
+      expanded = __expand_path(endpoint["path"], path_params, id, "#{to_s}.destroy")
+      __delete_record(expanded[0], id, &block)
+    end
 
-      path = id ? endpoint["path"].gsub(":id", id.to_s) : endpoint["path"]
-
+    def self.__delete_record(path, id, &block)
       generation = Funicular::DB.mutation_generation
       HTTP.delete(path) do |response|
         if Funicular::DB.stale_generation?(generation)
@@ -1037,15 +1324,25 @@ module Funicular
         return
       end
 
-      endpoint = self.class.endpoints["update"]
-      path = endpoint["path"].gsub(":id", @id.to_s)
+      endpoint = self.class.__endpoint("update")
+      expanded = self.class.__expand_path(endpoint["path"], __path_source, @id,
+        "#{self.class.to_s}#update")
 
       generation = Funicular::DB.mutation_generation
-      HTTP.patch(path, json_attrs) do |response|
+      HTTP.patch(expanded[0], json_attrs) do |response|
         if Funicular::DB.stale_generation?(generation)
           block.call(nil, Funicular::DB.stale_response_error) if block
         elsif response.error?
-          block.call(nil, response.error_message) if block
+          # A 422 with { errors: record.errors }: the server's verdict
+          # replaces this record's errors, like a failed client-side
+          # valid? would.
+          server_errors = self.class.__server_errors(response)
+          if server_errors
+            __replace_errors(server_errors)
+            block.call(nil, server_errors) if block
+          else
+            block.call(nil, response.error_message) if block
+          end
         else
           data = response.data
           # The replica holds the server's row before the callback runs
@@ -1081,7 +1378,11 @@ module Funicular
         end
         return __local_destroy
       end
-      self.class.destroy(@id, &block)
+      klass = self.class
+      endpoint = klass.__endpoint("destroy")
+      expanded = klass.__expand_path(endpoint["path"], __path_source, @id,
+        "#{klass.to_s}#destroy")
+      klass.__delete_record(expanded[0], @id, &block)
     end
 
     def reload(&block)
@@ -1094,7 +1395,11 @@ module Funicular
         @changed_attributes = {}
         return self
       end
-      self.class.find(@id) do |instance, error|
+      klass = self.class
+      endpoint = klass.__endpoint("find")
+      expanded = klass.__expand_path(endpoint["path"], __path_source, @id,
+        "#{klass.to_s}#reload")
+      klass.__fetch_record(expanded[0], klass, true) do |instance, error|
         if instance
           instance.instance_variables.each do |var|
             instance_variable_set(var, instance.instance_variable_get(var))

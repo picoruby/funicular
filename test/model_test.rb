@@ -8,7 +8,7 @@
 module Funicular
   module HTTP
     class << self
-      def get(url, &block)
+      def get(url, headers: nil, &block)
         $http_calls << ["GET", url, nil]
         block.call($http_response) if block
       end

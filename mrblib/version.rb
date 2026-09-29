@@ -7,5 +7,5 @@
 # Keep this file free of any dependency: it must evaluate standalone in
 # both PicoRuby and CRuby, regardless of load order.
 module Funicular
-  VERSION = '0.5.2'
+  VERSION = '0.6.0'
 end

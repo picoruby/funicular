@@ -245,6 +245,24 @@ own. Replica tables change only when your code fetches
 and combined with `watch`, explicit fetching is already reactive: the fetch
 lands, the table changes, every watching component re-renders.
 
+A manual fetch revalidates rather than re-downloads. A replica model
+remembers the `ETag` of every GET it made (in the replica database, so per
+user namespace and gone with `wipe`) and sends `If-None-Match` next time.
+A `304 Not Modified` is answered from the replica rows the previous
+response listed: no write, no change event, no re-render. Rails serves the
+304 with no controller code (`Rack::ETag` + `Rack::ConditionalGet`); add
+`stale?`/`fresh_when` to skip the query and the rendering too:
+
+```ruby
+def index
+  posts = Post.published
+  render json: posts.map { |p| post_json(p) } if stale?(posts)
+end
+```
+
+A response with `Cache-Control: no-store` is never remembered. Ephemeral
+models and apps without the local database keep the unconditional GET.
+
 The axis exists because it has a future: `refresh :auto`
 (stale-while-revalidate against an authoritative index endpoint) and
 `refresh :live` (ActionCable-pushed replication) are planned as drop-in
@@ -552,6 +570,31 @@ included. The replica is updated BEFORE your callback runs: inside the
 callback, `Post.local.find(post.id)` already sees the applied row. There is
 no local-write API for replica models in v1; optimistic local writes are a
 possible future layer.
+
+A fetched row writes only the attributes it carries. A resource usually has
+more than one representation (an index summary without the body, a show
+detail without the excerpt), and each one merges into the single replica
+row instead of blanking the columns it omits. An attribute the server sends
+as `null` is written as NULL.
+
+A server-side validation failure reads like a client-side one. Render it
+the Rails way:
+
+```ruby
+render json: { errors: post.errors }, status: :unprocessable_content
+```
+
+The `{ attribute => [messages] }` body lands on the record's `errors`, and
+the callback's `error` IS that `Funicular::Model::Errors`
+(`error.messages`, `error[:title]`, `error.full_messages`). Any other
+failure body still arrives as a String; `Errors#to_s` joins the full
+messages, so `"#{error}"` works for both.
+
+Nested routes fill their segments from the call: with
+`resources :posts do resources :comments end`, `Comment.all(post_id: 3)`
+requests `/posts/3/comments` (other params become the query string),
+`Comment.create(post_id: 3, body: "..")` posts there, and `comment.update`
+fills `/posts/:post_id/comments/:id` from the record's attributes.
 
 ### Local models: writes are local, synchronous, validated
 
