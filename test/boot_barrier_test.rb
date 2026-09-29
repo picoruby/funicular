@@ -8,7 +8,7 @@
 module Funicular
   module HTTP
     class << self
-      def get(url, &block)
+      def get(url, headers: nil, &block)
         # Recorded at ISSUE time: the epoch must already be latched
         # when the first schema request leaves.
         log = $bar_epoch_log

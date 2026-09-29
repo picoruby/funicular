@@ -527,6 +527,22 @@ module Funicular
       row.is_a?(Hash) ? row.values[0] : row[0]
     end
 
+    def self.delete_meta(db, key)
+      ensure_meta_table(db)
+      db.execute("DELETE FROM \"#{META_TABLE}\" WHERE key = ?", [key])
+      nil
+    end
+
+    # Drop every meta row under a key prefix (the REST ETag cache is
+    # "http:<path>" in the replica database). The prefix is a fixed
+    # framework string, never user input, so LIKE needs no escaping.
+    def self.delete_meta_prefix(db, prefix)
+      ensure_meta_table(db)
+      db.execute("DELETE FROM \"#{META_TABLE}\" WHERE key LIKE ?",
+                 ["#{prefix}%"])
+      nil
+    end
+
     def self.store_meta(db, key, value)
       ensure_meta_table(db)
       db.execute("INSERT OR REPLACE INTO \"#{META_TABLE}\" (key, value) " \
@@ -2984,6 +3000,9 @@ module Funicular
           db.execute(replica_table_ddl(models[i]))
           i += 1
         end
+        # The tables are empty again: every remembered ETag now stands
+        # for rows that are gone, so a 304 could not be honored.
+        delete_meta_prefix(db, Model::HTTP_CACHE_PREFIX)
         store_meta(db, REPLICA_FINGERPRINT_KEY, fingerprint)
       end
       true
@@ -3049,6 +3068,12 @@ module Funicular
       # NOT a public entry point: writing a row without the change
       # notification would bypass the apply-path contract. Only
       # replica_upsert and replica_upsert_all come through here.
+      #
+      # Only the attributes the row carries are written: a resource has
+      # several representations (an index summary without the body, a
+      # show detail without the excerpt), and each one merges into the
+      # single replica row instead of blanking the columns it omits. An
+      # attribute sent as null IS written as NULL.
       private def replica_upsert_row(db, model, attrs)
         columns = model.local_columns
         table = validate_identifier(model.table_name)
@@ -3059,6 +3084,8 @@ module Funicular
         marks = []
         # @type var binds: Array[untyped]
         binds = []
+        # @type var updates: Array[String]
+        updates = []
         id_present = false
         names_size = names.size
         i = 0
@@ -3069,12 +3096,15 @@ module Funicular
           elsif attrs.has_key?(name.to_sym)
             value = attrs[name.to_sym]
           else
-            value = nil
+            i += 1
+            next
           end
           id_present = true if name == "id" && !value.nil?
-          cols << "\"#{name}\""
+          quoted = "\"#{name}\""
+          cols << quoted
           marks << "?"
           binds << Codec.encode(columns[name], value)
+          updates << "#{quoted} = excluded.#{quoted}" unless name == "id"
           i += 1
         end
         unless id_present
@@ -3082,8 +3112,10 @@ module Funicular
             "replica upsert into #{model.table_name} requires an id; " \
             "the server row has none"
         end
-        db.execute("INSERT OR REPLACE INTO \"#{table}\" " \
-                   "(#{cols.join(", ")}) VALUES (#{marks.join(", ")})", binds)
+        conflict = updates.empty? ? "DO NOTHING" : "DO UPDATE SET #{updates.join(", ")}"
+        db.execute("INSERT INTO \"#{table}\" " \
+                   "(#{cols.join(", ")}) VALUES (#{marks.join(", ")}) " \
+                   "ON CONFLICT(\"id\") #{conflict}", binds)
       end
     end
 

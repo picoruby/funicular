@@ -158,6 +158,16 @@ class SchemaDerivationTest < Minitest::Test
     assert_equal "^line", result["body"]["format"]["with"]
   end
 
+  def test_build_without_a_model_class_skips_validations
+    schema = Funicular::Schema.build(
+      nil,
+      attributes: { "username" => { type: "string", readonly: false } },
+      endpoints: { "create" => { method: "POST", path: "/login" } }
+    )
+    assert_equal({ type: "string", readonly: false }, schema[:attributes]["username"])
+    assert_equal({ "create" => { method: "POST", path: "/login" } }, schema[:endpoints])
+  end
+
   def test_extended_regexp_is_skipped
     klass = Class.new do
       include ActiveModel::Validations

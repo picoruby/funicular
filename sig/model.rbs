@@ -9,6 +9,7 @@ module Funicular
     @provided_attributes: Hash[String, bool]?
 
     self.@registered_models: Array[untyped]?
+    self.@endpoints: Hash[String, Hash[String, String]]?
     self.@storage_kind: Symbol?
     self.@local_migrations: Array[Hash[Symbol, untyped]]?
     self.@collecting_migrations: bool?
@@ -78,16 +79,41 @@ module Funicular
     def self.__write_through_upsert: (untyped attrs) -> void
     def self.__write_through_upsert_all: (untyped rows) -> void
     def self.__write_through_delete: (untyped id) -> void
+    def self.absorb: (Array[untyped]? rows) -> nil
 
     # Unified callback contract (0.5.0): every REST callback is
     # (result, error). On success `result` is the payload and `error` is
     # nil; on failure `result` is nil. destroy's success payload is `true`.
     # On storage :local models these methods are synchronous instead
     # (bare-class alias): no blocks, direct return values.
-    def self.all: (?Hash[untyped, untyped] params) ?{ (Array[Model]? instances, untyped error) -> void } -> untyped
-    def self.find: (?untyped id, ?endpoint_name: String, ?model_class: singleton(Model)) ?{ (Model? instance, untyped error) -> void } -> untyped
+    # REST: endpoints and paths
+    class EndpointError < StandardError
+    end
+    ENDPOINT_ACTIONS: Hash[String, String]
+    def self.__endpoint: (String name) -> Hash[String, String]
+    def self.__expand_path: (String path, Hash[untyped, untyped]? source, untyped identifier, String context) -> [String, Array[String]]
+    def self.__path_value: (Hash[untyped, untyped]? source, String name) -> untyped
+    def self.__path_segment: (untyped value) -> String
+    def self.__query_params: (Hash[untyped, untyped]? params, Array[String] consumed) -> Hash[untyped, untyped]
+    def __path_source: () -> Hash[String, untyped]
+    def self.__server_errors: (HTTP::Response response) -> Errors?
+
+    # REST: conditional GET (the replica as an HTTP cache)
+    HTTP_CACHE_PREFIX: String
+    def self.__http_cache_db: () -> untyped
+    def self.__http_cache_entry: (String path) -> Hash[String, untyped]?
+    def self.__store_http_cache_entry: (String path, HTTP::Response response, Array[untyped] ids) -> void
+    def self.__forget_http_cache_entry: (String path) -> void
+    def self.__instances_from_replica: (Array[untyped] ids) -> Array[Model]?
+    def self.__log_not_modified: (String path) -> void
+    def self.__fetch_collection: (String path, bool conditional) ?{ (Array[Model]? instances, untyped error) -> void } -> untyped
+    def self.__fetch_record: (String path, singleton(Model) klass, bool conditional) ?{ (Model? instance, untyped error) -> void } -> untyped
+    def self.__delete_record: (String path, untyped id) ?{ (bool? success, untyped error) -> void } -> untyped
+
+    def self.all: (?Hash[untyped, untyped] params, ?endpoint_name: String) ?{ (Array[Model]? instances, untyped error) -> void } -> untyped
+    def self.find: (?untyped id, ?endpoint_name: String, ?model_class: singleton(Model), **untyped path_params) ?{ (Model? instance, untyped error) -> void } -> untyped
     def self.create: (?Hash[untyped, untyped] attrs, **untyped kw) ?{ (Model? instance, untyped error) -> void } -> untyped
-    def self.destroy: (?untyped id) ?{ (bool? success, untyped error) -> void } -> untyped
+    def self.destroy: (?untyped id, **untyped path_params) ?{ (bool? success, untyped error) -> void } -> untyped
 
     def update: (?Hash[untyped, untyped]? attrs) ?{ (Model? instance, untyped error) -> void } -> untyped
     def destroy: () ?{ (bool? success, untyped error) -> void } -> untyped
