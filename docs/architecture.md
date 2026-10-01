@@ -284,7 +284,11 @@ deprecated and removed once `refresh :live` ships.
   (index/show/create/update/destroy become all/find/create/update/destroy;
   other actions keep their names). `controller:`, `endpoints:` (a
   `"controller#action"` alias, a hand-written entry, or `nil` to hide one),
-  and `routes: false` are the escape hatches.
+  and `routes: false` are the escape hatches. `Schema::Associations` sends
+  each `belongs_to` whose foreign key is an exposed attribute, read from the
+  ActiveRecord reflections; `Model.load_schema` defines the reader and the
+  inverse `has_many` from it. `associations:` (`false`, `nil` per name, or a
+  hand-written entry) is its escape hatch.
 
 ## Vendored artifacts
 

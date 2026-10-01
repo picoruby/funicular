@@ -315,11 +315,59 @@ the `User` constant while `user.rb` is still unloaded. A typo in the target,
 or a reference to a model the client does not carry, fails with a clear
 error the first time the association is read.
 
-Associations are declared on the client, deliberately. Your Rails models may
-have dozens of associations; the client declares only the slice of the graph
-it actually replicates, so the local association surface is exactly what the
-app consciously chose to carry -- nothing auto-generated pointing at tables
-that do not exist here.
+#### Associations derived from the server
+
+You rarely write these declarations. `Funicular::Schema.build` reads the
+ActiveRecord reflections of the model and sends every `belongs_to` whose
+foreign key is one of the attributes you expose. The client defines the
+reader from it:
+
+```ruby
+# Rails: class Comment < ApplicationRecord; belongs_to :post; end
+# Schema: attributes include "post_id"
+
+class Comment < Funicular::Model; end   # comment.post is defined
+class Post < Funicular::Model; end      # post.comments is defined too
+```
+
+The rules:
+
+- A `belongs_to` derives when its foreign key is an exposed attribute. The
+  key is public already, so the schema reveals only the class it points at.
+- The inverse `has_many` derives on the target when the foreign key follows
+  the convention (`post_id` -> `Post`). Its name is the child's table name
+  (`comments`). A key like `author_id` -> `User` derives no inverse.
+- Both ends must be replica models that the client carries. The match is
+  by class name: Rails `Post` finds the client class `Post`. A
+  `storage :local` or `storage :ephemeral` model never takes part, so a
+  client-only class that shares a Rails name stays untouched. Your Rails
+  models may have dozens of associations; the client still gets only the
+  slice of the graph it replicates.
+- A derived association always yields. A hand-written `belongs_to` or
+  `has_many` wins. So does an attribute or a method of the same name,
+  public or private.
+- An entry of the model's own schema outranks an inverse derived from
+  another model. The order in which the schemas arrive does not matter.
+- A polymorphic `belongs_to` and a composite foreign key do not derive.
+- An app without the local database derives nothing. Associations read the
+  local database.
+
+In development, the console says why an association did not derive:
+
+```
+[Funicular] Comment: association :author not derived (the client carries no model User)
+```
+
+On the Rails side, `associations: false` turns the derivation off,
+`associations: { "author" => nil }` hides one, and a hand-written entry
+(`{ kind: "has_many", class_name: "Comment", foreign_key: "parent_id" }`)
+adds one. `Schema.build` rejects a malformed entry. Declare an association
+in the client class when the names differ from these defaults (a client
+`Article` for the Rails `Post`, say).
+
+A client test that stubs a schema by hand gets only the associations that
+the stub lists under `"associations"`. Keep the entry in the stub, or
+declare the association in the class.
 
 ### `storage :local do ... end` -- table shape and evolution
 

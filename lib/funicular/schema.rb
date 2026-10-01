@@ -45,8 +45,19 @@ module Funicular
     #
     # model_class may be nil for a schema with no ActiveModel behind it
     # (a session, say); pass controller: then, and no validations derive.
+    #
+    # Associations derive from the ActiveRecord reflections: a belongs_to
+    # whose foreign key is one of the declared attributes travels with
+    # the schema, and the client defines `comment.post` (and the inverse
+    # `post.comments`) from it. See Associations for the rules, and:
+    #
+    #   associations: false                 # no derivation
+    #   associations: { "author" => nil }   # hide a derived one
+    #   associations: { "author" => { kind: "belongs_to",
+    #                                 class_name: "User",
+    #                                 foreign_key: "author_id" } }  # by hand
     def self.build(model_class, attributes:, endpoints: nil, except: {},
-                   controller: nil, routes: nil)
+                   controller: nil, routes: nil, associations: nil)
       merged = {}
       derive_validations = model_class.respond_to?(:validators_on)
       attributes.each do |name, definition|
@@ -63,8 +74,85 @@ module Funicular
       end
       {
         attributes: merged,
-        endpoints: Endpoints.resolve(model_class, endpoints, controller, routes)
+        endpoints: Endpoints.resolve(model_class, endpoints, controller, routes),
+        associations: Associations.resolve(model_class, attributes, associations)
       }
+    end
+
+    # The associations of a schema, derived from the model's ActiveRecord
+    # reflections.
+    #
+    # Only belongs_to derives, and only when its foreign key is one of
+    # the declared attributes: the key is public already, so the schema
+    # reveals nothing new but the class it points at. The client turns
+    # each entry into a belongs_to reader and, when the foreign key
+    # follows the convention (post_id -> Post), into the inverse
+    # has_many on the target (`post.comments`). Both appear only when
+    # the client carries both models. A polymorphic belongs_to and a
+    # composite foreign key do not derive.
+    module Associations
+      # explicit: the associations: keyword (nil to derive, false for
+      # none, or a Hash whose values are a hand-written
+      # { kind:, class_name:, foreign_key: } entry or nil to hide a
+      # derived one).
+      def self.resolve(model_class, attributes, explicit)
+        return {} if explicit == false
+        result = derive(model_class, attributes)
+        (explicit || {}).each do |name, value|
+          name = name.to_s
+          if value.nil?
+            result.delete(name)
+          else
+            result[name] = entry_for(name, value)
+          end
+        end
+        result
+      end
+
+      KINDS = %w[belongs_to has_many].freeze
+
+      # A hand-written entry, checked here: the client would only skip a
+      # malformed one, far from the line that wrote it.
+      def self.entry_for(name, value)
+        unless value.is_a?(Hash)
+          raise ArgumentError,
+                "associations: #{name.inspect} must be nil or a " \
+                "{ kind:, class_name:, foreign_key: } Hash, got #{value.inspect}"
+        end
+        entry = value.transform_keys(&:to_sym)
+        kind = entry[:kind].to_s
+        unless KINDS.include?(kind)
+          raise ArgumentError,
+                "associations: #{name.inspect} has kind #{entry[:kind].inspect}; " \
+                "expected one of #{KINDS.join(', ')}"
+        end
+        class_name = entry[:class_name].to_s
+        foreign_key = entry[:foreign_key].to_s
+        if class_name.empty? || foreign_key.empty?
+          raise ArgumentError,
+                "associations: #{name.inspect} needs class_name: and foreign_key:"
+        end
+        { kind: kind, class_name: class_name, foreign_key: foreign_key }
+      end
+
+      def self.derive(model_class, attributes)
+        result = {}
+        return result unless model_class.respond_to?(:reflect_on_all_associations)
+        exposed = attributes.keys.map(&:to_s)
+        model_class.reflect_on_all_associations(:belongs_to).each do |reflection|
+          next if reflection.polymorphic?
+          foreign_key = reflection.foreign_key
+          next unless foreign_key.is_a?(String) || foreign_key.is_a?(Symbol)
+          next unless exposed.include?(foreign_key.to_s)
+          result[reflection.name.to_s] = {
+            kind: "belongs_to",
+            # ActiveRecord keeps a leading "::" (class_name: "::Post").
+            class_name: reflection.class_name.to_s.delete_prefix("::"),
+            foreign_key: foreign_key.to_s
+          }
+        end
+        result
+      end
     end
 
     # The endpoint table of a schema, derived from the Rails routes.
