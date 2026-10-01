@@ -50,6 +50,10 @@ module Funicular
     # targets. The generated readers are dynamic, like the accessors.
     def self.belongs_to: (Symbol | String name, ?class_name: (String | Symbol)?, ?foreign_key: (String | Symbol)?, **untyped rest) -> nil
     def self.has_many: (Symbol | String name, ?class_name: (String | Symbol)?, ?foreign_key: (String | Symbol)?, **untyped rest) -> nil
+    def self.__apply_schema_associations: (untyped associations) -> nil
+    def self.__carried_model: (String class_name) -> untyped
+    def self.__derive_association: (Symbol kind, Symbol key, untyped target, String foreign_key, Symbol origin) -> nil
+    def self.__association_skipped: (Symbol key, String reason) -> nil
     def self.__reject_association_options: (Symbol kind, Symbol | String name, Hash[Symbol, untyped] rest) -> nil
     def self.__register_association: (Symbol key) -> nil
     def self.__assert_association_name_free: (Symbol key) -> nil

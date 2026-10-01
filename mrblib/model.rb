@@ -63,6 +63,8 @@ module Funicular
 
       # Backward-compatible: a top-level { attr => rules } block also works.
       register_schema_validations(schema_data["validations"])
+
+      __apply_schema_associations(schema_data["associations"])
     end
 
     # validations: { "attr" => { "presence" => true, "length" => { "maximum" => 30 } } }
@@ -305,6 +307,121 @@ module Funicular
       nil
     end
 
+    # ---- associations derived from the server schema ---------------------
+    #
+    # Funicular::Schema.build sends the model's belongs_to associations
+    # (those whose foreign key is an exposed attribute), read from the
+    # ActiveRecord reflections. Each one becomes a belongs_to here, and
+    # -- when the foreign key follows the convention (post_id -> Post) --
+    # the inverse has_many on the target, named after this model's
+    # table (`post.comments`).
+    #
+    # The rules, in the order they are checked:
+    #
+    # - No local database, no associations (they read it).
+    # - Both ends must be replica models the client carries, matched by
+    #   class name. A client-only (storage :local) or ephemeral model
+    #   never takes part, so a class that merely shares a Rails name is
+    #   left alone.
+    # - A derived association always yields: to a hand-written
+    #   declaration, to an attribute, and to any method of the same
+    #   name, public or private.
+    # - An entry of the model's own schema outranks an inverse derived
+    #   from another model's, whichever schema arrives first.
+    #
+    # Every skip says why on the development console.
+
+    def self.__apply_schema_associations(associations)
+      return nil unless associations.is_a?(Hash)
+      return nil unless Funicular::DB.local_database_enabled?
+      associations.each do |name, config|
+        key = name.to_sym
+        unless config.is_a?(Hash)
+          __association_skipped(key, "its schema entry is not a Hash")
+          next
+        end
+        kind = config["kind"].to_s
+        class_name = config["class_name"].to_s
+        foreign_key = config["foreign_key"].to_s
+        unless kind == "belongs_to" || kind == "has_many"
+          __association_skipped(key, "unknown kind #{kind.inspect}")
+          next
+        end
+        if class_name.empty? || foreign_key.empty?
+          __association_skipped(key, "class_name or foreign_key is missing")
+          next
+        end
+        target = __carried_model(class_name)
+        unless target
+          __association_skipped(key, "the client carries no model #{class_name}")
+          next
+        end
+        if kind == "belongs_to"
+          __derive_association(:belongs_to, key, target, foreign_key, :schema)
+          if foreign_key == "#{target.demodulized_snake_name}_id"
+            target.__derive_association(:has_many, table_name.to_sym, self,
+              foreign_key, :inverse)
+          end
+        else
+          __derive_association(:has_many, key, target, foreign_key, :schema)
+        end
+      end
+      nil
+    end
+
+    # The model class of that name when the client carries it, else nil
+    # (never an error: a model the client leaves out simply has no
+    # association here). ActiveRecord hands "::Post" through verbatim.
+    def self.__carried_model(class_name)
+      name = class_name.start_with?("::") ? class_name[2..-1].to_s : class_name
+      klass = __resolve_association_constant(:schema, name)
+      klass.respond_to?(:__associations) ? klass : nil
+    rescue NameError
+      nil
+    end
+
+    # Define one derived association on this class, reading from target.
+    # origin is :schema (an entry of this model's own schema) or
+    # :inverse (the other end of another model's belongs_to).
+    def self.__derive_association(kind, key, target, foreign_key, origin)
+      unless replica? && target.replica?
+        local_end = replica? ? target : self
+        __association_skipped(key,
+          "#{local_end} is not a replica model; declare it in the class")
+        return nil
+      end
+      existing = __associations[key]
+      if existing
+        # A hand-written declaration wins without a word: that is what
+        # it is for. Between derived ones, :schema outranks :inverse.
+        return nil unless existing[:derived]
+        unless existing[:origin] == :inverse && origin == :schema
+          return nil
+        end
+      elsif instance_methods.include?(key) || private_instance_methods.include?(key)
+        __association_skipped(key,
+          "#{self} already has an attribute or a method of that name")
+        return nil
+      end
+      if kind == :belongs_to
+        belongs_to(key, class_name: target.to_s, foreign_key: foreign_key)
+      else
+        has_many(key, class_name: target.to_s, foreign_key: foreign_key)
+      end
+      entry = __associations[key]
+      if entry
+        entry[:derived] = true
+        entry[:origin] = origin
+      end
+      nil
+    end
+
+    def self.__association_skipped(key, reason)
+      return nil unless Funicular.env.development?
+      puts "[Funicular] #{self}: association #{key.inspect} not derived (#{reason})"
+      nil
+    end
+
     def self.__reject_association_options(kind, name, rest)
       return nil if rest.empty?
       raise ArgumentError,
@@ -318,8 +435,11 @@ module Funicular
     def self.__register_association(key)
       registry = (@associations ||= {}) # steep:ignore UnannotatedEmptyCollection
       # Last-one-wins would be the same silent shrug as ignoring
-      # through:: the reader defined first is simply gone.
-      if registry.has_key?(key)
+      # through:: the reader defined first is simply gone. A derived
+      # association (from the server schema) is the exception: a
+      # hand-written declaration replaces it.
+      existing = registry[key]
+      if existing && !existing[:derived]
         raise ArgumentError,
           "#{self}: the association #{key.inspect} is already declared"
       end
@@ -417,7 +537,12 @@ module Funicular
       i = 0
       while i < names.size
         name = names[i]
-        if registry.has_key?(name.to_sym)
+        entry = registry[name.to_sym]
+        if entry && entry[:derived]
+          # A derived association yields to the attribute: the accessor
+          # generated next replaces its reader.
+          registry.delete(name.to_sym)
+        elsif entry
           raise ArgumentError,
             "#{self}: the association #{name.to_sym.inspect} and the " \
             "attribute of the same name would shadow each other; rename one"

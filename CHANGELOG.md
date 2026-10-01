@@ -31,6 +31,20 @@
   explicit `endpoints: {}` declares a model with no REST side. Optional
   groups (`scope "(:locale)"`, `get "archive(/:year)"`) derive in their
   short form, and a glob route (`*path`) derives no endpoint.
+- Associations derive from the server. `Funicular::Schema.build` reads the
+  ActiveRecord reflections and sends each `belongs_to` whose foreign key is
+  an exposed attribute; the client defines the reader (`comment.post`) and,
+  for a conventional foreign key, the inverse `has_many` on the target
+  (`post.comments`). Both ends must be replica models the client carries,
+  matched by class name; local and ephemeral models never take part, and an
+  app without the local database derives nothing. A derived association
+  yields to a hand-written declaration, an attribute, or a method of the
+  same name (public or private), and an entry of the model's own schema
+  outranks an inverse whichever schema arrives first. The development
+  console says why an association did not derive. `associations: false`
+  turns it off; `associations: { "author" => nil }` hides one; a
+  hand-written entry adds one and is validated. Polymorphic and
+  composite-key associations do not derive.
 - Path placeholders fill from the call: `Comment.all(post_id: 3)` requests
   `/posts/3/comments` and keeps the other params as the query string;
   `Comment.create(post_id: 3, body: "..")` posts to `/posts/3/comments`;
