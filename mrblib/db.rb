@@ -534,7 +534,7 @@ module Funicular
     end
 
     # Drop every meta row under a key prefix (the REST ETag cache is
-    # "http:<path>" in the replica database). The prefix is a fixed
+    # "http:<table>:<path>" in the replica database). The prefix is a fixed
     # framework string, never user input, so LIKE needs no escaping.
     def self.delete_meta_prefix(db, prefix)
       ensure_meta_table(db)

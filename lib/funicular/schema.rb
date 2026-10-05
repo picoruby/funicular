@@ -106,7 +106,9 @@ module Funicular
             result[key] = value
           end
         end
-        if result.empty? && route_set
+        # An explicit endpoints: (even {}) declares the REST side, so an
+        # empty table is what the caller asked for.
+        if result.empty? && route_set && explicit.nil?
           raise ArgumentError,
                 "no endpoints for #{model_class || name}: routes.rb has no " \
                 "route to #{name || '(no controller)'}, and none were " \
@@ -167,11 +169,16 @@ module Funicular
       end
 
       # { method:, path: } for one route; nil for a route without an
-      # HTTP verb (a mounted engine, say).
+      # HTTP verb (a mounted engine, say) or with a glob (*path), which
+      # no placeholder can fill. Optional groups ("(/:locale)",
+      # "(.:format)") are dropped: Rails matches the short form too.
       def self.entry_for(route)
         verb = route.verb.to_s.split("|").first.to_s
         return nil if verb.empty?
-        { method: verb, path: route.path.spec.to_s.sub(/\(\.:format\)\z/, "") }
+        path = +route.path.spec.to_s
+        nil while path.sub!(/\([^()]*\)/, "")
+        return nil if path.include?("*")
+        { method: verb, path: path.empty? ? "/" : path }
       end
     end
 

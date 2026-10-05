@@ -284,7 +284,9 @@ deprecated and removed once `refresh :live` ships.
   (index/show/create/update/destroy become all/find/create/update/destroy;
   other actions keep their names). `controller:`, `endpoints:` (a
   `"controller#action"` alias, a hand-written entry, or `nil` to hide one),
-  and `routes: false` are the escape hatches.
+  and `routes: false` are the escape hatches. An explicit `endpoints: {}`
+  declares a model with no REST side. The derivation drops optional groups
+  (`(/:locale)`) and skips glob routes (`*path`).
 
 ## Vendored artifacts
 

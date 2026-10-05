@@ -1020,7 +1020,9 @@ module Funicular
     # ---- REST: conditional GET (the replica as an HTTP cache) ------------
     #
     # A replica model remembers the ETag of every GET it made, keyed by
-    # path, in the replica database's meta table (per user namespace,
+    # its table and the path (two models may GET one path, and the ids
+    # an entry lists are rows of one table), in the replica database's
+    # meta table (per user namespace,
     # gone with wipe). The next GET of the same path carries
     # If-None-Match; a 304 is answered from the replica rows the entry
     # lists -- no upsert, so no change event. Rails answers 304 through
@@ -1035,10 +1037,14 @@ module Funicular
       replica_db
     end
 
+    def self.__http_cache_key(path)
+      "#{HTTP_CACHE_PREFIX}#{table_name}:#{path}"
+    end
+
     def self.__http_cache_entry(path)
       db = __http_cache_db
       return nil unless db
-      raw = Funicular::DB.read_meta(db, "#{HTTP_CACHE_PREFIX}#{path}")
+      raw = Funicular::DB.read_meta(db, __http_cache_key(path))
       return nil unless raw
       begin
         entry = JSON.parse(raw)
@@ -1053,7 +1059,7 @@ module Funicular
     def self.__store_http_cache_entry(path, response, ids)
       db = __http_cache_db
       return unless db
-      key = "#{HTTP_CACHE_PREFIX}#{path}"
+      key = __http_cache_key(path)
       etag = response.etag
       if etag.nil? || response.no_store? || ids.include?(nil)
         # Nothing to validate against next time; drop a stale entry too.
@@ -1067,18 +1073,22 @@ module Funicular
     def self.__forget_http_cache_entry(path)
       db = __http_cache_db
       return unless db
-      Funicular::DB.delete_meta(db, "#{HTTP_CACHE_PREFIX}#{path}")
+      Funicular::DB.delete_meta(db, __http_cache_key(path))
     end
 
     # The instances a 304 stands for, in the order the server last sent
     # them; nil when any row is missing from the replica (the entry is
     # then unusable and the caller refetches unconditionally).
+    # One IN query, reordered in Ruby.
     def self.__instances_from_replica(ids)
+      # @type var by_id: Hash[untyped, Model]
+      by_id = {}
+      local.where(id: ids).each { |record| by_id[record.id] = record }
       # @type var instances: Array[Model]
       instances = []
       i = 0
       while i < ids.size
-        record = local.find_by(id: ids[i])
+        record = by_id[ids[i]]
         return nil unless record
         instances << record
         i += 1
@@ -1180,7 +1190,8 @@ module Funicular
 
     # path_params fill the path's other :segments
     # (Comment.find(7, post_id: 3) -> GET /posts/3/comments/7); id fills
-    # the one left, whatever the route calls it.
+    # the one left, whatever the route calls it. The rest becomes the
+    # query string, as in all.
     def self.find(id = nil, endpoint_name: "find", model_class: nil, **path_params, &block)
       if local?
         if block
@@ -1191,7 +1202,10 @@ module Funicular
       end
       endpoint = __endpoint(endpoint_name)
       expanded = __expand_path(endpoint["path"], path_params, id, "#{to_s}.find")
-      __fetch_record(expanded[0], model_class || self, true, &block)
+      path = expanded[0]
+      query = __query_params(path_params, expanded[1])
+      path = "#{path}?#{URI.encode_www_form(query)}" unless query.empty?
+      __fetch_record(path, model_class || self, true, &block)
     end
 
     # GET one record into klass's replica. The ETag cache is klass's:
@@ -1265,11 +1279,10 @@ module Funicular
         if Funicular::DB.stale_generation?(generation)
           block.call(nil, Funicular::DB.stale_response_error) if block
         elsif response.error?
-          # A 422 with { errors: record.errors } lands on the candidate
-          # exactly as a client-side failure would.
+          # A 422 with { errors: record.errors } is yielded as Errors,
+          # exactly as a client-side failure would be.
           server_errors = __server_errors(response)
           if server_errors
-            candidate.__replace_errors(server_errors)
             block.call(nil, server_errors) if block
           else
             block.call(nil, response.error_message) if block
@@ -1284,6 +1297,8 @@ module Funicular
     end
 
     # path_params fill the path's other :segments; id fills the one left.
+    # A DELETE carries no query, so a key the path does not take is a
+    # mistake (a typo of a segment name) and raises.
     def self.destroy(id = nil, **path_params, &block)
       if local?
         if block
@@ -1294,6 +1309,11 @@ module Funicular
       end
       endpoint = __endpoint("destroy")
       expanded = __expand_path(endpoint["path"], path_params, id, "#{to_s}.destroy")
+      unknown = __query_params(path_params, expanded[1])
+      unless unknown.empty?
+        raise ArgumentError,
+          "unknown path params for #{to_s}.destroy: #{unknown.keys.join(", ")}"
+      end
       __delete_record(expanded[0], id, &block)
     end
 

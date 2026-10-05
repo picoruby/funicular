@@ -40,6 +40,12 @@ class SchemaEndpointsTest < Minitest::Test
     end
     # A second route to comments#create: the nested one above wins.
     resources :comments, only: [:create]
+    # Optional segments and globs: the client cannot send them as text.
+    scope "(:locale)" do
+      resources :articles, only: [:index, :show]
+    end
+    get "archive(/:year(/:month))", to: "archive#index"
+    get "files/*path", to: "files#show"
   end
 
   def build(model_class, **options)
@@ -115,6 +121,23 @@ class SchemaEndpointsTest < Minitest::Test
   def test_no_routes_and_no_endpoints_is_an_error
     error = assert_raises(ArgumentError) { build(nil, controller: "nothing") }
     assert_includes error.message, "no route to nothing"
+  end
+
+  def test_explicit_empty_endpoints_mean_no_rest_side
+    assert_equal({}, build(nil, controller: "nothing", endpoints: {}))
+  end
+
+  def test_optional_segments_derive_in_their_short_form
+    endpoints = build(nil, controller: "articles")
+    assert_equal({ method: "GET", path: "/articles" }, endpoints["all"])
+    assert_equal({ method: "GET", path: "/articles/:id" }, endpoints["find"])
+    assert_equal({ method: "GET", path: "/archive" }, build(nil, controller: "archive")["all"])
+  end
+
+  def test_a_glob_route_derives_no_endpoint
+    assert_equal({}, build(nil, controller: "files", endpoints: {}))
+    error = assert_raises(ArgumentError) { build(nil, controller: "files") }
+    assert_includes error.message, "no route to files"
   end
 
   def test_a_dangling_reference_is_an_error

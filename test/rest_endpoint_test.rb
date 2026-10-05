@@ -114,6 +114,19 @@ class RestEndpointTest < Picotest::Test
     assert_equal(["DELETE", "/posts/3/comments/7"], $ep_calls[0])
   end
 
+  # find sends the other params as the query string, as all does.
+  def test_find_queries_the_params_the_path_does_not_take
+    EpComment.find(7, post_id: 3, include: "author") { |r, e| }
+    assert_equal(["GET", "/posts/3/comments/7?include=author"], $ep_calls[0])
+  end
+
+  # A DELETE has no query to carry them: an unknown keyword is a typo.
+  def test_destroy_rejects_a_keyword_the_path_does_not_take
+    message = raised_message { EpComment.destroy(7, post_id: 3, postid: 3) { |r, e| } }
+    assert_equal(true, message.include?("ArgumentError: unknown path params for EpComment.destroy: postid"))
+    assert_equal(0, $ep_calls.size)
+  end
+
   # ---- the identifier fills whatever segment the route names ----
 
   def test_find_fills_a_slug_segment_with_the_id_argument

@@ -60,7 +60,7 @@ class RestWriteThroughTest < Picotest::Test
     $wt_response = nil
     $wt_notified = 0
     define_models
-    Funicular::DB.build_replica_tables($wt_db, [WtPost])
+    Funicular::DB.build_replica_tables($wt_db, [WtPost, WtDigest])
   end
 
   def teardown
@@ -89,6 +89,21 @@ class RestWriteThroughTest < Picotest::Test
       end
     end
     WtPost.load_schema(SCHEMA)
+
+    # A second replica model on the same database and the same paths.
+    Object.const_set(:WtDigest, Class.new(Funicular::Model))
+    WtDigest.class_eval do
+      table_name "wt_digests"
+
+      def self.replica_db
+        $wt_db
+      end
+
+      def self.local_db
+        $wt_db
+      end
+    end
+    WtDigest.load_schema(SCHEMA)
 
     Object.const_set(:WtSession, Class.new(Funicular::Model))
     WtSession.class_eval do
@@ -283,7 +298,7 @@ class RestWriteThroughTest < Picotest::Test
     $wt_response = tagged([{ "id" => 2, "title" => "b" }, { "id" => 1, "title" => "a" }], "\"v1\"")
     WtPost.all { |r, e| }
     assert_equal([nil], $wt_headers)
-    stored = Funicular::DB.read_meta($wt_db, "http:/wt_posts")
+    stored = Funicular::DB.read_meta($wt_db, "http:wt_posts:/wt_posts")
     assert_equal({ "etag" => "\"v1\"", "ids" => [2, 1] }, JSON.parse(stored))
 
     $wt_response = not_modified
@@ -318,19 +333,33 @@ class RestWriteThroughTest < Picotest::Test
     assert_equal(3, $wt_calls.size)
     assert_nil($wt_headers[2])
     assert_equal("again", got[0].title)
-    assert_equal("\"v2\"", JSON.parse(Funicular::DB.read_meta($wt_db, "http:/wt_posts"))["etag"])
+    assert_equal("\"v2\"", JSON.parse(Funicular::DB.read_meta($wt_db, "http:wt_posts:/wt_posts"))["etag"])
   end
 
   def test_no_store_and_missing_etags_are_not_remembered
     $wt_response = tagged([{ "id" => 1, "title" => "a" }], "\"v1\"", "no-store")
     WtPost.all { |r, e| }
-    assert_nil(Funicular::DB.read_meta($wt_db, "http:/wt_posts"))
+    assert_nil(Funicular::DB.read_meta($wt_db, "http:wt_posts:/wt_posts"))
     $wt_response = tagged([{ "id" => 1, "title" => "a" }], "\"v1\"")
     WtPost.all { |r, e| }
-    assert_equal(false, Funicular::DB.read_meta($wt_db, "http:/wt_posts").nil?)
+    assert_equal(false, Funicular::DB.read_meta($wt_db, "http:wt_posts:/wt_posts").nil?)
     $wt_response = ok([{ "id" => 1, "title" => "a" }])
     WtPost.all { |r, e| }
-    assert_nil(Funicular::DB.read_meta($wt_db, "http:/wt_posts"))
+    assert_nil(Funicular::DB.read_meta($wt_db, "http:wt_posts:/wt_posts"))
+  end
+
+  # The cache entry lists ids in one model's table; another model that
+  # GETs the same path must not revalidate against it.
+  def test_two_models_on_one_path_keep_separate_cache_entries
+    $wt_response = tagged([{ "id" => 1, "title" => "a" }], "\"v1\"")
+    WtPost.all { |r, e| }
+    WtDigest.all { |r, e| }
+    assert_equal([nil, nil], $wt_headers)
+    $wt_response = not_modified
+    got = nil
+    WtDigest.all { |r, e| got = r }
+    assert_equal({ "If-None-Match" => "\"v1\"" }, $wt_headers[2])
+    assert_equal(["WtDigest"], got.map { |d| d.class.to_s })
   end
 
   def test_partial_representations_merge_into_one_replica_row

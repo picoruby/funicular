@@ -102,6 +102,7 @@ module Funicular
     # REST: conditional GET (the replica as an HTTP cache)
     HTTP_CACHE_PREFIX: String
     def self.__http_cache_db: () -> untyped
+    def self.__http_cache_key: (String path) -> String
     def self.__http_cache_entry: (String path) -> Hash[String, untyped]?
     def self.__store_http_cache_entry: (String path, HTTP::Response response, Array[untyped] ids) -> void
     def self.__forget_http_cache_entry: (String path) -> void
