@@ -63,6 +63,8 @@ module Funicular
 
       # Backward-compatible: a top-level { attr => rules } block also works.
       register_schema_validations(schema_data["validations"])
+
+      __apply_schema_associations(schema_data["associations"])
     end
 
     # validations: { "attr" => { "presence" => true, "length" => { "maximum" => 30 } } }
@@ -274,16 +276,8 @@ module Funicular
       target = (class_name || __camelize(key.to_s)).to_s
       fk = (foreign_key || "#{key}_id").to_s
       __register_association(key)
-      define_method(key) do
-        # @type self: Model
-        value = send(fk)
-        if value.nil?
-          # No foreign key, no target row -- and no query to run.
-          nil
-        else
-          self.class.__association_target(key, target).local.find_by(id: value)
-        end
-      end
+      __define_association_reader(self, :belongs_to, key, fk,
+        -> { __association_target(key, target) })
       nil
     end
 
@@ -293,15 +287,219 @@ module Funicular
       target = (class_name || __camelize(__singularize(key.to_s))).to_s
       fk = (foreign_key || "#{demodulized_snake_name}_id").to_s
       __register_association(key)
-      define_method(key) do
-        # @type self: Model
-        # An unsaved parent owns nothing: the empty-array condition
-        # compiles to 1=0, where a nil would read as IS NULL and hand
-        # this record every orphan row in the table.
-        none = [] #: Array[untyped]
-        value = id.nil? ? none : id
-        self.class.__association_target(key, target).local.where(fk => value)
+      __define_association_reader(self, :has_many, key, fk,
+        -> { __association_target(key, target) })
+      nil
+    end
+
+    # The reader of one association, defined on owner: the class itself
+    # for a declaration, its derived module for a derived association.
+    # resolve returns the target class.
+    def self.__define_association_reader(owner, kind, key, fk, resolve)
+      if kind == :belongs_to
+        owner.send(:define_method, key) do # steep:ignore UnexpectedBlockGiven
+          # @type self: Model
+          value = send(fk)
+          if value.nil?
+            # No foreign key, no target row -- and no query to run.
+            nil
+          else
+            resolve.call.local.find_by(id: value)
+          end
+        end
+      else
+        owner.send(:define_method, key) do # steep:ignore UnexpectedBlockGiven
+          # @type self: Model
+          # An unsaved parent owns nothing: the empty-array condition
+          # compiles to 1=0, where a nil would read as IS NULL and hand
+          # this record every orphan row in the table.
+          none = [] #: Array[untyped]
+          value = id.nil? ? none : id
+          resolve.call.local.where(fk => value)
+        end
       end
+      nil
+    end
+
+    # ---- associations derived from the server schema ---------------------
+    #
+    # Funicular::Schema.build sends the model's belongs_to associations
+    # (those whose foreign key is an exposed attribute), read from the
+    # ActiveRecord reflections. Each one becomes a belongs_to here, and
+    # -- when the foreign key follows the convention (post_id -> Post) --
+    # the inverse has_many on the target, named after this model's
+    # table (`post.comments`).
+    #
+    # The rules, in the order they are checked:
+    #
+    # - No local database, no associations (they read it).
+    # - Both ends must be replica models the client carries, matched by
+    #   class name. A client-only (storage :local) or ephemeral model
+    #   never takes part, so a class that merely shares a Rails name is
+    #   left alone.
+    # - A derived association always yields: to a hand-written
+    #   declaration, to an attribute, and to any method of the same
+    #   name, public or private.
+    # - An entry of the model's own schema outranks an inverse derived
+    #   from another model's, whichever schema arrives first. Between
+    #   two inverses of one name, the first one stays.
+    # - A schema loaded again replaces what the previous load derived,
+    #   the inverses on other models included.
+    #
+    # The derived readers live in a module the class includes, so
+    # anything defined on the class itself (an attribute accessor, a
+    # declaration, a def) wins by method lookup, in any order. The
+    # registry (__derived_associations) only remembers who derived what.
+    #
+    # Every association that does not derive, or that another replaces,
+    # says why on the development console.
+
+    def self.__apply_schema_associations(associations)
+      __retract_derived_associations
+      return nil unless associations.is_a?(Hash)
+      return nil unless Funicular::DB.local_database_enabled?
+      associations.each do |name, config|
+        key = name.to_sym
+        unless config.is_a?(Hash)
+          __association_skipped(key, "its schema entry is not a Hash")
+          next
+        end
+        kind = config["kind"].to_s
+        class_name = config["class_name"].to_s
+        foreign_key = config["foreign_key"].to_s
+        unless kind == "belongs_to" || kind == "has_many"
+          __association_skipped(key, "unknown kind #{kind.inspect}")
+          next
+        end
+        if class_name.empty? || foreign_key.empty?
+          __association_skipped(key, "class_name or foreign_key is missing")
+          next
+        end
+        target = __carried_model(class_name)
+        unless target
+          __association_skipped(key, "the client carries no model #{class_name}")
+          next
+        end
+        if kind == "belongs_to"
+          __derive_association(:belongs_to, key, target, foreign_key, :schema, self)
+          if foreign_key == "#{target.demodulized_snake_name}_id"
+            target.__derive_association(:has_many, table_name.to_sym, self,
+              foreign_key, :inverse, self)
+          end
+        else
+          __derive_association(:has_many, key, target, foreign_key, :schema, self)
+        end
+      end
+      nil
+    end
+
+    # The model class of that name when the client carries it, else nil
+    # (never an error: a model the client leaves out simply has no
+    # association here).
+    def self.__carried_model(class_name)
+      klass = __resolve_association_constant(:schema, class_name)
+      klass.respond_to?(:__derived_associations) ? klass : nil
+    rescue NameError
+      nil
+    end
+
+    # Define one derived association on this class, reading from target.
+    # origin is :schema (an entry of this model's own schema) or
+    # :inverse (the other end of another model's belongs_to); source is
+    # the model whose schema carried the entry.
+    def self.__derive_association(kind, key, target, foreign_key, origin, source)
+      unless replica? && target.replica?
+        local_end = replica? ? target : self
+        __association_skipped(key,
+          "#{local_end} is not a replica model; declare it in the class")
+        return nil
+      end
+      if __associations.has_key?(key)
+        __association_skipped(key, "a hand-written declaration of that name wins")
+        return nil
+      end
+      existing = __derived_associations[key]
+      if existing
+        if existing[:origin] == :inverse && origin == :schema
+          __remove_derived_association(key,
+            "the schema entry of #{self} replaces the inverse of " \
+            "#{existing[:source]}'s belongs_to")
+        else
+          winner = existing[:origin] == :schema ?
+            "the schema entry of #{self}" : "the inverse of #{existing[:source]}"
+          __association_skipped(key, "#{winner} wins")
+          return nil
+        end
+      elsif method_defined?(key) || private_method_defined?(key)
+        # Not a reader of the derived module: every one of those is in
+        # the registry, which the branch above handles.
+        __association_skipped(key,
+          "#{self} already has an attribute or a method of that name")
+        return nil
+      end
+      __define_association_reader(__derived_module, kind, key, foreign_key,
+        -> { target })
+      registry = (@derived_associations ||= {}) # steep:ignore UnannotatedEmptyCollection
+      registry[key] = { origin: origin, source: source }
+      nil
+    end
+
+    def self.__derived_associations
+      @derived_associations || {}
+    end
+
+    # The module that holds this class's derived readers, included on
+    # first use. It sits below the class in the lookup, above
+    # Funicular::Model.
+    def self.__derived_module
+      mod = @derived_module
+      return mod if mod
+      mod = Module.new
+      include mod
+      @derived_module = mod
+    end
+
+    # Drop one derived association: its reader and its registry entry.
+    # reason (when given) goes to the development console.
+    def self.__remove_derived_association(key, reason)
+      registry = @derived_associations
+      return nil unless registry && registry.has_key?(key)
+      registry.delete(key)
+      mod = @derived_module
+      mod.send(:remove_method, key) if mod
+      __association_skipped(key, reason) if reason
+      nil
+    end
+
+    # Before a schema loads, drop what the previous load of it derived:
+    # this model's own entries and the inverses it put on other models.
+    def self.__retract_derived_associations
+      models = Funicular::Model.__registered_models
+      i = 0
+      while i < models.size
+        models[i].__retract_derived_from(self)
+        i += 1
+      end
+      nil
+    end
+
+    def self.__retract_derived_from(source)
+      registry = @derived_associations
+      return nil unless registry
+      keys = registry.keys
+      i = 0
+      while i < keys.size
+        key = keys[i]
+        entry = registry[key]
+        __remove_derived_association(key, nil) if entry && entry[:source] == source
+        i += 1
+      end
+      nil
+    end
+
+    def self.__association_skipped(key, reason)
+      return nil unless Funicular.env.development?
+      puts "[Funicular] #{self}: association #{key.inspect} not derived (#{reason})"
       nil
     end
 
@@ -319,11 +517,14 @@ module Funicular
       registry = (@associations ||= {}) # steep:ignore UnannotatedEmptyCollection
       # Last-one-wins would be the same silent shrug as ignoring
       # through:: the reader defined first is simply gone.
-      if registry.has_key?(key)
+      if registry[key]
         raise ArgumentError,
           "#{self}: the association #{key.inspect} is already declared"
       end
       __assert_association_name_free(key)
+      # The class's own reader would win by lookup anyway; drop the
+      # derived one so the registry says what is in effect.
+      __remove_derived_association(key, "a hand-written declaration replaces it")
       registry[key] = { klass: nil }
       nil
     end
@@ -412,14 +613,20 @@ module Funicular
     # first meet -- the accessor generation, which is the first instance
     # path on local models and the schema load on the others.
     def self.__assert_no_association_conflict(names)
+      derived = @derived_associations
       registry = @associations
-      return nil unless registry
+      return nil unless registry || derived
       i = 0
       while i < names.size
-        name = names[i]
-        if registry.has_key?(name.to_sym)
+        key = names[i].to_sym
+        # A derived association yields to the attribute: the accessor
+        # generated next wins by lookup anyway.
+        if derived && derived.has_key?(key)
+          __remove_derived_association(key, "the attribute of that name replaces it")
+        end
+        if registry && registry[key]
           raise ArgumentError,
-            "#{self}: the association #{name.to_sym.inspect} and the " \
+            "#{self}: the association #{key.inspect} and the " \
             "attribute of the same name would shadow each other; rename one"
         end
         i += 1
