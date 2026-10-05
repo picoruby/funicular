@@ -1,6 +1,6 @@
 # Tests for the endpoint lookup and path expansion of the REST side:
-# nested routes fill their :segments from params/attributes, the one
-# segment left takes the record id whatever the route calls it, a
+# nested routes fill their :segments from params/attributes, the last
+# segment, if left, takes the record id whatever the route calls it, a
 # missing endpoint or segment fails loud, and endpoint_name: reaches
 # collection/member routes beyond the canonical five.
 
@@ -167,5 +167,30 @@ class RestEndpointTest < Picotest::Test
     assert_raise(ArgumentError) { EpComment.find(7) { |r, e| } }
     assert_raise(ArgumentError) { EpComment.create(body: "no post") { |r, e| } }
     assert_equal(0, $ep_calls.size)
+  end
+
+  # The record's own id fills :id. It must not also stand in for a
+  # parent segment the record has no value for.
+  def test_instance_methods_raise_when_a_parent_segment_is_missing
+    comment = EpComment.new({ "id" => 7, "body" => "old" })
+    comment.body = "new"
+    assert_raise(ArgumentError) { comment.update { |r, e| } }
+    assert_raise(ArgumentError) { comment.destroy { |r, e| } }
+    assert_raise(ArgumentError) { comment.reload { |r, e| } }
+    assert_equal(0, $ep_calls.size)
+  end
+
+  # ---- the path names the stored record, not the pending change ----
+
+  def test_instance_update_routes_a_slug_change_to_the_stored_slug
+    page = EpPage.new({ "id" => 1, "slug" => "hello-world", "title" => "t" })
+    page.update(slug: "new-slug") { |r, e| }
+    assert_equal(["PATCH", "/pages/hello-world", { "slug" => "new-slug" }], $ep_calls[0])
+  end
+
+  def test_instance_update_routes_a_parent_change_to_the_stored_parent
+    comment = EpComment.new({ "id" => 7, "post_id" => 3, "body" => "b" })
+    comment.update(post_id: 9) { |r, e| }
+    assert_equal(["PATCH", "/posts/3/comments/7", { "post_id" => 9 }], $ep_calls[0])
   end
 end

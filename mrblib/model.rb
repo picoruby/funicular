@@ -45,8 +45,14 @@ module Funicular
         unless config["readonly"]
           define_method("#{name}=") do |value|
             # @type self: Model
-            instance_variable_set("@#{name}", value)
             @changed_attributes ||= {} # steep:ignore UnannotatedEmptyCollection
+            # The value before the first pending change: the REST path
+            # names the stored record, not the edit (__path_source).
+            unless @changed_attributes.has_key?(name)
+              stored = (@stored_attributes ||= {}) # steep:ignore UnannotatedEmptyCollection
+              stored[name] = instance_variable_get("@#{name}")
+            end
+            instance_variable_set("@#{name}", value)
             @changed_attributes[name] = value
           end
         end
@@ -907,9 +913,10 @@ module Funicular
     end
 
     # Fill the :name segments of an endpoint path. Values come from
-    # source (a Hash keyed by String or Symbol, or nil); one segment
-    # still empty afterwards takes identifier -- the record id, whatever
-    # the route calls it (:id, :slug, ...). Anything still missing is
+    # source (a Hash keyed by String or Symbol, or nil). When the last
+    # placeholder is the only one still empty, it takes identifier --
+    # the record id, whatever the route calls it (:id, :slug, ...). A
+    # parent placeholder (:post_id) never does. Anything still missing is
     # an ArgumentError: a request never leaves with a literal ":post_id"
     # in its URL. Returns [path, consumed], consumed being the source
     # keys used, as Strings, so a caller can keep them out of the
@@ -920,10 +927,13 @@ module Funicular
       consumed = []
       # @type var missing: Array[Integer]
       missing = []
+      # @type var last: Integer?
+      last = nil
       i = 0
       while i < segments.size
         segment = segments[i]
         if segment.start_with?(":")
+          last = i
           name = segment[1..-1].to_s
           value = __path_value(source, name)
           if value.nil?
@@ -935,7 +945,7 @@ module Funicular
         end
         i += 1
       end
-      if missing.size == 1 && !identifier.nil?
+      if missing.size == 1 && missing[0] == last && !identifier.nil?
         segments[missing[0]] = __path_segment(identifier)
         missing = []
       end
@@ -975,15 +985,22 @@ module Funicular
 
     # The attributes of this record, as a path source for the instance
     # methods (update/destroy/reload): /posts/:post_id/comments/:id
-    # fills from @post_id and @id.
+    # fills from @post_id and @id. A pending change does not count: the
+    # path names the stored record, so update(slug: "new") requests the
+    # old slug.
     def __path_source
       # @type var source: Hash[String, untyped]
       source = {}
       names = self.class.schema.keys
+      stored = @stored_attributes
       i = 0
       while i < names.size
         name = names[i]
-        source[name] = instance_variable_get("@#{name}")
+        if stored && @changed_attributes.has_key?(name) && stored.has_key?(name)
+          source[name] = stored[name]
+        else
+          source[name] = instance_variable_get("@#{name}")
+        end
         i += 1
       end
       source

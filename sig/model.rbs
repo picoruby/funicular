@@ -5,6 +5,7 @@ module Funicular
 
     attr_reader id: untyped
     @changed_attributes: Hash[String, untyped]
+    @stored_attributes: Hash[String, untyped]?
     @local_baseline: Hash[String, untyped]?
     @provided_attributes: Hash[String, bool]?
 

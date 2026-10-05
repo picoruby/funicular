@@ -1,4 +1,4 @@
-## [0.5.2] - 2026-09-29
+## [0.6.0] - Unreleased
 
 ### Changed (breaking)
 
@@ -32,8 +32,11 @@
   `/posts/3/comments` and keeps the other params as the query string;
   `Comment.create(post_id: 3, body: "..")` posts to `/posts/3/comments`;
   `Comment.find(7, post_id: 3)`, `Comment.destroy(7, post_id: 3)`, and the
-  instance methods fill from attributes. One unfilled segment takes the id,
-  whatever the route calls it (`resources :pages, param: :slug`).
+  instance methods fill from attributes. The last placeholder takes the id
+  when nothing else fills it, whatever the route calls it (`resources
+  :pages, param: :slug`). A parent placeholder never takes the id. The
+  instance methods build the path from the stored values, so
+  `page.update(slug: "new")` requests the old slug.
 - `all(endpoint_name:)` and `create(endpoint_name:)` reach collection and
   member routes beyond the canonical five, like `find(endpoint_name:)`.
 - Conditional GET: a replica model remembers the `ETag` of every GET (in
@@ -55,6 +58,10 @@
 - `HTTP::Response#etag`, `#not_modified?`, `#no_store?`, and
   `HTTP.get(url, headers:)`.
 - `Funicular::Model::Errors.from_hash` and `Errors#to_s`.
+
+## [0.5.2] - 2026-09-29
+
+### Added
 
 - Nested router layouts: `router.layout(Component) { ... }` and
   `Component#outlet`. Each layout renders the next, or the matched page, at
