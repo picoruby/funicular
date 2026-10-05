@@ -17,6 +17,8 @@ module Funicular
     self.@refresh_mode: Symbol?
     self.@table_name: String?
     self.@associations: Hash[Symbol, Hash[Symbol, untyped]]?
+    self.@derived_associations: Hash[Symbol, Hash[Symbol, untyped]]?
+    self.@derived_module: Module?
     self.@local_columns: Hash[String, Symbol]?
 
     def self.schema: () -> Hash[String, Hash[String, untyped]]
@@ -52,7 +54,13 @@ module Funicular
     def self.has_many: (Symbol | String name, ?class_name: (String | Symbol)?, ?foreign_key: (String | Symbol)?, **untyped rest) -> nil
     def self.__apply_schema_associations: (untyped associations) -> nil
     def self.__carried_model: (String class_name) -> untyped
-    def self.__derive_association: (Symbol kind, Symbol key, untyped target, String foreign_key, Symbol origin) -> nil
+    def self.__define_association_reader: (Module owner, Symbol kind, Symbol key, String fk, ^() -> untyped resolve) -> nil
+    def self.__derive_association: (Symbol kind, Symbol key, untyped target, String foreign_key, Symbol origin, untyped source) -> nil
+    def self.__derived_associations: () -> Hash[Symbol, Hash[Symbol, untyped]]
+    def self.__derived_module: () -> Module
+    def self.__remove_derived_association: (Symbol key, String? reason) -> nil
+    def self.__retract_derived_associations: () -> nil
+    def self.__retract_derived_from: (untyped source) -> nil
     def self.__association_skipped: (Symbol key, String reason) -> nil
     def self.__reject_association_options: (Symbol kind, Symbol | String name, Hash[Symbol, untyped] rest) -> nil
     def self.__register_association: (Symbol key) -> nil

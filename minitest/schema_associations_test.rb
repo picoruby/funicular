@@ -6,8 +6,25 @@ require "test_helper"
 # belongs_to associations from ActiveRecord-style reflections, gated by
 # the attribute allowlist, and the escape hatches of `associations:`.
 class SchemaAssociationsTest < Minitest::Test
-  Reflection = Struct.new(:name, :class_name, :foreign_key, :polymorphic) do
+  KlassStub = Struct.new(:name)
+
+  # resolved: the class name ActiveRecord resolves class_name to (inside
+  # the model's namespace), or :missing when no such class loads.
+  # primary_key: the target column the foreign key points at.
+  Reflection = Struct.new(:name, :class_name, :foreign_key, :polymorphic,
+                          :resolved, :primary_key) do
     def polymorphic? = polymorphic
+
+    def klass
+      raise NameError, "uninitialized constant #{class_name}" if resolved == :missing
+
+      KlassStub.new(resolved || class_name.delete_prefix("::"))
+    end
+
+    def association_primary_key
+      klass
+      primary_key || "id"
+    end
   end
 
   # The slice of ActiveRecord::Reflection::ClassMethods the builder reads.
@@ -98,6 +115,53 @@ class SchemaAssociationsTest < Minitest::Test
     assert_includes error.message, "needs class_name: and foreign_key:"
     error = assert_raises(ArgumentError) { build(associations: { "x" => "posts" }) }
     assert_includes error.message, "must be nil or a"
+  end
+
+  def reflecting(*reflections)
+    Class.new do
+      define_singleton_method(:reflect_on_all_associations) { |_macro| reflections }
+    end
+  end
+
+  def test_a_belongs_to_to_another_primary_key_does_not_derive
+    klass = reflecting(Reflection.new(:post, "Post", "post_id", false, nil, "slug"))
+    assert_equal({}, build(klass))
+  end
+
+  def test_class_name_is_the_class_activerecord_resolves
+    klass = reflecting(
+      Reflection.new(:post, "Post", "post_id", false, "Blog::Post"),
+      Reflection.new(:author, "User", "author_id", false, :missing)
+    )
+    associations = build(klass)
+    assert_equal "Blog::Post", associations["post"][:class_name]
+    refute associations.key?("author")
+  end
+
+  def test_a_hand_written_belongs_to_needs_an_exposed_foreign_key
+    error = assert_raises(ArgumentError) do
+      build(associations: { "x" => { kind: "belongs_to", class_name: "User", foreign_key: "writer_id" } })
+    end
+    assert_includes error.message, "writer_id is not an attribute"
+    # has_many's foreign key is a column of the other model.
+    associations = build(associations: {
+      "replies" => { kind: "has_many", class_name: "Comment", foreign_key: "parent_id" }
+    })
+    assert associations.key?("replies")
+  end
+
+  def test_a_hand_written_class_name_drops_a_leading_double_colon
+    associations = build(associations: {
+      "x" => { kind: "belongs_to", class_name: "::Post", foreign_key: "post_id" }
+    })
+    assert_equal "Post", associations["x"][:class_name]
+  end
+
+  def test_associations_takes_only_false_nil_or_a_hash
+    [true, "post", [:post]].each do |value|
+      error = assert_raises(ArgumentError) { build(associations: value) }
+      assert_includes error.message, "associations: must be false, nil, or a Hash"
+    end
   end
 
   def test_a_class_without_reflections_derives_nothing

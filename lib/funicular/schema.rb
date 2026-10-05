@@ -79,6 +79,21 @@ module Funicular
       }
     end
 
+    # Merge the explicit overrides of a derived table into it: a nil
+    # value hides the derived entry of that name, any other value goes
+    # through the block and replaces or adds one. Keys become Strings.
+    def self.apply_overrides(result, explicit)
+      (explicit || {}).each do |key, value|
+        key = key.to_s
+        if value.nil?
+          result.delete(key)
+        else
+          result[key] = yield(key, value)
+        end
+      end
+      result
+    end
+
     # The associations of a schema, derived from the model's ActiveRecord
     # reflections.
     #
@@ -88,8 +103,13 @@ module Funicular
     # each entry into a belongs_to reader and, when the foreign key
     # follows the convention (post_id -> Post), into the inverse
     # has_many on the target (`post.comments`). Both appear only when
-    # the client carries both models. A polymorphic belongs_to and a
-    # composite foreign key do not derive.
+    # the client carries both models. These do not derive:
+    #
+    # - a polymorphic belongs_to
+    # - a composite foreign key
+    # - a belongs_to to a column other than id (primary_key:), because
+    #   the client reader looks the target up by id
+    # - a belongs_to whose class does not load
     module Associations
       # explicit: the associations: keyword (nil to derive, false for
       # none, or a Hash whose values are a hand-written
@@ -97,23 +117,22 @@ module Funicular
       # derived one).
       def self.resolve(model_class, attributes, explicit)
         return {} if explicit == false
-        result = derive(model_class, attributes)
-        (explicit || {}).each do |name, value|
-          name = name.to_s
-          if value.nil?
-            result.delete(name)
-          else
-            result[name] = entry_for(name, value)
-          end
+        unless explicit.nil? || explicit.is_a?(Hash)
+          raise ArgumentError,
+                "associations: must be false, nil, or a Hash, got #{explicit.inspect}"
         end
-        result
+        exposed = attributes.keys.map(&:to_s)
+        result = derive(model_class, exposed)
+        Schema.apply_overrides(result, explicit) do |name, value|
+          entry_for(name, value, exposed)
+        end
       end
 
       KINDS = %w[belongs_to has_many].freeze
 
       # A hand-written entry, checked here: the client would only skip a
       # malformed one, far from the line that wrote it.
-      def self.entry_for(name, value)
+      def self.entry_for(name, value, exposed)
         unless value.is_a?(Hash)
           raise ArgumentError,
                 "associations: #{name.inspect} must be nil or a " \
@@ -126,32 +145,50 @@ module Funicular
                 "associations: #{name.inspect} has kind #{entry[:kind].inspect}; " \
                 "expected one of #{KINDS.join(', ')}"
         end
-        class_name = entry[:class_name].to_s
+        class_name = entry[:class_name].to_s.delete_prefix("::")
         foreign_key = entry[:foreign_key].to_s
         if class_name.empty? || foreign_key.empty?
           raise ArgumentError,
                 "associations: #{name.inspect} needs class_name: and foreign_key:"
         end
+        # A belongs_to reads its own foreign key; the client has it only
+        # as an attribute. A has_many's key is a column of the other model.
+        if kind == "belongs_to" && !exposed.include?(foreign_key)
+          raise ArgumentError,
+                "associations: #{name.inspect} reads #{foreign_key}, but " \
+                "#{foreign_key} is not an attribute of the schema"
+        end
         { kind: kind, class_name: class_name, foreign_key: foreign_key }
       end
 
-      def self.derive(model_class, attributes)
+      def self.derive(model_class, exposed)
         result = {}
         return result unless model_class.respond_to?(:reflect_on_all_associations)
-        exposed = attributes.keys.map(&:to_s)
         model_class.reflect_on_all_associations(:belongs_to).each do |reflection|
           next if reflection.polymorphic?
           foreign_key = reflection.foreign_key
           next unless foreign_key.is_a?(String) || foreign_key.is_a?(Symbol)
           next unless exposed.include?(foreign_key.to_s)
+          target = resolved_target(reflection)
+          next unless target
           result[reflection.name.to_s] = {
             kind: "belongs_to",
-            # ActiveRecord keeps a leading "::" (class_name: "::Post").
-            class_name: reflection.class_name.to_s.delete_prefix("::"),
+            class_name: target,
             foreign_key: foreign_key.to_s
           }
         end
         result
+      end
+
+      # The name of the class ActiveRecord resolves the reflection to
+      # (Blog::Comment's `belongs_to :post` -> "Blog::Post"), or nil when
+      # the class does not load or the key points at a column other
+      # than id.
+      def self.resolved_target(reflection)
+        return nil unless reflection.association_primary_key.to_s == "id"
+        reflection.klass.name
+      rescue NameError
+        nil
       end
     end
 
@@ -184,14 +221,11 @@ module Funicular
         route_set = nil if route_set == false
         name = controller || default_controller(model_class)
         result = route_set && name ? derive(name, route_set) : {}
-        (explicit || {}).each do |key, value|
-          key = key.to_s
-          if value.nil?
-            result.delete(key)
-          elsif value.is_a?(String) || value.is_a?(Symbol)
-            result[key] = lookup(value.to_s, route_set, key)
+        Schema.apply_overrides(result, explicit) do |key, value|
+          if value.is_a?(String) || value.is_a?(Symbol)
+            lookup(value.to_s, route_set, key)
           else
-            result[key] = value
+            value
           end
         end
         # An explicit endpoints: (even {}) declares the REST side, so an
