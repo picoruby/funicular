@@ -303,6 +303,8 @@ module Funicular
     def self.stored_table_version: (untyped db, String table) -> Integer
     def self.store_table_version: (untyped db, String table, Integer version) -> void
     def self.read_meta: (untyped db, String key) -> String?
+    def self.delete_meta: (untyped db, String key) -> nil
+    def self.delete_meta_prefix: (untyped db, String prefix) -> nil
     def self.store_meta: (untyped db, String key, String value) -> void
     private def self.ensure_meta_table: (untyped db) -> void
     def self.replica_table_ddl: (untyped model) -> String

@@ -13,6 +13,8 @@ module Funicular
       def clear: () -> void
       def empty?: () -> bool
       def any?: () -> bool
+      def to_s: () -> String
+      def self.from_hash: (Hash[untyped, untyped] hash) -> Errors
 
       private
       def humanize: (Symbol | String attribute) -> String
@@ -58,6 +60,7 @@ module Funicular
       # Instance API (mixed into Model).
       @errors: Errors
       def errors: () -> Errors
+      def __replace_errors: (Errors errors) -> void
       def read_attribute_for_validation: (Symbol attribute) -> untyped
       def valid?: () -> bool
       def invalid?: () -> bool

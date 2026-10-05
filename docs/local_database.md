@@ -245,6 +245,26 @@ own. Replica tables change only when your code fetches
 and combined with `watch`, explicit fetching is already reactive: the fetch
 lands, the table changes, every watching component re-renders.
 
+A manual fetch revalidates rather than re-downloads. A replica model
+remembers the `ETag` of every GET it made (in the replica database, so per
+user namespace and gone with `wipe`) and sends `If-None-Match` next time.
+The model keys each entry by its table and the path. On a
+`304 Not Modified`, the model answers from the replica rows that the
+previous response listed: no write, no change event, no re-render. Rails serves the
+304 with no controller code (`Rack::ETag` + `Rack::ConditionalGet`); add
+`stale?`/`fresh_when` to skip the query and the rendering too:
+
+```ruby
+def index
+  posts = Post.published
+  render json: posts.map { |p| post_json(p) } if stale?(posts)
+end
+```
+
+The model never remembers a response with `Cache-Control: no-store`.
+Ephemeral models and apps without the local database keep the
+unconditional GET.
+
 The axis exists because it has a future: `refresh :auto`
 (stale-while-revalidate against an authoritative index endpoint) and
 `refresh :live` (ActionCable-pushed replication) are planned as drop-in
@@ -552,6 +572,45 @@ included. The replica is updated BEFORE your callback runs: inside the
 callback, `Post.local.find(post.id)` already sees the applied row. There is
 no local-write API for replica models in v1; optimistic local writes are a
 possible future layer.
+
+A fetched row writes only the attributes it carries. A resource usually has
+more than one representation (an index summary without the body, a show
+detail without the excerpt), and each one merges into the single replica
+row instead of blanking the columns it omits. The replica stores NULL for
+an attribute that the server sends as `null`.
+
+The merge has one requirement on the server. Send a cleared attribute as
+`null`. A key that the response omits keeps its old value in the replica.
+Thus, do not drop nil keys (Jbuilder `ignore_nil!`, `as_json.compact`)
+from a resource that a replica model fetches.
+
+A server-side validation failure reads like a client-side one. Render it
+the Rails way:
+
+```ruby
+render json: { errors: post.errors }, status: :unprocessable_content
+```
+
+The `{ attribute => [messages] }` body lands on the record's `errors`, and
+the callback's `error` IS that `Funicular::Model::Errors`
+(`error.messages`, `error[:title]`, `error.full_messages`). Any other
+failure body still arrives as a String; `Errors#to_s` joins the full
+messages, so `"#{error}"` works for both.
+
+Nested routes fill their segments from the call: with
+`resources :posts do resources :comments end`, `Comment.all(post_id: 3)`
+requests `/posts/3/comments` (other params become the query string),
+`Comment.create(post_id: 3, body: "..")` posts there, and `comment.update`
+fills `/posts/:post_id/comments/:id` from the record's attributes.
+
+- `Comment.find(7, post_id: 3, include: "author")` requests
+  `/posts/3/comments/7?include=author`.
+- `Comment.destroy(7, post_id: 3)` deletes `/posts/3/comments/7`. An
+  unknown keyword raises `ArgumentError`, because a DELETE has no query.
+- The record id fills only the last placeholder. A missing parent value
+  (`post_id`) raises `ArgumentError`.
+- The instance methods build the path from the stored values.
+  `page.update(slug: "new")` requests the old slug.
 
 ### Local models: writes are local, synchronous, validated
 
@@ -974,6 +1033,13 @@ The practical rule: components rendered through SSR read their data from
 state seeded by the controller; `watch`-driven components belong on
 client-rendered routes (or behind `Funicular.server?` guards in
 `component_mounted`, which SSR never calls anyway).
+
+A hydrated page can still hand its seeded rows to the replica.
+`Comment.absorb(state[:comments])` in `component_mounted` applies them as a
+fetched collection would (one transaction, one change event), so a `watch`
+or `on_change` started right after reads the server-rendered rows instead
+of an empty table. The rows must carry the attributes the replica columns
+expect (`id` included). `absorb` is a no-op without a replica.
 
 ## Configuration
 

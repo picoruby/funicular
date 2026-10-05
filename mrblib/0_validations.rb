@@ -55,6 +55,33 @@ module Funicular
         !empty?
       end
 
+      # Errors reads as one String where a message was expected: the
+      # REST callback's `error` used to be a String, and "#{error}"
+      # call sites keep working when it is an Errors now.
+      def to_s
+        full_messages.join(", ")
+      end
+
+      # Build from the ActiveModel::Errors#as_json shape a Rails action
+      # renders with `render json: { errors: record.errors }`:
+      # { "body" => ["can't be blank"], ... }. Values may also be a
+      # single message.
+      def self.from_hash(hash)
+        errors = new
+        hash.each do |attribute, messages|
+          if messages.is_a?(Array)
+            i = 0
+            while i < messages.size
+              errors.add(attribute, messages[i].to_s)
+              i += 1
+            end
+          else
+            errors.add(attribute, messages.to_s)
+          end
+        end
+        errors
+      end
+
       private
 
       def humanize(attribute)
@@ -183,6 +210,13 @@ module Funicular
 
       def errors
         @errors ||= Funicular::Model::Errors.new
+      end
+
+      # Replace this record's errors with the ones the server reported
+      # (a 422 with `{ errors: record.errors }`), so a server-side
+      # validation failure reads exactly like a client-side one.
+      def __replace_errors(errors)
+        @errors = errors
       end
 
       def read_attribute_for_validation(attribute)

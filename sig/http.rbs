@@ -4,13 +4,17 @@ module Funicular
       attr_reader data: untyped
       attr_reader status: Integer
       attr_reader ok: bool
+      attr_reader etag: String?
+      @cache_control: String?
 
-      def initialize: (Integer status, untyped data) -> void
+      def initialize: (Integer status, untyped data, ?String? etag, ?String? cache_control) -> void
+      def not_modified?: () -> bool
+      def no_store?: () -> bool
       def error?: () -> bool
       def error_message: () -> String?
     end
 
-    def self.get: (String url) { (Response) -> void } -> void
+    def self.get: (String url, ?headers: Hash[String, String]?) { (Response) -> void } -> void
     def self.post: (String url, ?Hash[untyped, untyped]? body) { (Response) -> void } -> void
     def self.patch: (String url, ?Hash[untyped, untyped]? body) { (Response) -> void } -> void
     def self.delete: (String url) { (Response) -> void } -> void
@@ -18,8 +22,9 @@ module Funicular
     def self.csrf_token: () -> String?
 
     private def self.parse_response_body: (untyped text) -> untyped
-    private def self.request: (String method, String url, Hash[untyped, untyped]? body) { (Response) -> void } -> void
+    private def self.request: (String method, String url, Hash[untyped, untyped]? body, ?Hash[String, String]? extra_headers) { (Response) -> void } -> void
     private def self.session_changed_response: () -> Response
     private def self.response_epoch: (untyped response) -> String?
+    private def self.response_header: (untyped response, String name) -> String?
   end
 end

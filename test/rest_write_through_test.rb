@@ -8,9 +8,13 @@
 module Funicular
   module HTTP
     class << self
-      def get(url, &block)
+      # A queued response wins over the fixed $wt_response, so one test
+      # can script a 304 followed by a 200.
+      def get(url, headers: nil, &block)
         $wt_calls << ["GET", url]
-        block.call($wt_response) if block
+        $wt_headers << headers
+        response = $wt_queue.empty? ? $wt_response : $wt_queue.shift
+        block.call(response) if block
       end
 
       def post(url, body = nil, &block)
@@ -51,10 +55,12 @@ class RestWriteThroughTest < Picotest::Test
   def setup
     $wt_db = SQLite3::Database.new(":memory:")
     $wt_calls = []
+    $wt_headers = []
+    $wt_queue = []
     $wt_response = nil
     $wt_notified = 0
     define_models
-    Funicular::DB.build_replica_tables($wt_db, [WtPost])
+    Funicular::DB.build_replica_tables($wt_db, [WtPost, WtDigest])
   end
 
   def teardown
@@ -72,11 +78,32 @@ class RestWriteThroughTest < Picotest::Test
         $wt_db
       end
 
+      # Local reads (the 304 path answers from the replica) go through
+      # the same in-memory handle.
+      def self.local_db
+        $wt_db
+      end
+
       def self.local_table_changed
         $wt_notified += 1
       end
     end
     WtPost.load_schema(SCHEMA)
+
+    # A second replica model on the same database and the same paths.
+    Object.const_set(:WtDigest, Class.new(Funicular::Model))
+    WtDigest.class_eval do
+      table_name "wt_digests"
+
+      def self.replica_db
+        $wt_db
+      end
+
+      def self.local_db
+        $wt_db
+      end
+    end
+    WtDigest.load_schema(SCHEMA)
 
     Object.const_set(:WtSession, Class.new(Funicular::Model))
     WtSession.class_eval do
@@ -220,5 +247,160 @@ class RestWriteThroughTest < Picotest::Test
     $wt_response = ok({ "id" => 1, "title" => "a" })
     WtSession.find(1) { |s, e| }
     assert_equal(0, $wt_db.execute("SELECT COUNT(*) FROM wt_posts")[0][0])
+  end
+
+  # ---- server-side validation errors (422 with { errors: record.errors }) ----
+
+  def test_create_maps_a_422_errors_hash_onto_errors
+    $wt_response = Funicular::HTTP::Response.new(422,
+      { "errors" => { "title" => ["can't be blank", "is too short"],
+                      "base" => "nope" } })
+    got = nil
+    WtPost.create(title: "x") { |r, e| got = e }
+    assert_equal(true, got.is_a?(Funicular::Model::Errors))
+    assert_equal(["can't be blank", "is too short"], got[:title])
+    assert_equal(["nope"], got[:base])
+    assert_equal("Title can't be blank, Title is too short, Base nope", got.to_s)
+  end
+
+  def test_update_replaces_the_records_errors_from_a_422
+    post = WtPost.new({ "id" => 9, "title" => "old" })
+    post.title = ""
+    $wt_response = Funicular::HTTP::Response.new(422,
+      { "errors" => { "title" => ["can't be blank"] } })
+    got = nil
+    post.update { |r, e| got = e }
+    assert_equal(["can't be blank"], post.errors[:title])
+    assert_equal(true, got.equal?(post.errors))
+  end
+
+  def test_other_error_shapes_stay_strings
+    $wt_response = Funicular::HTTP::Response.new(422, { "errors" => ["a", "b"] })
+    got = nil
+    WtPost.create(title: "x") { |r, e| got = e }
+    assert_equal("a, b", got)
+    $wt_response = Funicular::HTTP::Response.new(500, { "error" => "boom" })
+    WtPost.create(title: "x") { |r, e| got = e }
+    assert_equal("boom", got)
+  end
+
+  # ---- conditional GET: the replica as an HTTP cache ----
+
+  def tagged(data, etag, cache_control = nil)
+    Funicular::HTTP::Response.new(200, data, etag, cache_control)
+  end
+
+  def not_modified
+    Funicular::HTTP::Response.new(304, nil, "\"v1\"")
+  end
+
+  def test_all_remembers_the_etag_and_revalidates
+    $wt_response = tagged([{ "id" => 2, "title" => "b" }, { "id" => 1, "title" => "a" }], "\"v1\"")
+    WtPost.all { |r, e| }
+    assert_equal([nil], $wt_headers)
+    stored = Funicular::DB.read_meta($wt_db, "http:wt_posts:/wt_posts")
+    assert_equal({ "etag" => "\"v1\"", "ids" => [2, 1] }, JSON.parse(stored))
+
+    $wt_response = not_modified
+    got = nil
+    err = nil
+    WtPost.all { |r, e| got = r; err = e }
+    assert_equal({ "If-None-Match" => "\"v1\"" }, $wt_headers[1])
+    assert_nil(err)
+    assert_equal([2, 1], got.map { |p| p.id })
+    assert_equal("b", got[0].title)
+    # No upsert on a 304: one change event from the first fetch only.
+    assert_equal(1, $wt_notified)
+  end
+
+  def test_find_revalidates_a_single_record
+    $wt_response = tagged({ "id" => 7, "title" => "found" }, "W/\"abc\"")
+    WtPost.find(7) { |r, e| }
+    $wt_response = not_modified
+    got = nil
+    WtPost.find(7) { |r, e| got = r }
+    assert_equal({ "If-None-Match" => "W/\"abc\"" }, $wt_headers[1])
+    assert_equal("found", got.title)
+  end
+
+  def test_a_304_with_rows_missing_from_the_replica_refetches_once
+    $wt_response = tagged([{ "id" => 1, "title" => "a" }], "\"v1\"")
+    WtPost.all { |r, e| }
+    $wt_db.execute("DELETE FROM wt_posts")
+    $wt_queue = [not_modified, tagged([{ "id" => 1, "title" => "again" }], "\"v2\"")]
+    got = nil
+    WtPost.all { |r, e| got = r }
+    assert_equal(3, $wt_calls.size)
+    assert_nil($wt_headers[2])
+    assert_equal("again", got[0].title)
+    assert_equal("\"v2\"", JSON.parse(Funicular::DB.read_meta($wt_db, "http:wt_posts:/wt_posts"))["etag"])
+  end
+
+  def test_no_store_and_missing_etags_are_not_remembered
+    $wt_response = tagged([{ "id" => 1, "title" => "a" }], "\"v1\"", "no-store")
+    WtPost.all { |r, e| }
+    assert_nil(Funicular::DB.read_meta($wt_db, "http:wt_posts:/wt_posts"))
+    $wt_response = tagged([{ "id" => 1, "title" => "a" }], "\"v1\"")
+    WtPost.all { |r, e| }
+    assert_equal(false, Funicular::DB.read_meta($wt_db, "http:wt_posts:/wt_posts").nil?)
+    $wt_response = ok([{ "id" => 1, "title" => "a" }])
+    WtPost.all { |r, e| }
+    assert_nil(Funicular::DB.read_meta($wt_db, "http:wt_posts:/wt_posts"))
+  end
+
+  # The cache entry lists ids in one model's table; another model that
+  # GETs the same path must not revalidate against it.
+  def test_two_models_on_one_path_keep_separate_cache_entries
+    $wt_response = tagged([{ "id" => 1, "title" => "a" }], "\"v1\"")
+    WtPost.all { |r, e| }
+    WtDigest.all { |r, e| }
+    assert_equal([nil, nil], $wt_headers)
+    $wt_response = not_modified
+    got = nil
+    WtDigest.all { |r, e| got = r }
+    assert_equal({ "If-None-Match" => "\"v1\"" }, $wt_headers[2])
+    assert_equal(["WtDigest"], got.map { |d| d.class.to_s })
+  end
+
+  def test_partial_representations_merge_into_one_replica_row
+    $wt_response = ok([{ "id" => 1, "title" => "summary" }])
+    WtPost.all { |r, e| }
+    $wt_response = ok({ "id" => 1, "done" => true })
+    WtPost.find(1) { |r, e| }
+    assert_equal(["summary", 1],
+      $wt_db.execute("SELECT title, done FROM wt_posts WHERE id = 1")[0])
+    # An explicit null IS written.
+    $wt_response = ok({ "id" => 1, "title" => nil })
+    WtPost.find(1) { |r, e| }
+    assert_equal([nil, 1],
+      $wt_db.execute("SELECT title, done FROM wt_posts WHERE id = 1")[0])
+    # An id-only row is a no-op on an existing row.
+    $wt_response = ok({ "id" => 1 })
+    WtPost.find(1) { |r, e| }
+    assert_equal([nil, 1],
+      $wt_db.execute("SELECT title, done FROM wt_posts WHERE id = 1")[0])
+  end
+
+  def test_absorb_lands_rows_like_a_fetch
+    WtPost.absorb([{ "id" => 1, "title" => "ssr", "done" => 1 },
+                   { "id" => 2, "title" => "seeded" }])
+    assert_equal(2, $wt_db.execute("SELECT COUNT(*) FROM wt_posts")[0][0])
+    assert_equal(1, $wt_notified)
+    assert_equal(true, WtPost.local.find(1).done)
+    # Nothing to absorb is nothing done; no replica is nothing done.
+    WtPost.absorb([])
+    WtPost.absorb(nil)
+    WtSession.absorb([{ "id" => 3 }])
+    assert_equal(1, $wt_notified)
+    assert_equal(0, $wt_calls.size)
+  end
+
+  def test_ephemeral_and_unbooted_models_never_send_if_none_match
+    $wt_response = tagged({ "id" => 1, "title" => "a" }, "\"v1\"")
+    WtSession.find(1) { |s, e| }
+    WtSession.find(1) { |s, e| }
+    WtBare.find(1) { |s, e| }
+    WtBare.find(1) { |s, e| }
+    assert_equal([nil, nil, nil, nil], $wt_headers)
   end
 end
