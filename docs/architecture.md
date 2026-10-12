@@ -286,7 +286,11 @@ deprecated and removed once `refresh :live` ships.
   `"controller#action"` alias, a hand-written entry, or `nil` to hide one),
   and `routes: false` are the escape hatches. An explicit `endpoints: {}`
   declares a model with no REST side. The derivation drops optional groups
-  (`(/:locale)`) and skips glob routes (`*path`).
+  (`(/:locale)`) and skips glob routes (`*path`). `Schema::Associations` sends
+  each `belongs_to` whose foreign key is an exposed attribute, read from the
+  ActiveRecord reflections; `Model.load_schema` defines the reader and the
+  inverse `has_many` from it. `associations:` (`false`, `nil` per name, or a
+  hand-written entry) is its escape hatch.
 
 ## Vendored artifacts
 
