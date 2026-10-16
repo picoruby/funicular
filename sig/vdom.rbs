@@ -46,7 +46,7 @@ module Funicular
 
       private def current_error_boundary: () -> ErrorBoundary?
       private def render_element: (Element element, JS::Element? parent) -> JS::Element
-      private def render_text: (VDOM::Text text, JS::Element? parent) -> JS::Element
+      private def render_text: (VDOM::Text text, JS::Element? parent) -> JS::Object
       private def render_component: (VDOM::Component component_vnode, JS::Element? parent) -> JS::Element
     end
 
