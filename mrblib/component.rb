@@ -711,8 +711,9 @@ module Funicular
         @event_listeners << callback_id
       end
 
-      # Add debug attribute for DevTools
-      if Funicular::Debug.enabled? && event_types.length > 0
+      # Add debug attribute for DevTools. A node with event handlers is an
+      # Element; the test narrows the type for steep.
+      if Funicular::Debug.enabled? && event_types.length > 0 && dom_element.is_a?(JS::Element)
         dom_element.setAttribute("data-event-listeners", event_types.join(","))
       end
 

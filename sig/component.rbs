@@ -21,12 +21,15 @@ module Funicular
 
     attr_accessor props: Hash[Symbol, untyped]
     attr_accessor vdom: VDOM::VNode | VDOM::Text | nil
-    attr_accessor dom_element: JS::Element
+    # The DOM node the component renders to. picoruby-wasm wraps only an
+    # Element (or the Document) as JS::Element; a Text node is a JS::Object,
+    # and a component may render to one.
+    attr_accessor dom_element: JS::Object
     attr_accessor mounted: bool
     attr_accessor runtime: Runtime
     attr_accessor children: Array[VDOM::child_t]
     attr_accessor current_children: Array[VDOM::child_t]?
-    attr_reader refs: Hash[Symbol, JS::Element]
+    attr_reader refs: Hash[Symbol, JS::Object]
 
     type suspense_definition = { loader: untyped, on_resolve: untyped, min_delay: Integer? }
 
@@ -69,9 +72,9 @@ module Funicular
     def render: () -> (VDOM::VNode | String | Integer | Float | Array[untyped] | nil)
     def build_vdom: () -> (VDOM::VNode | VDOM::Text | nil)
 
-    def bind_events: (JS::Element dom_element, VDOM::VNode | VDOM::Text | nil vnode) -> void
+    def bind_events: (JS::Object dom_element, VDOM::VNode | VDOM::Text | nil vnode) -> void
     def report_handler_error: (String event_name, String handler, StandardError error) -> void
-    def collect_refs: (JS::Element dom_element, VDOM::VNode | VDOM::Text | nil vnode, ?Hash[Symbol, JS::Element] refs_map) -> Hash[Symbol, JS::Element]
+    def collect_refs: (JS::Object dom_element, VDOM::VNode | VDOM::Text | nil vnode, ?Hash[Symbol, JS::Object] refs_map) -> Hash[Symbol, JS::Object]
     def normalize_vnode_for_view: (untyped value) -> (VDOM::Element | VDOM::Text | VDOM::Component | nil)
     def __view__: () -> ViewContext
     def routes: () -> untyped
@@ -115,7 +118,7 @@ module Funicular
     private def add_form_field_value: (Hash[Symbol, untyped] data, untyped field) -> void
     private def hydration_match?: (untyped vnode, untyped dom_element) -> bool
     private def warn_hydration_mismatch: (untyped vnode, untyped dom_element) -> void
-    private def full_render_fallback: (VDOM::VNode | VDOM::Text | nil new_vdom, untyped server_dom) -> JS::Element
+    private def full_render_fallback: (VDOM::VNode | VDOM::Text | nil new_vdom, untyped server_dom) -> JS::Object
     private def hydrate_child_components: (untyped vnode, untyped dom_element) -> void
   end
 end
