@@ -29,6 +29,9 @@ module Funicular
     attr_accessor runtime: Runtime
     attr_accessor children: Array[VDOM::child_t]
     attr_accessor current_children: Array[VDOM::child_t]?
+    # the callback ids addEventListener answered, removed on cleanup
+    @event_listeners: Array[Integer]
+    @child_components: Array[Component]
     attr_reader refs: Hash[Symbol, JS::Object]
 
     type suspense_definition = { loader: untyped, on_resolve: untyped, min_delay: Integer? }

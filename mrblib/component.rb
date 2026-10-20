@@ -117,7 +117,7 @@ module Funicular
       @vdom = nil
       @dom_element = nil
       @refs = {} #: Hash[Symbol, JS::Element]
-      @event_listeners = [] #: Array[untyped]
+      @event_listeners = [] #: Array[Integer]
       @mounted = false
       @updating = false
       @child_components = [] #: Array[Funicular::Component]
@@ -779,7 +779,7 @@ module Funicular
       @event_listeners.each do |callback_id|
         JS::Object.removeEventListener(callback_id)
       end
-      @event_listeners = [] #: Array[untyped]
+      @event_listeners = [] #: Array[Integer]
 
       # NOTE: Do NOT cleanup child component events here!
       # Child components manage their own events and will cleanup
