@@ -15,4 +15,7 @@ MRuby::Gem::Specification.new('picoruby-funicular') do |spec|
   spec.add_dependency 'mruby-array-ext', gemdir: "#{MRUBY_ROOT}/mrbgems/picoruby-mruby/lib/mruby/mrbgems/mruby-array-ext"
   spec.add_dependency 'mruby-string-ext', gemdir: "#{MRUBY_ROOT}/mrbgems/picoruby-mruby/lib/mruby/mrbgems/mruby-string-ext"
   spec.add_dependency 'mruby-metaprog', gemdir: "#{MRUBY_ROOT}/mrbgems/picoruby-mruby/lib/mruby/mrbgems/mruby-metaprog"
+  # VDOM::Patch is a Data: each member is a C method, which the AOT
+  # compiler and the type inference read as a typed slot
+  spec.add_dependency 'mruby-data', gemdir: "#{MRUBY_ROOT}/mrbgems/picoruby-mruby/lib/mruby/mrbgems/mruby-data"
 end

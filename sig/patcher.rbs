@@ -11,7 +11,7 @@ module Funicular
       # Accepts JS::Object since callers narrow via is_a?(JS::Element) at runtime
       private def update_props: (JS::Object element, Hash[Symbol, String?] props_patch) -> void
       private def create_element: (untyped vnode) -> JS::Object
-      private def unmount_component: (VDOM::VNode vnode) -> void
+      private def unmount_component: (node_t vnode) -> void
     end
 
   end

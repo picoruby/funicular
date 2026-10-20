@@ -3,17 +3,23 @@ class VDOMDifferTest < Picotest::Test
     @differ = Funicular::VDOM::Differ
   end
 
+  # the Patch class, read when a test runs (the constant is not defined
+  # yet when this file loads)
+  def patch
+    Funicular::VDOM::Patch
+  end
+
   # Basic diff tests
   def test_diff_returns_replace_when_old_is_nil
     new_node = Funicular::VDOM::Element.new('div')
     patches = @differ.diff(nil, new_node)
-    assert_equal([[:replace, new_node, nil]], patches)
+    assert_equal([patch.replace(new_node, nil)], patches)
   end
 
   def test_diff_returns_remove_when_new_is_nil
     old_node = Funicular::VDOM::Element.new('div')
     patches = @differ.diff(old_node, nil)
-    assert_equal([[:remove, old_node]], patches)
+    assert_equal([patch.remove(old_node)], patches)
   end
 
   def test_diff_text_node_no_change
@@ -27,11 +33,11 @@ class VDOMDifferTest < Picotest::Test
     old_node = Funicular::VDOM::Text.new('hello')
     new_node = Funicular::VDOM::Text.new('world')
     patches = @differ.diff(old_node, new_node)
-    assert_equal([[:text, 'world']], patches)
+    assert_equal([patch.text('world')], patches)
   end
 
   def test_diff_string_child_changed
-    assert_equal([[:text, 'world']], @differ.diff('hello', 'world'))
+    assert_equal([patch.text('world')], @differ.diff('hello', 'world'))
   end
 
   def test_nil_child_keeps_sibling_positions
@@ -39,14 +45,14 @@ class VDOMDifferTest < Picotest::Test
     notice = Funicular::VDOM::Element.new('p')
     old_node = Funicular::VDOM::Element.new('main', {}, [nil, form])
     new_node = Funicular::VDOM::Element.new('main', {}, [notice, form])
-    assert_equal([[0, [[:replace, notice, '']]]], @differ.diff(old_node, new_node))
+    assert_equal([patch.child(0, [patch.replace(notice, '')])], @differ.diff(old_node, new_node))
   end
 
   def test_diff_element_different_tag
     old_node = Funicular::VDOM::Element.new('div')
     new_node = Funicular::VDOM::Element.new('span')
     patches = @differ.diff(old_node, new_node)
-    assert_equal([[:replace, new_node, old_node]], patches)
+    assert_equal([patch.replace(new_node, old_node)], patches)
   end
 
   def test_diff_element_same_tag_no_props_change
@@ -60,21 +66,21 @@ class VDOMDifferTest < Picotest::Test
     old_node = Funicular::VDOM::Element.new('div', {class: 'foo'})
     new_node = Funicular::VDOM::Element.new('div', {class: 'bar'})
     patches = @differ.diff(old_node, new_node)
-    assert_equal([[:props, {class: 'bar'}]], patches)
+    assert_equal([patch.props({class: 'bar'})], patches)
   end
 
   def test_diff_element_props_added
     old_node = Funicular::VDOM::Element.new('div')
     new_node = Funicular::VDOM::Element.new('div', {class: 'foo'})
     patches = @differ.diff(old_node, new_node)
-    assert_equal([[:props, {class: 'foo'}]], patches)
+    assert_equal([patch.props({class: 'foo'})], patches)
   end
 
   def test_diff_element_props_removed
     old_node = Funicular::VDOM::Element.new('div', {class: 'foo'})
     new_node = Funicular::VDOM::Element.new('div')
     patches = @differ.diff(old_node, new_node)
-    assert_equal([[:props, {class: nil}]], patches)
+    assert_equal([patch.props({class: nil})], patches)
   end
 
   # Children diff tests - index-based (no keys)
@@ -103,8 +109,9 @@ class VDOMDifferTest < Picotest::Test
     ])
     patches = @differ.diff(old_element, new_element)
     assert_equal(1, patches.length)
-    assert_equal(0, patches[0][0]) # Child index 0
-    assert_equal([[:props, {class: 'bar'}]], patches[0][1])
+    assert_equal(:child, patches[0].op)
+    assert_equal(0, patches[0].index) # Child index 0
+    assert_equal([patch.props({class: 'bar'})], patches[0].patches)
   end
 
   def test_diff_children_by_index_child_added
@@ -117,9 +124,9 @@ class VDOMDifferTest < Picotest::Test
     ])
     patches = @differ.diff(old_element, new_element)
     assert_equal(1, patches.length)
-    assert_equal(1, patches[0][0]) # Child index 1
+    assert_equal(1, patches[0].index) # Child index 1
     new_li = new_element.children[1]
-    assert_equal([[:replace, new_li, nil]], patches[0][1])
+    assert_equal([patch.replace(new_li, nil)], patches[0].patches)
   end
 
   def test_diff_children_by_index_child_removed
@@ -132,9 +139,9 @@ class VDOMDifferTest < Picotest::Test
     ])
     patches = @differ.diff(old_element, new_element)
     assert_equal(1, patches.length)
-    assert_equal(1, patches[0][0]) # Child index 1
+    assert_equal(1, patches[0].index) # Child index 1
     old_li = old_element.children[1]
-    assert_equal([[:remove, old_li]], patches[0][1])
+    assert_equal([patch.remove(old_li)], patches[0].patches)
   end
 
   # Children diff tests - key-based
@@ -162,11 +169,11 @@ class VDOMDifferTest < Picotest::Test
     ])
     patches = @differ.diff(old_element, new_element)
     assert_equal(1, patches.length)
-    assert_equal(:keyed_children, patches[0][0])
-    ops = patches[0][1]
-    assert_equal([:keep, 1, 0, []], ops[0])
-    assert_equal([:keep, 0, 1, []], ops[1])
-    assert_equal([], patches[0][2])
+    assert_equal(:keyed_children, patches[0].op)
+    ops = patches[0].ops
+    assert_equal(patch.keep(1, 0, []), ops[0])
+    assert_equal(patch.keep(0, 1, []), ops[1])
+    assert_equal([], patches[0].removes)
   end
 
   def test_diff_children_with_keys_element_added
@@ -181,21 +188,21 @@ class VDOMDifferTest < Picotest::Test
     ])
     patches = @differ.diff(old_element, new_element)
     assert_equal(1, patches.length)
-    assert_equal(:keyed_children, patches[0][0])
-    ops = patches[0][1]
-    removes = patches[0][2]
+    assert_equal(:keyed_children, patches[0].op)
+    ops = patches[0].ops
+    removes = patches[0].removes
     # 'a' kept at index 0
-    assert_equal(:keep, ops[0][0])
-    assert_equal(0, ops[0][1]) # old_index
-    assert_equal(0, ops[0][2]) # new_index
+    assert_equal(:keep, ops[0].op)
+    assert_equal(0, ops[0].index) # old_index
+    assert_equal(0, ops[0].new_index)
     # 'c' inserted at new_index 1
-    assert_equal(:insert, ops[1][0])
-    assert_equal(1, ops[1][1]) # new_index
-    assert_equal('c', ops[1][2].key)
+    assert_equal(:insert, ops[1].op)
+    assert_equal(1, ops[1].new_index)
+    assert_equal('c', ops[1].node.key)
     # 'b' kept (old_index=1 -> new_index=2)
-    assert_equal(:keep, ops[2][0])
-    assert_equal(1, ops[2][1]) # old_index
-    assert_equal(2, ops[2][2]) # new_index
+    assert_equal(:keep, ops[2].op)
+    assert_equal(1, ops[2].index) # old_index
+    assert_equal(2, ops[2].new_index)
     # No removes
     assert_equal([], removes)
   end
@@ -212,21 +219,22 @@ class VDOMDifferTest < Picotest::Test
     ])
     patches = @differ.diff(old_element, new_element)
     assert_equal(1, patches.length)
-    assert_equal(:keyed_children, patches[0][0])
-    ops = patches[0][1]
-    removes = patches[0][2]
+    assert_equal(:keyed_children, patches[0].op)
+    ops = patches[0].ops
+    removes = patches[0].removes
     # 'a' kept at old_index=0 -> new_index=0
-    assert_equal(:keep, ops[0][0])
-    assert_equal(0, ops[0][1])
-    assert_equal(0, ops[0][2])
+    assert_equal(:keep, ops[0].op)
+    assert_equal(0, ops[0].index)
+    assert_equal(0, ops[0].new_index)
     # 'c' kept at old_index=2 -> new_index=1
-    assert_equal(:keep, ops[1][0])
-    assert_equal(2, ops[1][1])
-    assert_equal(1, ops[1][2])
+    assert_equal(:keep, ops[1].op)
+    assert_equal(2, ops[1].index)
+    assert_equal(1, ops[1].new_index)
     # 'b' (old_index=1) removed
     assert_equal(1, removes.length)
-    assert_equal(1, removes[0][0]) # old_index
-    assert_equal('b', removes[0][1].key)
+    assert_equal(:remove, removes[0].op)
+    assert_equal(1, removes[0].index) # old_index
+    assert_equal('b', removes[0].node.key)
   end
 
   def test_diff_children_with_keys_removes_unmatched_unkeyed_old
@@ -243,18 +251,18 @@ class VDOMDifferTest < Picotest::Test
     ])
     patches = @differ.diff(old_element, new_element)
     assert_equal(1, patches.length)
-    assert_equal(:keyed_children, patches[0][0])
-    ops = patches[0][1]
-    removes = patches[0][2]
+    assert_equal(:keyed_children, patches[0].op)
+    ops = patches[0].ops
+    removes = patches[0].removes
     # both keyed children inserted
-    assert_equal(:insert, ops[0][0])
-    assert_equal('a', ops[0][2].key)
-    assert_equal(:insert, ops[1][0])
-    assert_equal('b', ops[1][2].key)
+    assert_equal(:insert, ops[0].op)
+    assert_equal('a', ops[0].node.key)
+    assert_equal(:insert, ops[1].op)
+    assert_equal('b', ops[1].node.key)
     # the unkeyed placeholder at old_index 0 is removed
     assert_equal(1, removes.length)
-    assert_equal(0, removes[0][0]) # old_index
-    assert_nil(removes[0][1].key)
+    assert_equal(0, removes[0].index) # old_index
+    assert_nil(removes[0].node.key)
   end
 
   def test_diff_children_with_keys_removes_unmatched_string_old
@@ -268,12 +276,12 @@ class VDOMDifferTest < Picotest::Test
     ])
     patches = @differ.diff(old_element, new_element)
     assert_equal(1, patches.length)
-    assert_equal(:keyed_children, patches[0][0])
-    ops = patches[0][1]
-    removes = patches[0][2]
-    assert_equal(:insert, ops[0][0])
-    assert_equal(:insert, ops[1][0])
-    assert_equal([[0, 'Loading...']], removes)
+    assert_equal(:keyed_children, patches[0].op)
+    ops = patches[0].ops
+    removes = patches[0].removes
+    assert_equal(:insert, ops[0].op)
+    assert_equal(:insert, ops[1].op)
+    assert_equal([patch.remove('Loading...', 0)], removes)
   end
 
   def test_diff_children_with_keys_removes_trailing_string_old
@@ -288,10 +296,10 @@ class VDOMDifferTest < Picotest::Test
     ])
     patches = @differ.diff(old_element, new_element)
     assert_equal(1, patches.length)
-    ops = patches[0][1]
-    removes = patches[0][2]
-    assert_equal([[:keep, 1, 0, []]], ops)
-    assert_equal([[0, 'x']], removes)
+    ops = patches[0].ops
+    removes = patches[0].removes
+    assert_equal([patch.keep(1, 0, [])], ops)
+    assert_equal([patch.remove('x', 0)], removes)
   end
 
   def test_diff_children_with_keys_element_props_changed
@@ -305,16 +313,16 @@ class VDOMDifferTest < Picotest::Test
     ])
     patches = @differ.diff(old_element, new_element)
     assert_equal(1, patches.length)
-    assert_equal(:keyed_children, patches[0][0])
-    ops = patches[0][1]
+    assert_equal(:keyed_children, patches[0].op)
+    ops = patches[0].ops
     # 'a' kept with props change
-    assert_equal(:keep, ops[0][0])
-    assert_equal(0, ops[0][1]) # old_index
-    assert_equal(0, ops[0][2]) # new_index
-    assert_equal([[:props, {class: 'baz'}]], ops[0][3]) # child_patches
+    assert_equal(:keep, ops[0].op)
+    assert_equal(0, ops[0].index) # old_index
+    assert_equal(0, ops[0].new_index)
+    assert_equal([patch.props({class: 'baz'})], ops[0].patches) # child_patches
     # 'b' kept with no change
-    assert_equal(:keep, ops[1][0])
-    assert_equal([], ops[1][3])
+    assert_equal(:keep, ops[1].op)
+    assert_equal([], ops[1].patches)
   end
 
   def test_diff_children_with_keys_mixed_with_without_keys
@@ -329,15 +337,15 @@ class VDOMDifferTest < Picotest::Test
     patches = @differ.diff(old_element, new_element)
     # Should detect change in unkeyed child at index 1
     assert_equal(1, patches.length)
-    assert_equal(:keyed_children, patches[0][0])
-    ops = patches[0][1]
+    assert_equal(:keyed_children, patches[0].op)
+    ops = patches[0].ops
     # 'a' kept
-    assert_equal(:keep, ops[0][0])
+    assert_equal(:keep, ops[0].op)
     # unkeyed span->p triggers replace inside keep
-    assert_equal(:keep, ops[1][0])
-    assert_equal(1, ops[1][1]) # old_index
-    assert_equal(1, ops[1][2]) # new_index
-    assert_equal([[:replace, new_element.children[1], old_element.children[1]]], ops[1][3])
+    assert_equal(:keep, ops[1].op)
+    assert_equal(1, ops[1].index) # old_index
+    assert_equal(1, ops[1].new_index)
+    assert_equal([patch.replace(new_element.children[1], old_element.children[1])], ops[1].patches)
   end
 
   # Component diff tests
@@ -345,7 +353,7 @@ class VDOMDifferTest < Picotest::Test
     old_node = Funicular::VDOM::Component.new(String, {foo: 'bar'})
     new_node = Funicular::VDOM::Component.new(Array, {foo: 'bar'})
     patches = @differ.diff(old_node, new_node)
-    assert_equal([[:replace, new_node, old_node]], patches)
+    assert_equal([patch.replace(new_node, old_node)], patches)
   end
 
   def test_diff_component_same_class_same_props
@@ -359,6 +367,6 @@ class VDOMDifferTest < Picotest::Test
     old_node = Funicular::VDOM::Component.new(String, {foo: 'bar'})
     new_node = Funicular::VDOM::Component.new(String, {foo: 'baz'})
     patches = @differ.diff(old_node, new_node)
-    assert_equal([[:replace, new_node, old_node]], patches)
+    assert_equal([patch.replace(new_node, old_node)], patches)
   end
 end

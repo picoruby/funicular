@@ -12,6 +12,62 @@ module Funicular
     # cannot become HTML syntax.
     SCRIPTING_ELEMENTS = %w[script]
 
+    # One step of a DOM update, as the Differ computes it and the Patcher
+    # applies it. A Data: every member is one method, which the type
+    # inference and the AOT compiler read as a typed slot, and two patches
+    # with the same members are ==. `op` names the step; a member the step
+    # does not use is nil, or NONE for a list.
+    #   :replace            node (the new one), old
+    #   :remove             node (the old one); index (its old position) under :keyed_children
+    #   :text               content
+    #   :props              props (the changed attributes; a nil value removes one)
+    #   :child              index, patches (the child's own)
+    #   :keep               index (the old position), new_index, patches (the child's own)
+    #   :insert             new_index, node
+    #   :keyed_children     ops (:keep and :insert), removes (:remove with index)
+    #   :update_and_rebind  instance, patches (the internal ones), vdom (the new internal VDOM)
+    class Patch < Data.define(:op, :node, :old, :content, :props, :index, :new_index,
+                              :patches, :ops, :removes, :instance, :vdom)
+      NONE = [] #: Array[Patch]
+      NONE.freeze
+
+      def self.replace(node, old)
+        new(:replace, node, old, nil, nil, nil, nil, NONE, NONE, NONE, nil, nil)
+      end
+
+      def self.remove(node, index = nil)
+        new(:remove, node, nil, nil, nil, index, nil, NONE, NONE, NONE, nil, nil)
+      end
+
+      def self.text(content)
+        new(:text, nil, nil, content, nil, nil, nil, NONE, NONE, NONE, nil, nil)
+      end
+
+      def self.props(props)
+        new(:props, nil, nil, nil, props, nil, nil, NONE, NONE, NONE, nil, nil)
+      end
+
+      def self.child(index, patches)
+        new(:child, nil, nil, nil, nil, index, nil, patches, NONE, NONE, nil, nil)
+      end
+
+      def self.keep(index, new_index, patches)
+        new(:keep, nil, nil, nil, nil, index, new_index, patches, NONE, NONE, nil, nil)
+      end
+
+      def self.insert(new_index, node)
+        new(:insert, node, nil, nil, nil, nil, new_index, NONE, NONE, NONE, nil, nil)
+      end
+
+      def self.keyed_children(ops, removes)
+        new(:keyed_children, nil, nil, nil, nil, nil, nil, NONE, ops, removes, nil, nil)
+      end
+
+      def self.update_and_rebind(instance, patches, vdom)
+        new(:update_and_rebind, nil, nil, nil, nil, nil, nil, patches, NONE, NONE, instance, vdom)
+      end
+    end
+
     def self.valid_tag_name?(name)
       str = name.to_s
       return false if str.empty?

@@ -1,7 +1,37 @@
 module Funicular
   module VDOM
-    type patch_t = Array[untyped]
+    type patch_t = Patch
     type child_t = Element | Text | Component | String | Array[Element | Text | Component | String]
+    # what a patch carries as a node: a child, or a VNode a caller typed as the base class
+    type node_t = VNode | child_t | nil
+
+    class Patch < Data
+      NONE: Array[Patch]
+
+      attr_reader op: Symbol
+      attr_reader node: node_t
+      attr_reader old: node_t
+      attr_reader content: String?
+      attr_reader props: Hash[Symbol, untyped]?
+      attr_reader index: Integer?
+      attr_reader new_index: Integer?
+      attr_reader patches: Array[Patch]
+      attr_reader ops: Array[Patch]
+      attr_reader removes: Array[Patch]
+      attr_reader instance: Funicular::Component?
+      attr_reader vdom: VNode?
+
+      def self.new: (Symbol op, node_t node, node_t old, String? content, Hash[Symbol, untyped]? props, Integer? index, Integer? new_index, Array[Patch] patches, Array[Patch] ops, Array[Patch] removes, Funicular::Component? instance, VNode? vdom) -> Patch
+      def self.replace: (node_t node, node_t old) -> Patch
+      def self.remove: (node_t node, ?Integer? index) -> Patch
+      def self.text: (String content) -> Patch
+      def self.props: (Hash[Symbol, untyped] props) -> Patch
+      def self.child: (Integer index, Array[Patch] patches) -> Patch
+      def self.keep: (Integer index, Integer new_index, Array[Patch] patches) -> Patch
+      def self.insert: (Integer new_index, node_t node) -> Patch
+      def self.keyed_children: (Array[Patch] ops, Array[Patch] removes) -> Patch
+      def self.update_and_rebind: (Funicular::Component instance, Array[Patch] patches, VNode? vdom) -> Patch
+    end
 
     URL_ATTRIBUTES: Array[String]
     SCRIPTING_ELEMENTS: Array[String]

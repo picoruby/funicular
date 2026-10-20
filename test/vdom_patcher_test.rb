@@ -7,6 +7,12 @@ module JS
 end
 
 class VDOMPatcherTest < Picotest::Test
+  # the Patch class, read when a test runs (the constant is not defined
+  # yet when this file loads)
+  def patch
+    Funicular::VDOM::Patch
+  end
+
   # Mock childNodes that behaves like JS::Object
   class MockChildNodes < JS::Object
     attr_reader :elements
@@ -171,7 +177,7 @@ class VDOMPatcherTest < Picotest::Test
   # Test props update
   def test_update_props_add_attribute
     element = @doc.createElement('div')
-    patches = [[:props, {class: 'foo', id: 'bar'}]]
+    patches = [patch.props({class: 'foo', id: 'bar'})]
 
     @patcher.apply(element, patches)
 
@@ -182,7 +188,7 @@ class VDOMPatcherTest < Picotest::Test
   def test_update_props_change_attribute
     element = @doc.createElement('div')
     element.setAttribute('class', 'old')
-    patches = [[:props, {class: 'new'}]]
+    patches = [patch.props({class: 'new'})]
 
     @patcher.apply(element, patches)
 
@@ -192,7 +198,7 @@ class VDOMPatcherTest < Picotest::Test
   def test_update_props_remove_attribute
     element = @doc.createElement('div')
     element.setAttribute('class', 'foo')
-    patches = [[:props, {class: nil}]]
+    patches = [patch.props({class: nil})]
 
     @patcher.apply(element, patches)
 
@@ -201,7 +207,7 @@ class VDOMPatcherTest < Picotest::Test
 
   def test_update_props_sets_boolean_property
     element = @doc.createElement('button')
-    patches = [[:props, {disabled: true}]]
+    patches = [patch.props({disabled: true})]
 
     @patcher.apply(element, patches)
 
@@ -213,7 +219,7 @@ class VDOMPatcherTest < Picotest::Test
     element = @doc.createElement('button')
     element.setAttribute('disabled', 'disabled')
     element[:disabled] = true
-    patches = [[:props, {disabled: false}]]
+    patches = [patch.props({disabled: false})]
 
     @patcher.apply(element, patches)
 
@@ -223,7 +229,7 @@ class VDOMPatcherTest < Picotest::Test
 
   def test_update_props_sets_textarea_value_property
     element = @doc.createElement('textarea')
-    patches = [[:props, {value: 'hello'}]]
+    patches = [patch.props({value: 'hello'})]
 
     @patcher.apply(element, patches)
 
@@ -233,7 +239,7 @@ class VDOMPatcherTest < Picotest::Test
 
   def test_update_props_skip_event_handlers
     element = @doc.createElement('div')
-    patches = [[:props, {onclick: 'handler', class: 'foo'}]]
+    patches = [patch.props({onclick: 'handler', class: 'foo'})]
 
     @patcher.apply(element, patches)
 
@@ -245,7 +251,7 @@ class VDOMPatcherTest < Picotest::Test
 
   def test_update_props_security_checks_are_case_insensitive
     element = @doc.createElement('a')
-    patches = [[:props, {'ONCLICK' => 'alert(1)', 'HREF' => 'javascript:alert(2)'}]]
+    patches = [patch.props({'ONCLICK' => 'alert(1)', 'HREF' => 'javascript:alert(2)'})]
 
     @patcher.apply(element, patches)
 
@@ -255,7 +261,7 @@ class VDOMPatcherTest < Picotest::Test
 
   def test_update_props_blocks_obfuscated_javascript_and_srcdoc
     element = @doc.createElement('div')
-    patches = [[:props, {href: "java\nscript:alert(1)", srcdoc: '<script>alert(2)</script>'}]]
+    patches = [patch.props({href: "java\nscript:alert(1)", srcdoc: '<script>alert(2)</script>'})]
 
     @patcher.apply(element, patches)
 
@@ -364,7 +370,7 @@ class VDOMPatcherTest < Picotest::Test
 
     assert_equal(1, parent.children.length)
 
-    patches = [[:remove]]
+    patches = [patch.remove(nil)]
     @patcher.apply(child, patches)
 
     assert_equal(0, parent.children.length)
@@ -378,7 +384,7 @@ class VDOMPatcherTest < Picotest::Test
     parent.appendChild(existing_child)
 
     new_child_vnode = Funicular::VDOM::Element.new('li', {class: 'new'})
-    patches = [[1, [[:replace, new_child_vnode]]]]
+    patches = [patch.child(1, [patch.replace(new_child_vnode, nil)])]
 
     @patcher.apply(parent, patches)
 
@@ -392,7 +398,7 @@ class VDOMPatcherTest < Picotest::Test
     child.setAttribute('class', 'old')
     parent.appendChild(child)
 
-    patches = [[0, [[:props, {class: 'updated'}]]]]
+    patches = [patch.child(0, [patch.props({class: 'updated'})])]
 
     @patcher.apply(parent, patches)
 
@@ -485,7 +491,7 @@ class VDOMPatcherTest < Picotest::Test
 
     old_vnode = Funicular::VDOM::Element.new('li', {}, [])
     new_vnode = Funicular::VDOM::Element.new('form', {}, [])
-    patches = [[:update_and_rebind, instance, [[:replace, new_vnode, old_vnode]], new_vnode]]
+    patches = [patch.update_and_rebind(instance, [patch.replace(new_vnode, old_vnode)], new_vnode)]
 
     result = @patcher.apply(old_root, patches)
 
@@ -522,7 +528,7 @@ class VDOMPatcherTest < Picotest::Test
 
   def test_text_patch_updates_node_in_place
     node = @doc.createTextNode('old')
-    @patcher.apply(node, [[:text, 'new']])
+    @patcher.apply(node, [patch.text('new')])
     assert_equal('new', node.text_content)
   end
 
