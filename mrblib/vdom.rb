@@ -328,7 +328,7 @@ module Funicular
         is_error_boundary = instance.is_a?(Funicular::ErrorBoundary)
 
         # Push error boundary to stack if this component is one
-        @error_boundary_stack.push(instance) if is_error_boundary
+        @error_boundary_stack.push(instance) if instance.is_a?(Funicular::ErrorBoundary)
 
         begin
           component_vdom = instance.build_vdom
@@ -336,7 +336,7 @@ module Funicular
 
           # Check if this ErrorBoundary caught an error during child rendering
           # If so, its @vdom was already set to fallback in the rescue block
-          error_was_caught = is_error_boundary && instance.error_caught_during_render
+          error_was_caught = instance.is_a?(Funicular::ErrorBoundary) && instance.error_caught_during_render
 
           if error_was_caught
             # ErrorBoundary caught an error - use the fallback vdom/dom that were set in rescue

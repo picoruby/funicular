@@ -126,7 +126,7 @@ module Funicular
       @suspense_data = {} #: Hash[Symbol, untyped]
       @suspense_states = {} #: Hash[Symbol, Symbol]
       @suspense_errors = {} #: Hash[Symbol, untyped]
-      @suspense_pending_timers = [] #: Array[untyped]
+      @suspense_pending_timers = [] #: Array[Integer]
       self.class.suspense_definitions.each_key do |name|
         @suspense_states[name] = :pending
       end
@@ -792,7 +792,7 @@ module Funicular
       @suspense_pending_timers.each do |timer_id|
         JS.global.clearTimeout(timer_id)
       end
-      @suspense_pending_timers = [] #: Array[untyped]
+      @suspense_pending_timers = [] #: Array[Integer]
     end
 
     private
@@ -995,7 +995,7 @@ module Funicular
       when Class
         # If it's a component class, create a component VNode
         if value.ancestors.include?(Funicular::Component)
-          VDOM::Component.new(value, {})
+          VDOM::Component.new(value, {}) # steep:ignore ArgumentTypeMismatch
         else
           VDOM::Text.new(value.to_s)
         end

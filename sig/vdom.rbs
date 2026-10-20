@@ -87,13 +87,13 @@ module Funicular
     def self.patch: (JS::Object element, Array[patch_t] patches) -> JS::Object
 
     class Component < VNode
-      attr_reader component_class: untyped
+      attr_reader component_class: singleton(Funicular::Component)
       attr_reader props: Hash[Symbol, untyped]
       attr_reader children: Array[child_t]
       attr_accessor instance: untyped
       attr_accessor runtime: Runtime?
 
-      def initialize: (untyped component_class, ?Hash[Symbol, untyped] props, ?Array[child_t] children) -> void
+      def initialize: (singleton(Funicular::Component) component_class, ?Hash[Symbol, untyped] props, ?Array[child_t] children) -> void
       def ==: (untyped other) -> bool
     end
   end
