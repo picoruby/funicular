@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>VDOM Benchmark - PicoRuby Funicular</title>
+  <link rel="stylesheet" href="../test.css">
+</head>
+<body>
+  <div><a href="../index.html">Back</a></div>
+  <h1>VDOM Benchmark</h1>
+  <p>
+    Renders a keyed list of N items, then diffs and patches it R times
+    against a list where every third text changed and the first item
+    moved to the end. The times come from performance.now in the browser.
+    Run the page once with the irep build of picoruby.wasm and once with
+    the AOT build, and compare the lines.
+  </p>
+  <pre id="results">running...</pre>
+  <div id="container"></div>
+
+  <script type="text/ruby">
+    require 'js'
+    require 'funicular'
+
+    N = 200
+    ROUNDS = 20
+
+    doc = JS.document
+    results = doc.getElementById('results')
+    container = doc.getElementById('container')
+    perf = JS.global[:performance]
+
+    def build_list(n, gen)
+      items = [] #: Array[untyped]
+      i = 0
+      while i < n
+        text = (i % 3 == 0) ? "item #{i} v#{gen}" : "item #{i}"
+        klass = (i % 2 == 0) ? "even" : "odd"
+        items << Funicular::VDOM.create_element('li', { key: "k#{i}", class: klass }, text)
+        i += 1
+      end
+      if gen > 0
+        first = items.shift
+        items << first if first
+      end
+      Funicular::VDOM.create_element('ul', { id: 'bench-list' }, items)
+    end
+
+    lines = [] #: Array[String]
+
+    t0 = perf.now.to_f
+    old_vnode = build_list(N, 0)
+    t1 = perf.now.to_f
+    root = Funicular::VDOM.render(old_vnode, container)
+    t2 = perf.now.to_f
+    lines << "build  N=#{N}: #{(t1 - t0).round(2)} ms"
+    lines << "render N=#{N}: #{(t2 - t1).round(2)} ms"
+
+    build_ms = 0.0
+    diff_ms = 0.0
+    patch_ms = 0.0
+    patch_count = 0
+    patcher = Funicular::VDOM::Patcher.new(doc)
+    gen = 1
+    while gen <= ROUNDS
+      ta = perf.now.to_f
+      new_vnode = build_list(N, gen)
+      tb = perf.now.to_f
+      patches = Funicular::VDOM::Differ.diff(old_vnode, new_vnode)
+      tc = perf.now.to_f
+      root = patcher.apply(root, patches)
+      td = perf.now.to_f
+      build_ms += tb - ta
+      diff_ms += tc - tb
+      patch_ms += td - tc
+      patch_count += patches.length
+      old_vnode = new_vnode
+      gen += 1
+    end
+
+    lines << "rounds R=#{ROUNDS}, patches per round: #{patch_count / ROUNDS}"
+    lines << "build  total #{build_ms.round(2)} ms, per round #{(build_ms / ROUNDS).round(3)} ms"
+    lines << "diff   total #{diff_ms.round(2)} ms, per round #{(diff_ms / ROUNDS).round(3)} ms"
+    lines << "patch  total #{patch_ms.round(2)} ms, per round #{(patch_ms / ROUNDS).round(3)} ms"
+
+    # the DOM must show the last generation
+    first_li = container[:firstChild][:firstChild]
+    lines << "first item now: #{first_li[:textContent]}"
+
+    results.textContent = lines.join("\n")
+  </script>
+  <script src="../init.iife.js"></script>
+</body>
+</html>

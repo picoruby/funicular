@@ -42,7 +42,7 @@
       new = Funicular::VDOM.create_text('World')
       patches = Funicular::VDOM.diff(old, new)
       raise "Diff failed" if patches.empty?
-      raise "Wrong patch type" unless patches[0][0] == :replace
+      raise "Wrong patch type" unless patches[0].op == :replace
     end
 
     test_case("Diff props change") do
@@ -50,8 +50,8 @@
       new = Funicular::VDOM.create_element('button', { class: 'blue' })
       patches = Funicular::VDOM.diff(old, new)
       raise "Diff failed" if patches.empty?
-      raise "Wrong patch type" unless patches[0][0] == :props
-      raise "Wrong prop value" unless patches[0][1][:class] == 'blue'
+      raise "Wrong patch type" unless patches[0].op == :props
+      raise "Wrong prop value" unless patches[0].props[:class] == 'blue'
     end
 
     test_case("Diff no change") do
@@ -66,7 +66,7 @@
       new = Funicular::VDOM.create_element('span')
       patches = Funicular::VDOM.diff(old, new)
       raise "Diff failed" if patches.empty?
-      raise "Wrong patch type" unless patches[0][0] == :replace
+      raise "Wrong patch type" unless patches[0].op == :replace
     end
 
     test_case("Diff child addition") do
@@ -76,8 +76,8 @@
       )
       patches = Funicular::VDOM.diff(old, new)
       raise "Diff failed" if patches.empty?
-      raise "Wrong patch structure" unless patches[0].is_a?(Array)
-      raise "Wrong child index" unless patches[0][0] == 0
+      raise "Wrong patch structure" unless patches[0].op == :child
+      raise "Wrong child index" unless patches[0].index == 0
     end
 
     test_case("Patch text content") do
