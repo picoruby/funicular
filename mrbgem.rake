@@ -3,6 +3,11 @@ MRuby::Gem::Specification.new('picoruby-funicular') do |spec|
   spec.author  = 'HASUMI Hitoshi'
   spec.summary = 'Browser application framework with VDOM for PicoRuby.wasm'
 
+  # picoruby-aot compiles the typed defs, and the widened ones too (the
+  # VDOM path takes Hash[Symbol, untyped] props): on a build with conf.aot
+  spec.aot = true
+  spec.aot_include_widened = true
+
   unless ENV['TEST_TASK']
     spec.add_dependency 'picoruby-wasm'
   end

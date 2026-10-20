@@ -1,6 +1,8 @@
 module Funicular
   class Component
     class StateAccessor
+      @state: Hash[Symbol, untyped]
+
       def initialize: (Hash[Symbol, untyped] state_hash) -> void
       def []: (Symbol key) -> untyped
       def fetch: (Symbol key, ?untyped default) -> untyped
@@ -9,6 +11,10 @@ module Funicular
     end
 
     class ResourceAccessor
+      @data: Hash[Symbol, untyped]
+      @states: Hash[Symbol, Symbol]
+      @errors: Hash[Symbol, untyped]
+
       def initialize: (Hash[Symbol, untyped] data, Hash[Symbol, Symbol] states, Hash[Symbol, untyped] errors) -> void
       def []: (Symbol key) -> untyped
       def fetch: (Symbol key, ?untyped default) -> untyped
@@ -34,6 +40,10 @@ module Funicular
     @child_components: Array[Component]
     # the timer ids setTimeout answered for pending suspense fallbacks
     @suspense_pending_timers: Array[Integer]
+    @suspense_states: Hash[Symbol, Symbol]
+    @state: Hash[Symbol, untyped]
+    # validate_dsl_conflicts! runs once per class
+    self.@dsl_validated: bool
     attr_reader refs: Hash[Symbol, JS::Object]
 
     type suspense_definition = { loader: untyped, on_resolve: untyped, min_delay: Integer? }

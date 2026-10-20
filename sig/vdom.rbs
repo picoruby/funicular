@@ -38,7 +38,7 @@ module Funicular
 
     def self.valid_tag_name?: (String name) -> bool
     def self.text: (untyped child) -> String?
-    def self.child_nodes: (untyped element) -> Array[untyped]
+    def self.child_nodes: (JS::Object element) -> Array[untyped]
     def self.valid_attribute_name?: (untyped name) -> bool
     def self.event_attribute?: (String name) -> bool
     def self.unsafe_url?: (String name, untyped value) -> bool
@@ -90,7 +90,7 @@ module Funicular
       attr_reader component_class: singleton(Funicular::Component)
       attr_reader props: Hash[Symbol, untyped]
       attr_reader children: Array[child_t]
-      attr_accessor instance: untyped
+      attr_accessor instance: Funicular::Component?
       attr_accessor runtime: Runtime?
 
       def initialize: (singleton(Funicular::Component) component_class, ?Hash[Symbol, untyped] props, ?Array[child_t] children) -> void

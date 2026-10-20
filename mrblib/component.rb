@@ -96,7 +96,7 @@ module Funicular
         break if mod == Funicular::Component || mod == Funicular::Tags
         next unless mod.is_a?(Module)
         methods = mod.instance_methods(false) + mod.private_instance_methods(false)
-        offenders = methods.select { |m| Funicular::Tags::RESERVED_DSL[m] } - dsl_overrides
+        offenders = methods.select { |m| Funicular::Tags::RESERVED_DSL[m] } - dsl_overrides #: Array[Symbol]
         next if offenders.empty?
         raise Funicular::DSLCollisionError,
           "#{mod} defines methods that collide with the Funicular DSL: " \
