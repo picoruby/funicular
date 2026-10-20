@@ -264,7 +264,15 @@ module Funicular
       def render_element(element, parent)
         dom_node = @doc.createElement(element.tag)
 
-        element.props.each do |key, value|
+        # while loops, not each: a block inside a block keeps the method
+        # off the AOT compiler, and the children loop nests one
+        props = element.props
+        keys = props.keys
+        ki = 0
+        while ki < keys.length
+          key = keys[ki]
+          value = props[key]
+          ki += 1
           key_str = key.to_s
           normalized_key = key_str.downcase
           if VDOM.event_attribute?(normalized_key)
@@ -288,7 +296,11 @@ module Funicular
           end
         end
 
-        element.children.each do |child|
+        children = element.children
+        chi = 0
+        while chi < children.length
+          child = children[chi]
+          chi += 1
           if child.is_a?(VNode)
             child_dom = render(child)
             dom_node.appendChild(child_dom)
@@ -296,7 +308,10 @@ module Funicular
             text_node = @doc.createTextNode(child)
             dom_node.appendChild(text_node)
           elsif child.is_a?(Array)
-            child.each do |c|
+            cj = 0
+            while cj < child.length
+              c = child[cj]
+              cj += 1
               if c.is_a?(VNode)
                 child_dom = render(c)
                 dom_node.appendChild(child_dom)

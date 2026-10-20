@@ -9,7 +9,12 @@ module Funicular
       def apply(element, patches)
         return element if patches.empty?
         result = element
-        patches.each do |patch|
+        # while loops, not each: a block inside a block keeps the method
+        # off the AOT compiler, and the loops here nest
+        pi = 0
+        while pi < patches.length
+          patch = patches[pi]
+          pi += 1
           case patch.op
           when :replace
             new_vnode = patch.node
@@ -113,7 +118,10 @@ module Funicular
             end
 
             # Phase 2: updates against the snapshot
-            ops.each do |op|
+            oi = 0
+            while oi < ops.length
+              op = ops[oi]
+              oi += 1
               next unless op.op == :keep
               old_index = op.index
               next if old_index.nil?
@@ -129,7 +137,11 @@ module Funicular
             # updated alongside every DOM mutation, so a node already sitting
             # at new_index is left untouched (no detach/re-attach).
             live = snapshot.compact #: Array[untyped]
-            ops.each do |op|
+            oj = 0
+            while oj < ops.length
+              op = ops[oj]
+              oj += 1
+              next if op.nil?
               new_index = op.new_index
               next if new_index.nil?
               case op.op
@@ -145,7 +157,14 @@ module Funicular
               next if new_node.nil?
               current = live[new_index]
               next if current.equal?(new_node)
-              live.delete_if { |n| n.equal?(new_node) }
+              li = 0
+              while li < live.length
+                if live[li].equal?(new_node)
+                  live.delete_at(li)
+                else
+                  li += 1
+                end
+              end
               if new_index < live.length
                 live.insert(new_index, new_node)
               else
@@ -166,7 +185,10 @@ module Funicular
             child_element = children[child_index]
             if child_element.nil?
               # No existing child at this index - we need to create new elements
-              child_patches.each do |child_patch|
+              ci = 0
+              while ci < child_patches.length
+                child_patch = child_patches[ci]
+                ci += 1
                 case child_patch.op
                 when :replace
                   new_child_element = create_element(child_patch.node)
@@ -248,7 +270,10 @@ module Funicular
           # Arrays should have been flattened in VDOM::Element.normalize_children
           # Create a wrapper div as fallback
           wrapper = @doc.createElement("div")
-          vnode.each do |child|
+          wi = 0
+          while wi < vnode.length
+            child = vnode[wi]
+            wi += 1
             if child.is_a?(VNode)
               wrapper.appendChild(create_element(child))
             elsif child.is_a?(String)
@@ -265,7 +290,13 @@ module Funicular
         when :element
           raise "Expected Element vnode" unless vnode.is_a?(Element)
           element = @doc.createElement(vnode.tag)
-          vnode.props.each do |key, value|
+          props = vnode.props
+          keys = props.keys
+          ki = 0
+          while ki < keys.length
+            key = keys[ki]
+            value = props[key]
+            ki += 1
             key_str = key.to_s
             normalized_key = key_str.downcase
             next if VDOM.event_attribute?(normalized_key)
@@ -286,14 +317,21 @@ module Funicular
               element.setAttribute(key_str, value.to_s)
             end
           end
-          vnode.children.each do |child|
+          children = vnode.children
+          chi = 0
+          while chi < children.length
+            child = children[chi]
+            chi += 1
             if child.is_a?(VNode)
               element.appendChild(create_element(child))
             elsif child.is_a?(String)
               text_node = @doc.createTextNode(child)
               element.appendChild(text_node)
             elsif child.is_a?(Array)
-              child.each do |c|
+              cj = 0
+              while cj < child.length
+                c = child[cj]
+                cj += 1
                 if c.is_a?(VNode)
                   element.appendChild(create_element(c))
                 elsif c.is_a?(String)
