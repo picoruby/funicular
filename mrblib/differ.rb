@@ -2,12 +2,12 @@ module Funicular
   module VDOM
     class Differ
       def self.diff(old_node, new_node)
-        return [[:replace, new_node, nil]] if old_node.nil? # old_node is nil for new nodes (insertion)
-        return [[:remove, old_node]] if new_node.nil? # new_node is nil for removed nodes
+        return [Patch.replace(new_node, nil)] if old_node.nil? # old_node is nil for new nodes (insertion)
+        return [Patch.remove(old_node)] if new_node.nil? # new_node is nil for removed nodes
 
         if old_node.is_a?(VNode) && new_node.is_a?(VNode)
           if old_node.type != new_node.type
-            return [[:replace, new_node, old_node]]
+            return [Patch.replace(new_node, old_node)]
           end
 
           case old_node.type
@@ -24,15 +24,15 @@ module Funicular
             # @type var new_node: Funicular::VDOM::Component
             diff_component(old_node, new_node)
           else
-            [[:replace, new_node, old_node]]
+            [Patch.replace(new_node, old_node)]
           end
         else
           if old_node == new_node
             []
           elsif old_node.is_a?(String) && new_node.is_a?(String)
-            [[:text, new_node]]
+            [Patch.text(new_node)]
           else
-            [[:replace, new_node, old_node]]
+            [Patch.replace(new_node, old_node)]
           end
         end
       end
@@ -40,21 +40,25 @@ module Funicular
       private
 
       def self.diff_text(old_node, new_node)
-        old_node.content == new_node.content ? [] : [[:text, new_node.content]]
+        old_node.content == new_node.content ? [] : [Patch.text(new_node.content)]
       end
 
       def self.diff_element(old_node, new_node)
-        patches = [] #: Array[patch_t]
+        patches = [] #: Array[Patch]
 
         if old_node.tag != new_node.tag
-          return [[:replace, new_node, old_node]]
+          return [Patch.replace(new_node, old_node)]
         end
 
         props_patch = diff_props(old_node.props, new_node.props)
-        patches << [:props, props_patch] unless props_patch.empty?
+        patches << Patch.props(props_patch) unless props_patch.empty?
 
         child_patches = diff_children(old_node.children, new_node.children)
-        patches += child_patches unless child_patches.empty?
+        i = 0
+        while i < child_patches.length
+          patches << child_patches[i]
+          i += 1
+        end
 
         patches
       end
@@ -98,7 +102,7 @@ module Funicular
       # then the descending removes drop the just-inserted new nodes and
       # the DOM ends up empty.
       #
-      # The new shape is `[[:keyed_children, ops, removes]]`, applied as
+      # The shape is one `Patch.keyed_children(ops, removes)`, applied as
       # three phases by the patcher:
       #   1. removes (descending old_index, against the original DOM snapshot)
       #   2. content updates for kept children (against the snapshot)
@@ -113,7 +117,7 @@ module Funicular
         end
 
         matched_old_indices = {} #: Hash[Integer, bool]
-        ops = [] #: Array[Array[untyped]]
+        ops = [] #: Array[Patch]
         has_change = false
 
         # 2. Process new children, recording one op per new position
@@ -124,10 +128,10 @@ module Funicular
               old_index, old_child = old_key_map[key]
               matched_old_indices[old_index] = true
               child_patches = diff(old_child, new_child)
-              ops << [:keep, old_index, new_index, child_patches]
+              ops << Patch.keep(old_index, new_index, child_patches)
               has_change = true if old_index != new_index || !child_patches.empty?
             else
-              ops << [:insert, new_index, new_child]
+              ops << Patch.insert(new_index, new_child)
               has_change = true
             end
           else
@@ -138,12 +142,12 @@ module Funicular
             old_child = old_children[new_index]
             old_is_keyed = old_child.is_a?(VNode) && old_child.respond_to?(:key) && old_child.key
             if old_child.nil? || old_is_keyed
-              ops << [:insert, new_index, new_child]
+              ops << Patch.insert(new_index, new_child)
               has_change = true
             else
               matched_old_indices[new_index] = true
               child_patches = diff(old_child, new_child)
-              ops << [:keep, new_index, new_index, child_patches]
+              ops << Patch.keep(new_index, new_index, child_patches)
               has_change = true unless child_patches.empty?
             end
           end
@@ -158,22 +162,22 @@ module Funicular
         #    nodes in the DOM (normalize_children keeps them as Strings), so
         #    they must be collected here as well. normalize_children never
         #    leaves nil in the list, so every entry is a real DOM node.
-        removes = [] #: Array[[Integer, child_t]]
+        removes = [] #: Array[Patch]
         old_children.each_with_index do |old_child, old_index|
           next if matched_old_indices[old_index]
-          removes << [old_index, old_child]
+          removes << Patch.remove(old_child, old_index)
           has_change = true
         end
 
         return [] unless has_change
 
-        [[:keyed_children, ops, removes]]
+        [Patch.keyed_children(ops, removes)]
       end
 
       def self.diff_children_by_index(old_children, new_children)
-        patches = [] #: Array[patch_t]
+        patches = [] #: Array[Patch]
         # Collect remove patches separately to apply at the end
-        remove_patches = [] #: Array[patch_t]
+        remove_patches = [] #: Array[Patch]
         max_length = [old_children.length, new_children.length].max
         max_length&.times do |i|
           old_child = old_children[i]
@@ -181,27 +185,35 @@ module Funicular
           child_patches = diff(old_child, new_child)
           unless child_patches.empty?
             # Check if this is a simple remove patch
-            if child_patches.length == 1 && child_patches[0][0] == :remove
-              remove_patches << [i, child_patches]
+            if child_patches.length == 1 && child_patches[0].op == :remove
+              remove_patches << Patch.child(i, child_patches)
             else
-              patches << [i, child_patches]
+              patches << Patch.child(i, child_patches)
             end
           end
         end
-        # Add remove patches at the end, sorted by index in descending order to avoid index shifts
-        patches + remove_patches.sort { |a, b| b[0] <=> a[0] }
+        # Add remove patches at the end, in descending index order to avoid
+        # index shifts. They were collected in ascending order, so walk them
+        # backwards (a sort with a block would box the Array for the type
+        # inference, and the result with it).
+        j = remove_patches.length - 1
+        while j >= 0
+          patches << remove_patches[j]
+          j -= 1
+        end
+        patches
       end
 
       def self.diff_component(old_node, new_node)
         if old_node.component_class != new_node.component_class
-          return [[:replace, new_node, old_node]]
+          return [Patch.replace(new_node, old_node)]
         end
 
         # If the component is marked for preservation,
         # update its internal VDOM instead of replacing the whole component.
         if new_node.props[:preserve]
           instance = old_node.instance
-          return [[:replace, new_node, old_node]] unless instance # Fallback if instance is missing
+          return [Patch.replace(new_node, old_node)] unless instance # Fallback if instance is missing
 
           new_node.instance = instance # Preserve the instance
 
@@ -225,12 +237,12 @@ module Funicular
 
           # Return a special patch that instructs the patcher to re-bind events
           # Pass new_internal_vdom so patcher can update @vdom after applying patches
-          return [[:update_and_rebind, instance, internal_patches, new_internal_vdom]]
+          return [Patch.update_and_rebind(instance, internal_patches, new_internal_vdom)]
         end
 
         # Original logic: If props changed, replace the entire component
         if old_node.props != new_node.props || old_node.children != new_node.children
-          return [[:replace, new_node, old_node]]
+          return [Patch.replace(new_node, old_node)]
         end
 
         # Copy instance reference so parent's @vdom keeps valid instance refs

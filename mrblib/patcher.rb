@@ -10,10 +10,10 @@ module Funicular
         return element if patches.empty?
         result = element
         patches.each do |patch|
-          case patch[0]
+          case patch.op
           when :replace
-            new_vnode = patch[1]
-            old_vnode = patch[2]
+            new_vnode = patch.node
+            old_vnode = patch.old
             unmount_component(old_vnode)
             new_element = create_element(new_vnode)
             if parent = element.parentElement
@@ -23,11 +23,17 @@ module Funicular
           when :props
             # Props patches only make sense for Element nodes (text nodes have
             # no attributes); narrow before delegating.
-            update_props(element, patch[1]) if element.is_a?(JS::Element)
+            props_patch = patch.props
+            update_props(element, props_patch) if props_patch && element.is_a?(JS::Element)
           when :text
-            element[:nodeValue] = patch[1].to_s
+            # a fresh String: the content is shared with the VNode, and the
+            # JS boundary takes a copy of its own
+            element[:nodeValue] = patch.content.to_s.dup
           when :update_and_rebind
-            instance, internal_patches, new_vdom = patch[1], patch[2], patch[3]
+            instance = patch.instance
+            next unless instance
+            internal_patches = patch.patches
+            new_vdom = patch.vdom
             old_dom_element = instance.dom_element
 
             # Apply internal patches and get the potentially new root element
@@ -62,7 +68,7 @@ module Funicular
             # This is handled at a higher level (in Component#re_render)
             # For now, we just return the element as-is
           when :remove
-            old_vnode = patch[1]
+            old_vnode = patch.node
             unmount_component(old_vnode)
             element.parentElement&.removeChild(element)
           when :keyed_children
@@ -84,16 +90,20 @@ module Funicular
             # node never compare equal and the read itself is O(n) across the
             # wasm boundary. Identity is therefore decided with equal? on the
             # snapshot objects, which is both exact and free.
-            ops = patch[1]
-            removes = patch[2]
+            ops = patch.ops
+            removes = patch.removes
 
             snapshot = VDOM.child_nodes(element)
 
-            # Phase 1: removes (descending old_index)
-            sorted_removes = removes.sort { |a, b| b[0] <=> a[0] }
-            sorted_removes.each do |entry|
-              old_index = entry[0]
-              old_vnode = entry[1]
+            # Phase 1: removes (descending old_index). The differ collected
+            # them in ascending old_index order, so walk them backwards.
+            r = removes.length - 1
+            while r >= 0
+              entry = removes[r]
+              r -= 1
+              old_index = entry.index
+              next if old_index.nil?
+              old_vnode = entry.node
               target = snapshot[old_index]
               next if target.nil?
               unmount_component(old_vnode)
@@ -104,9 +114,10 @@ module Funicular
 
             # Phase 2: updates against the snapshot
             ops.each do |op|
-              next unless op[0] == :keep
-              old_index = op[1]
-              child_patches = op[3]
+              next unless op.op == :keep
+              old_index = op.index
+              next if old_index.nil?
+              child_patches = op.patches
               next if child_patches.empty?
               target = snapshot[old_index]
               next if target.nil?
@@ -119,13 +130,15 @@ module Funicular
             # at new_index is left untouched (no detach/re-attach).
             live = snapshot.compact #: Array[untyped]
             ops.each do |op|
-              case op[0]
+              new_index = op.new_index
+              next if new_index.nil?
+              case op.op
               when :keep
-                new_node = snapshot[op[1]]
-                new_index = op[2]
+                old_index = op.index
+                next if old_index.nil?
+                new_node = snapshot[old_index]
               when :insert
-                new_index = op[1]
-                new_node = create_element(op[2])
+                new_node = create_element(op.node)
               else
                 next
               end
@@ -145,21 +158,22 @@ module Funicular
                 element.insertBefore(new_node, current)
               end
             end
-          when Integer
-            child_index = patch[0]
-            child_patches = patch[1]
+          when :child
+            child_index = patch.index
+            next if child_index.nil?
+            child_patches = patch.patches
             children = VDOM.child_nodes(element)
             child_element = children[child_index]
             if child_element.nil?
               # No existing child at this index - we need to create new elements
               child_patches.each do |child_patch|
-                case child_patch[0]
+                case child_patch.op
                 when :replace
-                  new_child_element = create_element(child_patch[1])
+                  new_child_element = create_element(child_patch.node)
                   element.appendChild(new_child_element) if element.is_a?(JS::Element)
                 when :remove
                   # Nothing to remove if child doesn't exist
-                when Integer
+                when :child
                   # This shouldn't happen at the top level of child_patches
                   # But if it does, recursively process it
                 end
@@ -247,7 +261,7 @@ module Funicular
         case vnode.type
         when :text
           raise "Expected Text vnode" unless vnode.is_a?(Text)
-          @doc.createTextNode(vnode.content)
+          @doc.createTextNode(vnode.content.dup)
         when :element
           raise "Expected Element vnode" unless vnode.is_a?(Element)
           element = @doc.createElement(vnode.tag)

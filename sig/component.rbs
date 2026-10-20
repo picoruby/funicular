@@ -29,6 +29,9 @@ module Funicular
     attr_accessor runtime: Runtime
     attr_accessor children: Array[VDOM::child_t]
     attr_accessor current_children: Array[VDOM::child_t]?
+    # the callback ids addEventListener answered, removed on cleanup
+    @event_listeners: Array[Integer]
+    @child_components: Array[Component]
     attr_reader refs: Hash[Symbol, JS::Object]
 
     type suspense_definition = { loader: untyped, on_resolve: untyped, min_delay: Integer? }
@@ -107,7 +110,7 @@ module Funicular
     private def re_render: () -> void
     private def normalize_vnode: (untyped value) -> (VDOM::Element | VDOM::Text | VDOM::Component | nil)
     private def add_data_component_attribute: (VDOM::VNode vnode) -> void
-    private def cleanup_events: () -> void
+    def cleanup_events: () -> void
     private def cleanup_suspense_timers: () -> void
     private def collect_child_components: (VDOM::VNode | VDOM::Text | nil vnode) -> void
     private def collect_child_components_recursive: (VDOM::VNode | VDOM::Text | nil vnode, Array[Component] components) -> void
