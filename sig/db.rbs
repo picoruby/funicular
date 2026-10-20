@@ -38,7 +38,7 @@ module Funicular
     def self.subscribe: (Symbol role, untyped table) { (Symbol role, String table) -> void } -> Integer
     def self.unsubscribe: (Integer id) -> nil
     def self.notify_changed: (untyped target, ?untyped table) -> nil
-    def self.validate_role: (untyped role) -> Symbol
+    def self.validate_role: (Symbol role) -> Symbol
     private def self.deferral_depth: (Symbol role) -> Integer
     private def self.pending_seen: (Symbol role) -> Hash[String, bool]
     private def self.pending_order: (Symbol role) -> Array[[Symbol, String]]
@@ -110,7 +110,7 @@ module Funicular
     end
 
     TRANSACTION_CONTROL_WORDS: Array[String]
-    def self.guard_statement_sql: (untyped sql) -> void
+    def self.guard_statement_sql: (String sql) -> void
     private def self.statement_head: (untyped sql) -> String
     private def self.pragma_name: (String s, Integer pos) -> String
     private def self.skip_sql_blanks: (String s, Integer i) -> Integer
@@ -228,7 +228,7 @@ module Funicular
     private def self.__install_handles: (untyped local_db, untyped replica_db) -> nil
     def self.local: () -> GuardedDatabase
     def self.replica: () -> GuardedDatabase
-    def self.__model_local_db: (untyped model) -> GuardedDatabase
+    def self.__model_local_db: (singleton(Model) model) -> GuardedDatabase
     def self.__model_replica_db: () -> GuardedDatabase?
     private def self.engage_schema_lockdown: (untyped db, untyped error) -> nil
     def self.schema_lockdown: () -> untyped
@@ -296,7 +296,7 @@ module Funicular
     def self.validate_identifier: (untyped name) -> String
     private def self.guard_reserved_table: (String table) -> String
     private def self.baseline_index: (untyped migrations) -> Integer
-    def self.fold_local_columns: (untyped model) -> Hash[String, Symbol]
+    def self.fold_local_columns: (singleton(Model) model) -> Hash[String, Symbol]
     private def self.fold_builders: (Array[TableBuilder] builders, untyped migrations, untyped model) -> Hash[String, Symbol]
     def self.apply_local_migrations: (untyped db, untyped model) -> Integer
     def self.rebuild_local_table: (untyped db, untyped model, ?Array[TableBuilder]? builders) -> Integer

@@ -16,8 +16,8 @@ module Funicular
       def render_text: (Text text) -> String
       def render_component: (Component component_vnode) -> String
       def serialize_props: (Hash[Symbol, untyped] props) -> String
-      def escape_html: (untyped str) -> String
-      def escape_attr: (untyped str) -> String
+      def escape_html: (String str) -> String
+      def escape_attr: (String str) -> String
     end
   end
 end
