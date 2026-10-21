@@ -42,7 +42,8 @@
       new = Funicular::VDOM.create_text('World')
       patches = Funicular::VDOM.diff(old, new)
       raise "Diff failed" if patches.empty?
-      raise "Wrong patch type" unless patches[0].op == :replace
+      raise "Wrong patch type" unless patches[0].op == :text
+      raise "Wrong content" unless patches[0].content == 'World'
     end
 
     test_case("Diff props change") do
