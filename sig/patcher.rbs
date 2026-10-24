@@ -3,7 +3,7 @@ module Funicular
     BOOLEAN_ATTRIBUTES: Array[String]
 
     class Patcher
-      @doc: JS::Object
+      @doc: JS::Element
       @runtime: Runtime?
 
       def initialize: (?JS::Element? doc, ?Runtime? runtime) -> void
