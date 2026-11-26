@@ -23,4 +23,7 @@ MRuby::Gem::Specification.new('picoruby-funicular') do |spec|
   # VDOM::Patch is a Data: each member is a C method, which the AOT
   # compiler and the type inference read as a typed slot
   spec.add_dependency 'mruby-data', gemdir: "#{MRUBY_ROOT}/mrbgems/picoruby-mruby/lib/mruby/mrbgems/mruby-data"
+  # Random.urandom for the idempotency keys of Cable, rand for the ids of
+  # FileUpload
+  spec.add_dependency 'picoruby-random'
 end

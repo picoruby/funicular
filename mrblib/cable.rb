@@ -424,8 +424,21 @@ module Funicular
       private
 
       # Generate a unique idempotency key for message deduplication
+      # (a UUID v4 from Random.urandom, which reads crypto.getRandomValues)
       def generate_idempotency_key
-        RNG.uuid
+        bytes = Random.urandom(16)
+        key = ""
+        i = 0
+        while i < 16
+          b = bytes.getbyte(i) || 0
+          b = (b & 0x0f) | 0x40 if i == 6  # version 4
+          b = (b & 0x3f) | 0x80 if i == 8  # variant 10xx
+          key << "0" if b < 16
+          key << b.to_s(16)
+          key << "-" if i == 3 || i == 5 || i == 7 || i == 9
+          i += 1
+        end
+        key
       end
     end
   end

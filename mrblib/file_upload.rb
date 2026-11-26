@@ -1,12 +1,3 @@
-# 'rng' is a PicoRuby gem available only in the wasm build. When the runtime
-# is loaded under CRuby for SSR it is absent; FileUpload is client-only and
-# its methods are never called on the server (see Funicular.server?).
-begin
-  require 'rng'
-rescue LoadError
-  # not available outside wasm environment
-end
-
 module Funicular
   module FileUpload
     JS_HELPER_CODE = <<~JAVASCRIPT
@@ -98,7 +89,7 @@ module Funicular
       @callback_counters ||= [] # steep:ignore UnannotatedEmptyCollection
       callback_id = _ = nil
       while true
-        callback_id = RNG.random_int
+        callback_id = rand(0x40000000)
         break unless @callback_counters.include?(callback_id)
       end
       @callback_counters << callback_id
